@@ -14,3 +14,4 @@ rtrb.workspace = true
 
 [dev-dependencies]
 crossbeam-channel.workspace = true
+bforge-storage.workspace = true

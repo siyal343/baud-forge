@@ -25,6 +25,7 @@ state through one contract (F1.7).
 | Stage | Units | State | Result |
 | --- | --- | --- | --- |
 | S1 pipeline | F1.1.1 to F1.1.6 | done | 4 ports at 1.2 MB/s, 14.40 MB, 0 gaps, 0 overruns |
+| S2 transport and vault | F1.2.2, F1.2.7, F1.3.1 to F1.3.3, F1.3.6 | done | ESP32-C3 recorded over COM8; mock session 2.39 MB at 1.20 MB/s, window read back |
 
 S1 notes:
 
@@ -37,8 +38,24 @@ S1 notes:
   consumer is left. That is the only path that loses a slab, and the code marks it,
   so it is not a silent drop.
 
-Next action: stage S2. It starts with F1.2.2 (UART driver, after gate G1) and
-F1.3.1 (`.bflog` header) per `IMPLEMENTATION.md`.
+S2 notes:
+
+- Gate G1 chose the `serialport` crate. It covers baud, 5 to 8 data bits, three
+  of five parity modes, 1 and 2 stop bits, DTR and RTS, the four modem inputs,
+  and USB identity. Mark and space parity plus 1.5 stop bits return
+  `Unsupported`; F1.2.1 owns them.
+- The board named in the request, COM3, is a Bluetooth link. The ESP32-C3 is on
+  COM8, `303a:1001`. Port matching by USB identity is the reason F1.2.4 exists.
+- Gate G2 kept plain files. Constant memory comes from seek plus a bounded
+  window; compression waits for F1.3.4.
+- Real UART reads fragment: 977 bytes arrived as 62 chunks, so the 32-byte
+  record header cost three times the payload. Idle coalescing or idle-gap
+  framing in F1.4.5 fixes it. It does not affect the 12 Mbaud target.
+- Hardware throughput is unmeasured: the demo proves the path, not the rate.
+  F1.6.1 needs a firmware that streams without pause.
+
+Next action: stage S3. F1.4.1 (byte machine), F1.4.2 (delimiter and COBS),
+F1.4.6 (CRC engines) and F1.5.1 (config validation) per `IMPLEMENTATION.md`.
 
 ## What the setup did
 

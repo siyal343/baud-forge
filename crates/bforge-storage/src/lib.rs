@@ -5,23 +5,24 @@
 //!
 //! ```text
 //! offset 0    256-byte file header
-//! offset 256  data blocks: RawChunk headers + payloads
-//! ...         sparse index: one entry every 1024 frames
+//! offset 256  chunk records: 32-byte header + payload
 //! ```
 //!
-//! Setup only: the format types exist, the writer and exporters do not.
+//! S2 scope: header, record, writer, reader. Compression, the persisted index
+//! and full crash recovery are F1.3.4, F1.3.5 and F1.3.7. The reader builds its
+//! sparse index in memory on open, at one entry per 1024 chunks.
+
+pub mod format;
+pub mod reader;
+pub mod writer;
 
 use bforge_hal::{Direction, PinStateFlags};
 use serde::{Deserialize, Serialize};
 
-/// File signature of a `.bflog` container.
-pub const MAGIC: [u8; 6] = *b"BFLG\x01\x00";
-/// Size of the file header in bytes.
-pub const HEADER_LEN: usize = 256;
-/// Size of one data segment.
-pub const SEGMENT_LEN: usize = 64 * 1024 * 1024;
-/// One index entry per 1024 frames.
-pub const INDEX_STRIDE: u64 = 1024;
+pub use format::LogHeader;
+pub use format::{HEADER_LEN, INDEX_STRIDE, MAGIC, RECORD_HEADER_LEN, SEGMENT_LEN};
+pub use reader::{LogReader, LogRecord};
+pub use writer::{LogSummary, LogWriter};
 
 /// Fundamental atomic unit of the SPMC pipeline (ADR-002).
 #[repr(C)]
@@ -36,45 +37,100 @@ pub struct RawChunk {
     pub direction: Direction,
     /// CTS, DSR, DCD, RI, BREAK and error bits sampled with the data.
     pub line_state: PinStateFlags,
-    /// Byte offset of the payload in the memory-mapped slab.
+    /// Byte offset of the payload in the file.
     pub payload_offset: u64,
     /// Length of the raw bytes in this chunk.
     pub payload_len: u32,
 }
 
-/// First 256 bytes of a `.bflog` file (FR-STO-01).
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Default, Serialize, Deserialize)]
-pub struct LogHeader {
-    pub session_id: u128,
-    /// Start of the session as Unix epoch nanoseconds.
-    pub start_epoch_ns: u64,
-    /// Hash of the workspace configuration that produced the session.
-    pub config_hash: u64,
-    /// File offset of the port descriptor table.
-    pub port_table_offset: u64,
-}
-
 /// One sparse index entry (FR-STO-01).
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct IndexEntry {
     pub timestamp_ns: u64,
     pub frame_id: u64,
     pub file_offset: u64,
 }
 
-/// Sparse timestamp index that gives O(log N) seek (FR-STO-01).
+/// Sparse index that gives an O(log N) seek (FR-STO-01).
 #[derive(Debug, Clone, Default)]
 pub struct SparseIndex {
-    /// Filled by the session writer, in frame order.
-    pub entries: Vec<IndexEntry>,
+    entries: Vec<IndexEntry>,
+}
+
+impl SparseIndex {
+    /// Keep one entry per [`INDEX_STRIDE`] chunks.
+    pub fn push(&mut self, frame_id: u64, timestamp_ns: u64, file_offset: u64) {
+        if !frame_id.is_multiple_of(INDEX_STRIDE) {
+            return;
+        }
+        self.entries.push(IndexEntry {
+            timestamp_ns,
+            frame_id,
+            file_offset,
+        });
+    }
+
+    pub fn len(&self) -> usize {
+        self.entries.len()
+    }
+
+    pub fn is_empty(&self) -> bool {
+        self.entries.is_empty()
+    }
+
+    /// Newest entry at or before `timestamp_ns`.
+    pub fn seek(&self, timestamp_ns: u64) -> Option<IndexEntry> {
+        let cut = self
+            .entries
+            .partition_point(|entry| entry.timestamp_ns <= timestamp_ns);
+        cut.checked_sub(1).map(|index| self.entries[index])
+    }
+
+    /// Newest entry at or before `frame_id`.
+    pub fn seek_frame(&self, frame_id: u64) -> Option<IndexEntry> {
+        let cut = self
+            .entries
+            .partition_point(|entry| entry.frame_id <= frame_id);
+        cut.checked_sub(1).map(|index| self.entries[index])
+    }
 }
 
 /// Export formats offered for a recorded session (FR-STO-02).
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum ExportFormat {
     PcapNg,
     Csv,
     Parquet,
     JsonLines,
     SaleaeCsv,
+}
+
+/// Storage failure.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum StorageError {
+    BadMagic,
+    ShortHeader(usize),
+    Truncated,
+    BadDirection(u8),
+    Io(String),
+}
+
+impl std::fmt::Display for StorageError {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            Self::BadMagic => write!(f, "not a .bflog file: bad magic bytes"),
+            Self::ShortHeader(len) => write!(f, "header needs {HEADER_LEN} bytes, got {len}"),
+            Self::Truncated => write!(f, "record is truncated"),
+            Self::BadDirection(code) => write!(f, "unknown direction code {code}"),
+            Self::Io(message) => write!(f, "io error: {message}"),
+        }
+    }
+}
+
+impl std::error::Error for StorageError {}
+
+impl From<std::io::Error> for StorageError {
+    fn from(error: std::io::Error) -> Self {
+        Self::Io(error.to_string())
+    }
 }

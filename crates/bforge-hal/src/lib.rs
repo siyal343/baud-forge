@@ -9,6 +9,8 @@
 use serde::{Deserialize, Serialize};
 
 pub mod mock;
+pub mod tcp;
+pub mod uart;
 
 /// Minimum accepted baud rate (FR-HAL-01).
 pub const MIN_BAUD: u32 = 110;
@@ -39,6 +41,20 @@ impl PinStateFlags {
     pub const BREAK: Self = Self(1 << 4);
     pub const FRAMING_ERR: Self = Self(1 << 5);
     pub const PARITY_ERR: Self = Self(1 << 6);
+    /// Output pin, driven by `set_pins`.
+    pub const DTR: Self = Self(1 << 7);
+    /// Output pin, driven by `set_pins`.
+    pub const RTS: Self = Self(1 << 8);
+
+    /// True when every bit of `other` is set.
+    pub fn contains(self, other: Self) -> bool {
+        self.0 & other.0 == other.0
+    }
+
+    /// Set every bit of `other`.
+    pub fn insert(&mut self, other: Self) {
+        self.0 |= other.0;
+    }
 }
 
 /// Lifecycle state of one transport (FR-HAL-03).
@@ -131,6 +147,19 @@ pub enum TransportError {
     Unsupported(&'static str),
 }
 
+impl std::fmt::Display for TransportError {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            Self::NotOpen => write!(f, "transport is not open"),
+            Self::Disconnected => write!(f, "transport is disconnected"),
+            Self::Io(message) => write!(f, "io error: {message}"),
+            Self::Unsupported(what) => write!(f, "{what} is not supported by this transport"),
+        }
+    }
+}
+
+impl std::error::Error for TransportError {}
+
 /// Contract for every transport backend (FR-HAL-01).
 ///
 /// The methods stay synchronous and object safe, so a port registry can hold
@@ -143,7 +172,8 @@ pub trait TransportDriver {
     fn write_frame(&mut self, frame: &[u8]) -> Result<(), TransportError>;
     /// Drive DTR and RTS (FR-HAL-04).
     fn set_pins(&mut self, pins: PinStateFlags) -> Result<(), TransportError>;
-    /// Read CTS, DSR, DCD and RI (FR-HAL-04).
-    fn read_pins(&self) -> Result<PinStateFlags, TransportError>;
+    /// Read CTS, DSR, DCD and RI (FR-HAL-04). Takes `&mut self` because the
+    /// platform calls behind it do.
+    fn read_pins(&mut self) -> Result<PinStateFlags, TransportError>;
     fn state(&self) -> PortState;
 }

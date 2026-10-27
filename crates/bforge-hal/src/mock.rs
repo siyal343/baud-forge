@@ -153,7 +153,7 @@ impl TransportDriver for MockTransport {
         Ok(())
     }
 
-    fn read_pins(&self) -> Result<PinStateFlags, TransportError> {
+    fn read_pins(&mut self) -> Result<PinStateFlags, TransportError> {
         Ok(self.pins)
     }
 

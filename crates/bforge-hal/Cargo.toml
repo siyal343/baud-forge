@@ -8,3 +8,4 @@ description = "Transport abstraction for BaudForge: UART, RTT, CAN, TCP, MITM br
 
 [dependencies]
 serde.workspace = true
+serialport.workspace = true
