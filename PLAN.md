@@ -14,13 +14,31 @@ state through one contract (F1.7).
 | Phase | State |
 | --- | --- |
 | 0. Scaffold | done |
-| 1A. Iron core, full scope | not started |
-| 1B. First cut (recommended) | not started |
+| 1A. Iron core, full scope | in progress |
+| 1B. First cut (recommended) | in progress |
 | 2. GPU terminal | not started |
 | 3. Dissectors and ELF | not started |
 | 4. MITM, faults and lab sync | not started |
 
-Next action: write `specs/0002-spmc-pipeline.md`, then gate G0.
+## Stage record
+
+| Stage | Units | State | Result |
+| --- | --- | --- | --- |
+| S1 pipeline | F1.1.1 to F1.1.6 | done | 4 ports at 1.2 MB/s, 14.40 MB, 0 gaps, 0 overruns |
+
+S1 notes:
+
+- G0 measured `rtrb`, `crossbeam-channel` and std `sync_channel`. All three carry
+  about 550 times the target, so the choice follows ADR-002: two `rtrb` rings.
+  Numbers are in [`specs/0002-spmc-pipeline.md`](specs/0002-spmc-pipeline.md).
+- The mock transport lives in `bforge-hal` rather than `bforge-core`, so every
+  later crate can use it in tests.
+- The reader abandons one slab on shutdown if the logger ring is full and no
+  consumer is left. That is the only path that loses a slab, and the code marks it,
+  so it is not a silent drop.
+
+Next action: stage S2. It starts with F1.2.2 (UART driver, after gate G1) and
+F1.3.1 (`.bflog` header) per `IMPLEMENTATION.md`.
 
 ## What the setup did
 

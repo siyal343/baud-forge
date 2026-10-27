@@ -4,9 +4,11 @@
 //! (loggers, framers, dissectors, plots) use the trait only, so a feature that
 //! works on UART works the same on RTT, CAN or TCP.
 //!
-//! Setup only: types and trait exist, no behavior is implemented yet.
+//! Setup only for the real drivers. [`mock`] is complete and drives the tests.
 
 use serde::{Deserialize, Serialize};
+
+pub mod mock;
 
 /// Minimum accepted baud rate (FR-HAL-01).
 pub const MIN_BAUD: u32 = 110;

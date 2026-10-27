@@ -1,10 +1,13 @@
-//! Coordinator and workspace configuration (PART IV).
+//! Coordinator, workspace configuration (PART IV) and the SPMC pipeline (S1).
 //!
 //! One `.bforge.toml` file per project holds the ports, the dissectors, the
 //! command buttons and the alerts. Engineers commit it, so every machine runs
 //! the same setup.
 //!
 //! Setup only: the schema parses, nothing acts on it yet.
+
+pub mod pipeline;
+pub mod slab;
 
 use serde::{Deserialize, Serialize};
 
