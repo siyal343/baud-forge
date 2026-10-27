@@ -191,6 +191,12 @@ One rule ties the engine to the screen: **every state an engineer can see has a
 GUI surface in the same phase or earlier.** The engine publishes that state
 through one contract, so the CLI can print it as JSON and the GUI draws it.
 
+The workbench is responsive. Four width tiers cover 3840 px down to a 640 px
+window: full workbench, dense workbench, two-zone workbench and single column.
+A zone collapses to a rail, a drawer or a tab, but it never disappears, and
+`Ctrl+1..5` reaches every zone at every size. Below 768 px of height the stream
+and the plot stack instead of clipping.
+
 ## Build
 
 Clone the repository first:

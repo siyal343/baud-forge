@@ -164,11 +164,19 @@ non-goal.
 | No accessibility section | Focus rings, keyboard-only path, reduced motion, AA contrast | F2.10 |
 | No DPI or zoom policy | Token scale driven by a zoom factor, 36 px ribbon scales | F2.1.5 |
 | Layout is not persistent | Zone sizes and visibility saved per workspace | F2.1.6 |
+| Layout assumes one desktop width | Four width tiers plus short-viewport rules; collapse, never remove | F2.11 |
 | Fonts need bundling and a license check | Bundle OFL fonts, system fallback stack | F2.2.2 |
 | Hover highlight needs byte-to-field geometry | Hit-test index per row, target under 1 ms | F2.3.6 |
 
-Two non-goals for v1: a light theme, and a mobile layout. The token file leaves
-room for both.
+Two non-goals for v1: a light theme, and a phone layout. The workbench reflows
+down to 640 px, but it stays a desktop tool with a keyboard and a pointer. The
+token file leaves room for both.
+
+### Responsive rule
+
+Guide section 5 fixes the width tiers. The engine does not change with width,
+and no column disappears: the layout narrows padding, then collapses a zone to a
+rail, a drawer or a tab. Every zone stays reachable at every width.
 
 ## Phase 0 — Scaffold (done)
 
@@ -303,7 +311,7 @@ F1.4.4, F1.4.5, F1.4.7, F1.5.5, F1.5.6, F1.6.3, F1.7.4.
 
 Owns: `bforge-gui`, `ui/`. Depends on: F1.7 and F1.3.6.
 
-Ten features, 55 subfeatures, about **140 days** for one developer. The SRS slot
+Eleven features, 61 subfeatures, about **155 days** for one developer. The SRS slot
 of four weeks assumes three developers. The exit criteria below decide what
 Phase 2B contains if the slot holds.
 
@@ -414,9 +422,25 @@ Tokens come from guide section 1. Layout comes from guide section 2.
 | F2.10.3 | Frame budget overlay in dev builds | S | Any frame over 16.6 ms is visible |
 | F2.10.4 | Roles and labels for the six zones | S | Screen reader names each zone |
 
+### F2.11 Responsive layout
+
+Guide section 5. One rule: collapse, never remove. This feature ships with the
+zone grid in F2.2.3, not after it, because a fixed grid cannot become fluid later
+without rewriting every zone.
+
+| ID | Subfeature | Size | Done when |
+| --- | --- | --- | --- |
+| F2.11.1 | Width tiers as tokens, one container query per zone | M | Resize reflows with no reload and no layout jump |
+| F2.11.2 | Collapse, never remove: rail, drawer and tab states, `Ctrl+1..5` at every width | L | Keyboard reaches all six zones at 640 px |
+| F2.11.3 | Single-column mode under 960 px: ribbon wraps, zones become tabs, forge pins | L | Record, send and scrub work at 800 x 600 |
+| F2.11.4 | Short viewport: 60/40 stack below 768 px height, one-line footer, scrubber in the ribbon | M | Ribbon, stream and forge visible at 768 px |
+| F2.11.5 | Layout saved per width tier | S | Shrink and grow restores each tier's layout |
+| F2.11.6 | Viewport matrix in CI: 8 widths, 2 DPIs, screenshots, overflow and reachability asserts | M | A clipped zone or a scrollbar fails the build |
+
 **Phase 2 exit criteria:** all six zones populated by real Phase 1 data, 60 FPS
-with 20 signals at 1 kHz, cold boot under 400 ms, hover highlight under 1 ms,
-and a keyboard-only path through record, send and scrub.
+with 20 signals at 1 kHz, cold boot under 400 ms, hover highlight under 1 ms, a
+keyboard-only path through record, send and scrub, and every zone reachable from
+640 px to 3840 px wide.
 
 ## Phase 3 — Dissectors and ELF (weeks 9 to 12)
 
@@ -494,6 +518,7 @@ Every non-functional requirement needs a harness. No harness, no claim.
 | UI frame time | 16.6 ms with 20 signals at 1 kHz | WebGPU profiler overlay | F2.4.2, F2.10.3 |
 | Cold boot | 400 ms | CI startup timer | F2.1.7 |
 | Hover highlight | 1 ms per row | Hit-test benchmark | F2.3.6 |
+| Responsive layout | No overflow, every zone reachable from 640 px to 3840 px | Screenshot matrix at 8 widths and 2 DPIs | F2.11.6 |
 | Contrast | WCAG AA on every token pair | Token audit script | F2.10.2 |
 | Color semantics | No color without a label or icon | Audit test | F2.2.7 |
 | State coverage | Every zone field has a source | Contract table in the F1.7 spec | F1.7.4 |
@@ -511,6 +536,7 @@ Every non-functional requirement needs a harness. No harness, no claim.
 | Zones 1, 2 and 4 wait for later phases | Empty panels look broken | Placeholder states in F2.2.5 and F2.5.5, no fake controls |
 | Canvas2D hover hit-test cost | Hover feels slow at 1 M rows | Index per row, benchmark in F2.3.6 |
 | Font bundling and license | Startup delay or a legal problem | Gate G7, OFL fonts, system fallback |
+| Responsive layout added late | Every zone needs a rewrite | F2.11 ships with the grid in F2.2.3 |
 | Six-target CI cost | Slow feedback | Lint and test only; release artifacts build on tags |
 
 ## Phase 2B — GUI first cut
@@ -519,9 +545,11 @@ If the four-week slot holds for three developers, this is the smallest GUI that
 still shows every Phase 1 state.
 
 F2.1.1 to F2.1.4, F2.2.1 to F2.2.3, F2.2.5, F2.3.1 to F2.3.4, F2.4.1, F2.4.2,
-F2.4.6, F2.5.1, F2.5.2, F2.6.1 to F2.6.3, F2.7.1 to F2.7.4, F2.7.6, F2.9.1 and
-all of F2.10. That is 24 subfeatures, about 60 days, and it defers the sidebar
-tree, the palette, the FFT, the orientation widget and the forge history.
+F2.4.6, F2.5.1, F2.5.2, F2.6.1 to F2.6.3, F2.7.1 to F2.7.4, F2.7.6, F2.9.1,
+F2.11.1 to F2.11.3, F2.11.6 and all of F2.10. That is 28 subfeatures, about 74
+days, and it defers the sidebar tree, the palette, the FFT, the orientation
+widget and the forge history. It does not defer the responsive work or the
+accessibility block.
 
 ## Next ten working days
 

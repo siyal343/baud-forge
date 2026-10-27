@@ -82,3 +82,27 @@ The window is organized into a dockable, keyboard-navigable (`Ctrl+1..5`) tiling
 * **One-Click "Plot This Field" (`📈`):** Every numeric leaf node in the Dissector Tree has a tiny chart icon next to it. Clicking it immediately spawns a synchronized WebGL trace in the bottom telemetry dock—zero configuration files or regex rules required.
 * **Inline ELF Crash Expansion:** When an incoming ASCII line contains a memory pointer like `0x0800412A`, BaudForge renders an inline pill badge (`↳ src/eps_drv.c:184`). Hovering over the badge pops up a 5-line preview of the C/Rust source code around line 184 directly inside the terminal; clicking it opens your IDE.
 * **Visual Flash-Yield Countdown:** When you run `cargo embed` or `esptool.py`, the top-left Port Pill smoothly morphs from Emerald (`● Connected`) to pulsing Amber (`🔌 Yielded to PID 4812 (esptool)`), dimming the terminal slightly and drawing a vertical dashed `"--- FIRMWARE FLASH & RESET ---"` marker across both the log and the telemetry graph before reconnecting automatically.
+
+---
+
+## 5. Responsive Layout (One Workbench, Four Densities)
+
+The workbench is desktop software, so it reflows instead of stacking into a phone layout. One rule holds at every width: **collapse, never remove.** A zone may shrink to a rail, a drawer or a tab, but every zone and every action stays reachable, and `Ctrl+1..5` works at every size.
+
+| Window width | Layout | What changes |
+| --- | --- | --- |
+| 1440 px and wider | Full six-band workbench | Nothing collapses. Sidebar 240 px, inspector 380 px. |
+| 1200 to 1439 px | Dense workbench | Sidebar narrows to 200 px. Inspector becomes an overlay drawer with a hairline scrim. |
+| 960 to 1199 px | Two-zone workbench | Sidebar becomes an icon rail with tooltips. Stream and telemetry share the center as tabs. |
+| 640 to 959 px | Single column | Ribbon wraps to two 32 px rows. Stream, plot, inspector and forge become tabs. The forge pins to the bottom. |
+| Below 640 px | Not supported | The window enforces a 640 px minimum width. |
+
+Vertical reflow follows the same rule. Below 768 px of height, the stream and the plot stack at a 60/40 split, the footer keeps one line, and the telemetry scrubber moves into the ribbon.
+
+Details:
+
+* **Minimum window:** 640 x 480. Below that the window refuses to shrink, so the zones stay legible.
+* **DPI and zoom:** the type scale, the 36 px ribbon and the hairline borders scale from one zoom factor. No half-pixel borders.
+* **Persistence:** the layout is saved per width tier, so shrinking a window and restoring it returns each tier's own arrangement.
+* **Data density:** the stream never hides columns by width. The delta-t column and the direction badge stay visible; only padding changes.
+* **Test:** a screenshot matrix at 640, 800, 1024, 1280, 1440, 1920, 2560 and 3840 px wide, at 100 and 200 percent DPI, fails the build on horizontal overflow, clipped text or an unreachable zone.
