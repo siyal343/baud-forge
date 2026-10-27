@@ -203,7 +203,8 @@ cargo +stable-x86_64-pc-windows-gnu build --workspace
 | 3. Dissectors | 9–12 | C struct parser, Protobuf, native packs, DWARF symbolizer, defmt decoding |
 | 4. MITM and faults | 13–16 | Active bridge, bit-error generator, Lua runtime, session diff, hardware triggers |
 
-Progress notes live in [PLAN.md](PLAN.md).
+Work breakdown by phase, feature and subfeature: [IMPLEMENTATION.md](IMPLEMENTATION.md).
+Progress notes: [PLAN.md](PLAN.md).
 
 ## Continuous integration
 

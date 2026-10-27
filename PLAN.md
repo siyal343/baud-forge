@@ -4,6 +4,22 @@ Setup record and status of the BaudForge project. The design source is
 [`specs/ADR & SRS.md`](specs/ADR%20%26%20SRS.md). This file tracks progress; the
 specification does not change.
 
+The work breakdown, with phases, features, subfeatures and gates, is in
+[IMPLEMENTATION.md](IMPLEMENTATION.md).
+
+## Status
+
+| Phase | State |
+| --- | --- |
+| 0. Scaffold | done |
+| 1A. Iron core, full scope | not started |
+| 1B. First cut (recommended) | not started |
+| 2. GPU terminal | not started |
+| 3. Dissectors and ELF | not started |
+| 4. MITM, faults and lab sync | not started |
+
+Next action: write `specs/0002-spmc-pipeline.md`, then gate G0.
+
 ## What the setup did
 
 1. Turned the single crate into a Cargo workspace with the nine crates from
