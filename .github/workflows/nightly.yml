@@ -1,0 +1,69 @@
+name: Nightly soak
+
+on:
+  schedule:
+    # 03:00 UTC every day.
+    - cron: "0 3 * * *"
+  workflow_dispatch:
+    inputs:
+      seconds:
+        description: Stress duration in seconds
+        default: "600"
+      size_mb:
+        description: Vault size for the memory run, in MiB
+        default: "1024"
+
+env:
+  CARGO_TERM_COLOR: always
+
+permissions:
+  contents: read
+
+jobs:
+  soak:
+    name: stress and memory
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+      - name: Install Linux serial headers
+        run: sudo apt-get update && sudo apt-get install -y libudev-dev pkg-config
+      - name: Build the harnesses
+        run: cargo build --release --locked -p bforge-core --examples
+
+      - name: Stress, 4 ports at 12 Mbaud
+        run: |
+          cargo run --release --locked -q -p bforge-core --example s5_stress -- \
+            --ports 4 --mbps 1.2 --seconds "${{ inputs.seconds || '600' }}" \
+            --vault target/nightly-stress.bflog | tee stress.txt
+
+      - name: Memory, large vault
+        run: |
+          cargo run --release --locked -q -p bforge-core --example s5_memory -- \
+            --size-mb "${{ inputs.size_mb || '1024' }}" | tee memory.txt
+
+      - name: Publish the numbers
+        if: always()
+        run: |
+          {
+            echo "## BaudForge nightly soak"
+            echo ""
+            echo "### Ingestion (4 ports, 12 Mbaud, PRBS-31)"
+            echo '```'
+            grep -E "recorded|resident|RESULT|sequence gap|port " stress.txt || true
+            echo '```'
+            echo "### Reader memory"
+            echo '```'
+            grep -E "built|opened|read |resident|estimate|RESULT" memory.txt || true
+            echo '```'
+          } >> "$GITHUB_STEP_SUMMARY"
+
+      - name: Keep the reports
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: soak-reports
+          path: |
+            stress.txt
+            memory.txt

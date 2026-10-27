@@ -28,6 +28,7 @@ state through one contract (F1.7).
 | S2 transport and vault | F1.2.2, F1.2.7, F1.3.1 to F1.3.3, F1.3.6 | done | ESP32-C3 recorded over COM8; mock session 2.39 MB at 1.20 MB/s, window read back |
 | S3 framing and validation | F1.4.1, F1.4.2, F1.4.6, F1.5.1 | done | 2000 COBS frames through 4 KB slabs, 0 invalid, all CRC-32C valid; `bforge config check` names each problem |
 | S4 record, replay, status | F1.5.2 to F1.5.4, F1.7.1 to F1.7.3 | done | ESP32-C3: 89 chunks sealed, JSON snapshot, JSONL events, replay at 4x with 2.3 ms worst lateness |
+| S5 measurement | F1.6.1, F1.6.2, F1.6.3 | done | 4 ports at 12 Mbaud for 60 s: 288 MB, 0 gaps, 11.9 MiB peak; 512 MiB vault read at 21.5 MiB peak |
 
 S1 notes:
 
@@ -82,9 +83,26 @@ S4 notes:
 - `record` without `--duration` stops on Enter. Ctrl-C leaves an unsealed vault,
   which the reader reports as `damaged_tail` until F1.3.7.
 
-Next action: stage S5, the measurement stage. F1.6.1 (stress harness, 4 ports at
-12 Mbaud), F1.6.2 (memory assertion) and F1.6.3 (nightly job) per
-`IMPLEMENTATION.md`. After S5 the work forks into the three tracks.
+S5 notes:
+
+- The stress harness checks the vault, not the counters: every mock block carries
+  its own sequence in the payload, so a dropped block is a gap in the file. 60 s
+  at 4 x 12 Mbaud produced 288 MB, 5 segments and 0 gaps.
+- Resident memory is read from the operating system on all three platforms:
+  `/proc/self/status`, `GetProcessMemoryInfo`, and `ps` on macOS.
+- The reader scans at 25 MiB/s because it seeks twice per record. Fast enough for
+  a window, too slow for a 100 GB scan. A sequential cursor belongs with F2.3.
+- The index estimate for 100 GB is 37.5 KiB at 24 bytes per entry. That number is
+  derived, not measured, and the harness prints it as an estimate.
+- Hardware throughput is still unmeasured: the ESP32-C3 prints a boot log, not a
+  saturated line. F1.6.1 needs a streaming sketch.
+- The nightly workflow runs 600 s of stress plus a 1 GiB memory read and writes
+  both reports into the job summary.
+
+Next action: the tracks. Track A is S6 (pins, USB binding, hotplug, yield, SLIP,
+Intel HEX, sync-word framing, idle-gap, compression, index, crash recovery).
+Track B is S7 (GUI shell). Track C is S11 (dissectors). Track C shares no code
+with Track B, so it can start while the window is built.
 
 ## What the setup did
 
