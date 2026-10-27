@@ -1,0 +1,11 @@
+[package]
+name = "bforge-storage"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+repository.workspace = true
+description = "Append-only .bflog session vault and exporters for BaudForge"
+
+[dependencies]
+serde.workspace = true
+bforge-hal.workspace = true

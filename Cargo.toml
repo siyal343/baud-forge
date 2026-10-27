@@ -23,3 +23,23 @@ debug = 1
 
 [profile.test]
 debug = 1
+
+[workspace]
+members = ["crates/bforge-hal", "crates/bforge-storage", "crates/bforge-framer", "crates/bforge-dissect", "crates/bforge-elf", "crates/bforge-script", "crates/bforge-core", "crates/bforge-cli", "crates/bforge-gui"]
+
+[workspace.package]
+version = "0.1.0"
+edition = "2024"
+license = "MIT OR Apache-2.0"
+repository = "https://github.com/siyal343/baud-forge"
+
+[workspace.dependencies]
+serde = { version = "1.0", features = ["derive"] }
+toml = "0.8"
+bforge-hal = { path = "crates/bforge-hal" }
+bforge-storage = { path = "crates/bforge-storage" }
+bforge-framer = { path = "crates/bforge-framer" }
+bforge-dissect = { path = "crates/bforge-dissect" }
+bforge-elf = { path = "crates/bforge-elf" }
+bforge-script = { path = "crates/bforge-script" }
+bforge-core = { path = "crates/bforge-core" }

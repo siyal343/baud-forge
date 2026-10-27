@@ -1,0 +1,31 @@
+[workspace]
+name = "CubeSat-OBC-Validation"
+version = "1.0"
+elf_path = "./firmware/build/obc_flight_sw.elf"
+watch_elf = true
+
+[[ports]]
+id = "obc_telemetry"
+match_vid_pid = "0403:6010"
+match_serial = "FT5X9A1B"
+baud_rate = 2000000
+framing = { mode = "cobs", delimiter = 0x00, crc = "crc32c" }
+dissector = { type = "c_header", file = "./firmware/include/telemetry_packets.h", root_struct = "ObcTelemetryFrame" }
+yield_on_sigusr1 = true
+
+[[commands]]
+name = "Inject Safe-Mode Transition"
+hotkey = "Ctrl+Shift+S"
+port = "obc_telemetry"
+append_crc = "crc16_ccitt_false"
+fields = [
+  { name = "sync", type = "u16_be", default = 0xCAFE },
+  { name = "opcode", type = "u8", default = 0x09 },
+  { name = "reason_code", type = "enum", options = { MANUAL = 1, THERMAL_FAULT = 2, RAD_SEU = 3 } },
+  { name = "hold_time_sec", type = "u32_le", default = 300 }
+]
+
+[[alerts]]
+name = "Watchdog Starvation Detector"
+condition = "dead_man_timer('obc_telemetry', 2500)"
+actions = ["pulse_pin:RTS:100ms", "webhook:https://hooks.slack.com/services/..."]

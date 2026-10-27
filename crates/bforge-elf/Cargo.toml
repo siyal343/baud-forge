@@ -1,0 +1,10 @@
+[package]
+name = "bforge-elf"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+repository.workspace = true
+description = "DWARF symbolization and defmt/pw_tokenizer decoding for BaudForge"
+
+[dependencies]
+bforge-dissect.workspace = true

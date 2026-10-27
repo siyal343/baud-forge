@@ -1,0 +1,9 @@
+[package]
+name = "bforge-gui"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+repository.workspace = true
+description = "Tauri v2 desktop host for BaudForge (Milestone 2)"
+
+[dependencies]

@@ -1,0 +1,10 @@
+[package]
+name = "bforge-script"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+repository.workspace = true
+description = "Fault injection primitives and embedded LuaJIT HIL runtime for BaudForge"
+
+[dependencies]
+bforge-dissect.workspace = true

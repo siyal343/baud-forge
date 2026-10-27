@@ -1,0 +1,11 @@
+[package]
+name = "bforge-dissect"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+repository.workspace = true
+description = "Declarative protocol dissection for BaudForge: C structs, Protobuf, CCSDS, CSP, MAVLink, Modbus"
+
+[dependencies]
+serde.workspace = true
+bforge-storage.workspace = true

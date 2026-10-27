@@ -1,0 +1,14 @@
+[package]
+name = "bforge-cli"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+repository.workspace = true
+description = "Headless BaudForge CLI for CI and HIL runners"
+
+[[bin]]
+name = "bforge"
+path = "src/main.rs"
+
+[dependencies]
+bforge-core.workspace = true

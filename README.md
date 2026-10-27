@@ -1,22 +1,183 @@
-# baud-forge
+# BAUDFORGE
 
-Open-source serial monitor written in Rust.
+**Forge, Frame, Fault-Inject.**
 
-This repository is a fork of [porti-rs](https://github.com/siyal343/porti-rs).
-It keeps the telemetry core as legacy code. Every other porti-rs module is
-removed.
+BaudForge is a serial monitor, a protocol dissector and a fault-injection rig in
+one tool. It records every byte a device sends. It decodes those bytes with the
+C structs from the firmware. It can sit between two devices and inject bit
+errors, delays and truncation into a live link.
 
-## Layout
+Binary name: `bforge`.
 
-- `src/legacy/core/`: inherited telemetry types. Frame, group, dataset, alarm
-  band, ring buffer and running statistics.
-- `src/`: new baud-forge code.
-- `specs/`: design specifications. Read `specs/README.md` first.
+## Status: scaffold only
+
+This repository holds the project skeleton. It defines the crate topology, the
+data types and the configuration schema from the
+[ADR and SRS](specs/ADR%20%26%20SRS.md). It does not implement recording,
+framing, dissection or the GUI yet. The implementation plan comes next.
+
+What works today:
+
+- The Cargo workspace builds, with the nine crates from the architecture.
+- `.bforge.toml` parses into typed structs.
+- `bforge help` and `bforge version` run.
+- The telemetry core inherited from porti-rs stays available as `legacy`.
+
+## Why it exists
+
+Serial monitors built on Electron drop bytes when an MCU prints in a loop at
+4 Mbaud. BaudForge separates the byte path from the display path, so no byte is
+lost and no frame is dropped.
+
+| Target | Value | Verified by |
+| --- | --- | --- |
+| Sustained ingestion | 12 Mbaud on 4 ports, 0 dropped bytes | PRBS-31 loopback with sequence counters |
+| Memory use | 150 MB or less with a 100 GB session | 72-hour soak test, `heaptrack` |
+| MITM pass-through latency | 50 µs or less | Oscilloscope, RX of port A to TX of port B |
+| UI frame time | 16.6 ms or less with 20 signals at 1 kHz | WebGPU frame profiler |
+| Cold boot | 400 ms or less to an interactive window | CI startup timer |
+
+These are target values from the ADR. No value is measured yet.
+
+## Architecture
+
+Four decisions drive the code.
+
+1. **Rust core, Tauri v2 desktop host (ADR-001).** The engine has no garbage
+   collector, so the I/O thread stays deterministic. The same static library
+   powers the GUI and the headless CLI.
+2. **Three-stage ring-buffer pipeline (ADR-002).** An OS thread reads the port
+   into 64 KB slabs. A lock-free single-producer multi-consumer queue fans the
+   slabs out to a disk logger and a frame dissector. The session goes to a
+   memory-mapped `.bflog` file. The UI reads a small window over binary IPC and
+   never holds the full log.
+3. **Declarative dissection (ADR-003).** C packed structs, Protobuf and Kaitai
+   schemas compile into one intermediate representation. Native packs cover
+   CCSDS, ECSS PUS, CSP, MAVLink and Modbus. A DWARF symbolizer turns raw
+   addresses into `file:line` badges.
+4. **Embedded Lua fault runtime (ADR-004).** A sandboxed Lua VM intercepts a
+   frame inside the Rust thread in microseconds. An external pytest suite drives
+   the same pipeline over gRPC or a Unix domain socket.
+
+### Pipeline
+
+```text
+port  ->  reader thread  ->  64 KB slab  ->  SPMC fan-out
+                                                |
+                              +-----------------+-----------------+
+                              |                                   |
+                       disk logger                          frame dissector
+                       (.bflog vault)                       (framer, IR)
+                              |                                   |
+                              +------------- UI window ------------+
+                                        (binary IPC)
+```
+
+## Workspace layout
+
+| Path | Crate | Owns |
+| --- | --- | --- |
+| `crates/bforge-hal` | `bforge-hal` | `TransportDriver`, UART line settings, USB tuple match, pin flags |
+| `crates/bforge-storage` | `bforge-storage` | `.bflog` header, `RawChunk`, sparse index, export formats |
+| `crates/bforge-framer` | `bforge-framer` | Delimiter, COBS, SLIP, sync-word and idle-gap rules, checksums |
+| `crates/bforge-dissect` | `bforge-dissect` | Schema sources, `DissectorIr`, decoded field tree, native packs |
+| `crates/bforge-elf` | `bforge-elf` | `Symbolizer`, DWARF lookup, defmt and pw_tokenizer decoding |
+| `crates/bforge-script` | `bforge-script` | Fault profile, MITM bridge mode, Lua hook contract |
+| `crates/bforge-core` | `bforge-core` | `.bforge.toml` schema, coordinator, control plane |
+| `crates/bforge-cli` | `bforge-cli` | Binary `bforge` for CI and HIL runners |
+| `crates/bforge-gui` | `bforge-gui` | Tauri v2 host for the `ui/` frontend |
+| `src/legacy/` | `baud-forge` | Telemetry core from porti-rs: frame, group, dataset, alarm band, ring buffer, running statistics |
+| `specs/` | — | [ADR and SRS](specs/ADR%20%26%20SRS.md) |
+
+The frontend directory `ui/` (SolidJS, TypeScript, WebGPU) arrives in
+Milestone 2.
+
+### Legacy code
+
+The root crate keeps the code inherited from
+[porti-rs](https://github.com/siyal343/porti-rs). These types are in use and
+stay:
+
+- `legacy::core::frame`: `Frame`, `Group`, `Dataset`, `AlarmBand`,
+  `AlarmSeverity`, `WidgetType`
+- `legacy::core::ring_buffer`: `RingBuffer<T>`
+- `legacy::core::stats`: `RunningStats`
+
+New code goes in `crates/`. The legacy module does not import new crates, so a
+change in one side cannot break the other.
+
+## Workspace configuration
+
+Each project commits one `.bforge.toml` file. Every engineer on the project then
+uses the same ports, dissectors, command buttons and alerts.
+
+See [`crates/bforge-core/examples/cubesat.bforge.toml`](crates/bforge-core/examples/cubesat.bforge.toml)
+for a full example. A short form:
+
+```toml
+[workspace]
+name = "CubeSat-OBC-Validation"
+version = "1.0"
+elf_path = "./firmware/build/obc_flight_sw.elf"
+watch_elf = true
+
+[[ports]]
+id = "obc_telemetry"
+match_vid_pid = "0403:6010"
+match_serial = "FT5X9A1B"
+baud_rate = 2000000
+framing = { mode = "cobs", delimiter = 0x00, crc = "crc32c" }
+dissector = { type = "c_header", file = "./firmware/include/telemetry_packets.h", root_struct = "ObcTelemetryFrame" }
+yield_on_sigusr1 = true
+
+[[commands]]
+name = "Inject Safe-Mode Transition"
+hotkey = "Ctrl+Shift+S"
+port = "obc_telemetry"
+append_crc = "crc16_ccitt_false"
+fields = [
+  { name = "sync", type = "u16_be", default = 0xCAFE },
+  { name = "opcode", type = "u8", default = 0x09 },
+  { name = "reason_code", type = "enum", options = { MANUAL = 1, THERMAL_FAULT = 2, RAD_SEU = 3 } },
+  { name = "hold_time_sec", type = "u32_le", default = 300 }
+]
+```
+
+`ports` binds a device by USB tuple, with the OS device path as fallback.
+`commands` builds a frame from named fields and appends the checksum.
+`alerts` runs a condition against the live stream and fires actions, such as a
+pin pulse or a webhook.
 
 ## Build
 
+```sh
+cargo build --workspace     # all crates
+cargo test --workspace      # unit tests
+cargo run -p bforge-cli -- version
+cargo run                   # legacy binary
 ```
-cargo build
-cargo run
-cargo test
+
+Requirements: Rust 1.85 or newer, because the crates use edition 2024.
+
+On Windows, the default toolchain needs the MSVC linker from Visual Studio Build
+Tools. When that linker is absent, build with the GNU toolchain instead:
+
+```sh
+rustup toolchain install stable-x86_64-pc-windows-gnu
+cargo +stable-x86_64-pc-windows-gnu build --workspace
 ```
+
+## Roadmap
+
+| Milestone | Weeks | Content |
+| --- | --- | --- |
+| 1. Iron core | 1–4 | SPMC ring buffer, `.bflog` writer, hotplug match, port yielding, headless record and replay |
+| 2. GPU terminal | 5–8 | Tauri v2 host, SolidJS UI, virtualized hex and ANSI viewport, 60 FPS plots, time scrubber |
+| 3. Dissectors | 9–12 | C struct parser, Protobuf, native packs, DWARF symbolizer, defmt decoding |
+| 4. MITM and faults | 13–16 | Active bridge, bit-error generator, Lua runtime, session diff, hardware triggers |
+
+Progress notes live in [PLAN.md](PLAN.md).
+
+## License
+
+Dual licensed under MIT or Apache-2.0, at your choice.

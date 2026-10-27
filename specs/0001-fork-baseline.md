@@ -1,6 +1,7 @@
 # 0001 Fork baseline
 
-Status: accepted (2026-10-27)
+Status: accepted (2026-10-27). Superseded by `ADR & SRS.md` for all
+new design decisions. This file keeps the fork baseline record.
 
 ## Problem
 
