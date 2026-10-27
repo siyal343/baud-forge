@@ -1,0 +1,7 @@
+/target
+**/*.rs.bk
+*.zip
+*.tar.gz
+*.db
+*.db-wal
+*.db-shm

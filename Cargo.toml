@@ -1,0 +1,25 @@
+[package]
+name = "baud-forge"
+version = "0.1.0"
+edition = "2021"
+description = "Open-source serial monitor"
+license = "MIT OR Apache-2.0"
+repository = "https://github.com/siyal343/baud-forge"
+readme = "README.md"
+
+[[bin]]
+name = "baud-forge"
+path = "src/main.rs"
+
+[lib]
+name = "baud_forge"
+path = "src/lib.rs"
+
+[dependencies]
+serde = { version = "1.0", features = ["derive"] }
+
+[profile.dev]
+debug = 1
+
+[profile.test]
+debug = 1
