@@ -1,17 +1,26 @@
 //! Framing pipeline and checksums (F1.4.1, F1.4.2, F1.4.6).
 //!
-//! Stage S3 implements delimiter and COBS framing plus three checksum engines.
-//! SLIP, Intel HEX, sync-word and idle-gap framing are F1.4.3 to F1.4.5; the
-//! [`Framing`] enum names them so a configuration can be validated before the
-//! code that runs them exists.
+//! Stage S3 implemented delimiter and COBS framing plus three checksum engines.
+//! The S6 slice added SLIP (F1.4.3), Intel HEX (F1.4.3), sync-word and length
+//! framing (F1.4.4), and idle-gap framing (F1.4.5). Every mode a configuration
+//! can name now has a machine behind it.
 
 pub mod checksum;
+pub mod header_length;
+pub mod idle_gap;
+pub mod intel_hex;
 pub mod machine;
+pub mod slip;
 
 pub use checksum::{Checksum, crc8_atm, crc16_ccitt_false, crc32c};
+pub use header_length::HeaderLength;
+pub use idle_gap::IdleGap;
+pub use intel_hex::{HexRecord, IntelHex, parse_record};
 pub use machine::{
-    ByteMachine, Cobs, Delimiter, FrameError, cobs_decode, cobs_encode, machine_for,
+    ByteMachine, Cobs, DEFAULT_MAX_FRAME, Delimiter, FrameError, cobs_decode, cobs_encode,
+    header_length_machine, machine_for,
 };
+pub use slip::{Slip, slip_encode};
 
 /// Frame boundary rule of one port.
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -51,7 +60,7 @@ impl Framing {
 
     /// True when this build can run the mode.
     pub fn is_implemented(&self) -> bool {
-        matches!(self, Self::Delimiter(_) | Self::Cobs)
+        true
     }
 }
 

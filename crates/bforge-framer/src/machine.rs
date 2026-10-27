@@ -4,10 +4,20 @@
 //! can hand it whatever the transport returned. Splitting the input at any
 //! boundary must not change the frames, which the tests assert.
 
+use crate::{HeaderLength, IntelHex, Slip};
+
+/// Frame limit used when a port does not set one. A frame larger than this is a
+/// framing error, not a message.
+pub const DEFAULT_MAX_FRAME: usize = 64 * 1024;
+
 /// Anything that turns a byte stream into frames.
 pub trait ByteMachine {
     /// Consume bytes and push every frame completed by this call.
     fn feed(&mut self, bytes: &[u8], frames: &mut Vec<Vec<u8>>);
+
+    /// Advance the machine's clock. Only time-based framing uses it, and a test
+    /// drives it directly, so the machine never reads a clock of its own.
+    fn tick(&mut self, _now_ns: u64, _frames: &mut Vec<Vec<u8>>) {}
 
     /// Bytes held back, waiting for the rest of a frame.
     fn pending(&self) -> usize;
@@ -21,6 +31,8 @@ pub trait ByteMachine {
 pub enum FrameError {
     UnsupportedMode(String),
     MissingDelimiter,
+    /// The mode needs more than a name: a sync word, or a gap from the line speed.
+    NeedsConfig(&'static str),
 }
 
 impl std::fmt::Display for FrameError {
@@ -28,6 +40,12 @@ impl std::fmt::Display for FrameError {
         match self {
             Self::UnsupportedMode(mode) => write!(f, "framing mode `{mode}` is not supported yet"),
             Self::MissingDelimiter => write!(f, "framing mode `delimiter` needs a delimiter"),
+            Self::NeedsConfig(mode) => {
+                write!(
+                    f,
+                    "framing mode `{mode}` needs its own settings, not just a mode"
+                )
+            }
         }
     }
 }
@@ -50,8 +68,24 @@ pub fn machine_for(
             Ok(Box::new(Delimiter::new(delimiter, max_frame_bytes)))
         }
         "cobs" => Ok(Box::new(Cobs::new(max_frame_bytes))),
+        "slip" => Ok(Box::new(Slip::new(max_frame_bytes))),
+        "intel_hex" => Ok(Box::new(IntelHex::new(max_frame_bytes))),
+        "header_length" => Err(FrameError::NeedsConfig("header_length")),
+        "idle_gap" => Err(FrameError::NeedsConfig("idle_gap")),
         other => Err(FrameError::UnsupportedMode(other.to_string())),
     }
+}
+
+/// Build a sync-word machine. `length_offset` counts from the start of the sync
+/// word, and `adjust` is added to the length value to get the whole frame.
+pub fn header_length_machine(
+    sync: impl Into<Vec<u8>>,
+    length_offset: u8,
+    width: crate::LengthWidth,
+    adjust: i32,
+    max_frame_bytes: usize,
+) -> HeaderLength {
+    HeaderLength::new(sync.into(), length_offset, width, adjust, max_frame_bytes)
 }
 
 /// Splits on a single or multi-byte delimiter and drops the delimiter.
@@ -349,9 +383,19 @@ mod tests {
             machine_for("delimiter", None, 1024).err(),
             Some(FrameError::MissingDelimiter)
         );
+        assert!(machine_for("slip", None, 1024).is_ok());
+        assert!(machine_for("intel_hex", None, 1024).is_ok());
         assert_eq!(
-            machine_for("slip", None, 1024).err(),
-            Some(FrameError::UnsupportedMode("slip".to_string()))
+            machine_for("header_length", None, 1024).err(),
+            Some(FrameError::NeedsConfig("header_length"))
+        );
+        assert_eq!(
+            machine_for("idle_gap", None, 1024).err(),
+            Some(FrameError::NeedsConfig("idle_gap"))
+        );
+        assert_eq!(
+            machine_for("cobs2", None, 1024).err(),
+            Some(FrameError::UnsupportedMode("cobs2".to_string()))
         );
     }
 }

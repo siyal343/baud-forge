@@ -1,7 +1,9 @@
 # 0005 Framing and checksums
 
-Status: accepted (28 October 2026). Implements F1.4.1, F1.4.2, F1.4.6 and
-F1.5.1.
+Status: accepted (28 October 2026). Implements F1.4.1 to F1.4.7 and F1.5.1.
+Part one is delimiter and COBS with the checksums. Part two, added with the S6
+slice, is SLIP, Intel HEX, sync-word and length framing, idle-gap framing, and
+property tests over every machine.
 
 ## Problem
 
@@ -113,6 +115,75 @@ bad.toml: ports[0].baud_rate: 1 is outside 110 to 12000000
 bad.toml: ports[0].framing.crc: `crc32` is not a checksum; use crc8_atm, crc16_ccitt_false or crc32c
 2 problem(s) in bad.toml
 ```
+
+## Part two: the remaining modes (S6)
+
+### Behavior
+
+1. **SLIP (RFC 1055).** `END` (0xC0) ends a frame; `ESC` (0xDB) plus `ESC_END`
+   (0xDC) or `ESC_ESC` (0xDD) carries a literal `END` or `ESC` inside it. An
+   invalid escape costs one frame and is counted; it does not desynchronise the
+   next frame.
+2. **Intel HEX.** A frame is one line that starts with `:`, minus the colon and
+   the line ending. Bytes before the colon are noise. `parse_record` decodes
+   `byte_count`, `address`, `record_type` and `data`, and reports
+   `checksum_valid` rather than refusing a damaged record, because a reader wants
+   to show it.
+3. **Sync word plus length.** The machine hunts for the sync word, reads the
+   length field at `length_offset` in the configured width and byte order, adds
+   `header_len_adjust`, and takes exactly that many bytes. A length that is zero,
+   negative after the adjustment, or larger than the frame limit counts one
+   `resync` and drops a single byte, so a corrupted length cannot eat the stream.
+4. **Idle gap.** The boundary is time, not a byte. `tick` advances the clock and
+   `feed` never reads one, so a test decides exactly when the bus went quiet. The
+   frame is emitted on the first tick that is at least one gap after the last
+   byte, so detection lags the real silence by at most one tick.
+   `IdleGap::for_uart(baud, bits_per_char)` computes 3.5 character times.
+5. The factory builds every mode that needs only a name. `header_length` and
+   `idle_gap` return `NeedsConfig`, because a mode name is not enough to build
+   them.
+
+### Data
+
+| Mode | Settings |
+| --- | --- |
+| `delimiter` | delimiter bytes |
+| `cobs` | none |
+| `slip` | none |
+| `intel_hex` | none |
+| `header_length` | sync word, length offset, width, adjustment, limit |
+| `idle_gap` | gap in ns, limit |
+
+SLIP constants: `END 0xC0`, `ESC 0xDB`, `ESC_END 0xDC`, `ESC_ESC 0xDD`.
+
+### Test
+
+```sh
+cargo test -p bforge-framer
+```
+
+38 tests. Part two adds:
+
+- `slip`: splitting, escapes round tripping, a bad escape costing one frame,
+  every split point, an overlong frame.
+- `intel_hex`: records losing the colon, a line without one being counted, a
+  known record with a valid checksum, a damaged checksum reported, malformed text
+  refused.
+- `header_length`: frames split on the length field, a frame across feeds, noise
+  before the sync word, an impossible length forcing a resync, u16 and u32
+  lengths in both byte orders, the default helper.
+- `idle_gap`: a gap ending a frame, bytes after the gap starting a new one, a
+  quiet tick with no data, the 3.5-character rule at 115 200 and 9 600 baud, an
+  overlong run.
+- `framing_properties`: for COBS, SLIP, header-length and delimiter, the same
+  stream fed in one piece and in random pieces yields identical frames, twenty
+  rounds each with a deterministic generator.
+
+### Known cost
+
+The idle-gap machine needs its clock, so a caller that never ticks it emits
+nothing. The pipeline will tick it with the chunk timestamp when framing joins
+the read path in S8.
 
 ## Known cost
 

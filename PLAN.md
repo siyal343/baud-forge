@@ -29,6 +29,7 @@ state through one contract (F1.7).
 | S3 framing and validation | F1.4.1, F1.4.2, F1.4.6, F1.5.1 | done | 2000 COBS frames through 4 KB slabs, 0 invalid, all CRC-32C valid; `bforge config check` names each problem |
 | S4 record, replay, status | F1.5.2 to F1.5.4, F1.7.1 to F1.7.3 | done | ESP32-C3: 89 chunks sealed, JSON snapshot, JSONL events, replay at 4x with 2.3 ms worst lateness |
 | S5 measurement | F1.6.1, F1.6.2, F1.6.3 | done | 4 ports at 12 Mbaud for 60 s: 288 MB, 0 gaps, 11.9 MiB peak; 512 MiB vault read at 21.5 MiB peak |
+| S6a framers | F1.4.3, F1.4.4, F1.4.5, F1.4.7 | done | all six framing modes implemented; 38 framer tests, 4 property tests over random splits |
 
 S1 notes:
 
@@ -99,10 +100,30 @@ S5 notes:
 - The nightly workflow runs 600 s of stress plus a 1 GiB memory read and writes
   both reports into the job summary.
 
-Next action: the tracks. Track A is S6 (pins, USB binding, hotplug, yield, SLIP,
-Intel HEX, sync-word framing, idle-gap, compression, index, crash recovery).
-Track B is S7 (GUI shell). Track C is S11 (dissectors). Track C shares no code
-with Track B, so it can start while the window is built.
+S6a notes:
+
+- S7 (the GUI shell) cannot be built on this machine: Tauri needs the MSVC
+  linker and only the GNU toolchain is installed. Node 22 is present, so the
+  frontend could be written, but nothing could be compiled or verified. The
+  framing slice of S6 is pure Rust and fully verifiable, so it went first.
+- Idle-gap framing takes its clock from `tick`, never from `Instant::now()`. A
+  test decides when the bus went quiet, and the pipeline will pass the chunk
+  timestamp when framing joins the read path in S8.
+- `header_length` and `idle_gap` return `NeedsConfig` from the factory: a mode
+  name is not enough to build them, and pretending otherwise would invent
+  settings.
+- Property tests feed each machine one stream in one piece and in random pieces,
+  twenty rounds per machine, with a deterministic generator so a failure
+  reproduces.
+
+Remaining in S6: pins at 1 kHz (F1.2.3), USB tuple binding (F1.2.4), hotplug and
+reconnect (F1.2.5), port yield (F1.2.6, F1.5.6), segment compression (F1.3.4),
+the persisted index (F1.3.5), crash recovery (F1.3.7), `bforge assert` (F1.5.5)
+and the contract test (F1.7.4).
+
+Next action: S6b, the vault and the CLI. F1.3.7 (crash recovery), F1.3.5
+(persisted index), F1.5.5 (`bforge assert`) and F1.7.4 (contract test) need no
+hardware, and `assert` is what makes the tool useful in CI.
 
 ## What the setup did
 
