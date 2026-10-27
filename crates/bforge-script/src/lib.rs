@@ -33,7 +33,6 @@ pub struct FaultInjector {
     pub profile: FaultProfile,
 }
 
-
 /// Role of a two-port bridge (FR-MITM-01).
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum BridgeMode {

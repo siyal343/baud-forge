@@ -21,7 +21,9 @@ pub enum Framing {
         header_len_adjust: i32,
     },
     /// Split when the bus is silent for `micros` microseconds.
-    IdleGap { micros: u32 },
+    IdleGap {
+        micros: u32,
+    },
 }
 
 /// Width and byte order of the length field.

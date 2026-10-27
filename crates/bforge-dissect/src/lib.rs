@@ -12,10 +12,7 @@ use serde::{Deserialize, Serialize};
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub enum SchemaSource {
     /// Packed structs in a C header, parsed with `tree-sitter-c`.
-    CHeader {
-        file: String,
-        root_struct: String,
-    },
+    CHeader { file: String, root_struct: String },
     /// Protobuf message descriptor.
     Protobuf { file: String, message: String },
     /// Kaitai Struct definition.
@@ -47,20 +44,37 @@ pub struct DissectorIr {
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub enum IrOp {
     /// Read an unsigned integer of the given width.
-    UInt { offset: u32, width: u8, big_endian: bool },
-    /// Read a signed integer of the given width.
-    Int { offset: u32, width: u8, big_endian: bool },
-    /// Read an IEEE-754 float of 32 or 64 bits.
-    Float { offset: u32, width: u8, big_endian: bool },
-    /// Read `width` bits starting at `bit_offset` of the current word.
-    Bitfield {
-        bit_offset: u8,
+    UInt {
+        offset: u32,
         width: u8,
+        big_endian: bool,
     },
+    /// Read a signed integer of the given width.
+    Int {
+        offset: u32,
+        width: u8,
+        big_endian: bool,
+    },
+    /// Read an IEEE-754 float of 32 or 64 bits.
+    Float {
+        offset: u32,
+        width: u8,
+        big_endian: bool,
+    },
+    /// Read `width` bits starting at `bit_offset` of the current word.
+    Bitfield { bit_offset: u8, width: u8 },
     /// Read a fixed-length array of nested fields.
-    Array { offset: u32, count: u16, element: Box<IrOp> },
+    Array {
+        offset: u32,
+        count: u16,
+        element: Box<IrOp>,
+    },
     /// Read an enum value and map it to a label when the value matches.
-    Enum { offset: u32, width: u8, variants: Vec<(i64, String)> },
+    Enum {
+        offset: u32,
+        width: u8,
+        variants: Vec<(i64, String)>,
+    },
     /// Name the field produced by the wrapped operation.
     Label { name: String, op: Box<IrOp> },
 }

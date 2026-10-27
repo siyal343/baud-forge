@@ -129,7 +129,10 @@ mod tests {
         assert_eq!(port.id, "obc_telemetry");
         assert_eq!(port.baud_rate, 2_000_000);
         assert_eq!(port.framing.mode, "cobs");
-        assert_eq!(port.dissector.as_ref().unwrap().root_struct.as_deref(), Some("ObcTelemetryFrame"));
+        assert_eq!(
+            port.dissector.as_ref().unwrap().root_struct.as_deref(),
+            Some("ObcTelemetryFrame")
+        );
 
         let command = &config.commands[0];
         assert_eq!(command.hotkey.as_deref(), Some("Ctrl+Shift+S"));

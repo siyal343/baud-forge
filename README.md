@@ -1,5 +1,7 @@
 # BAUDFORGE
 
+[![CI](https://github.com/siyal343/baud-forge/actions/workflows/ci.yml/badge.svg)](https://github.com/siyal343/baud-forge/actions/workflows/ci.yml)
+
 **Forge, Frame, Fault-Inject.**
 
 BaudForge is a serial monitor, a protocol dissector and a fault-injection rig in
@@ -22,6 +24,20 @@ What works today:
 - `.bforge.toml` parses into typed structs.
 - `bforge help` and `bforge version` run.
 - The telemetry core inherited from porti-rs stays available as `legacy`.
+
+## Platforms
+
+| Target | Triple | CI coverage |
+| --- | --- | --- |
+| Linux x86_64 | `x86_64-unknown-linux-gnu` | build and test, `ubuntu-latest` |
+| Linux aarch64 | `aarch64-unknown-linux-gnu` | build and test, `ubuntu-24.04-arm` |
+| macOS Apple Silicon | `aarch64-apple-darwin` | build and test, `macos-latest` |
+| macOS Intel | `x86_64-apple-darwin` | cross-build, `macos-latest` |
+| Windows x86_64 | `x86_64-pc-windows-msvc` | build and test, `windows-latest` |
+| Windows ARM64 | `aarch64-pc-windows-msvc` | build and test, `windows-11-arm` |
+
+No crate contains target-specific code yet. Every crate is pure Rust, so one
+build covers all six targets.
 
 ## Why it exists
 
@@ -150,9 +166,20 @@ pin pulse or a webhook.
 
 ## Build
 
+Clone the repository first:
+
+```sh
+git clone https://github.com/siyal343/baud-forge.git
+cd baud-forge
+```
+
+Then build from the root of the workspace:
+
 ```sh
 cargo build --workspace     # all crates
 cargo test --workspace      # unit tests
+cargo fmt --all --check     # formatting, as CI runs it
+cargo clippy --workspace --all-targets -- -D warnings
 cargo run -p bforge-cli -- version
 cargo run                   # legacy binary
 ```
@@ -177,6 +204,20 @@ cargo +stable-x86_64-pc-windows-gnu build --workspace
 | 4. MITM and faults | 13–16 | Active bridge, bit-error generator, Lua runtime, session diff, hardware triggers |
 
 Progress notes live in [PLAN.md](PLAN.md).
+
+## Continuous integration
+
+The workflow [`.github/workflows/ci.yml`](.github/workflows/ci.yml) runs on
+every push to `main`, on every pull request and on demand. It has three jobs:
+
+- `lint` checks the format with `cargo fmt --check` and the lints with
+  `cargo clippy -D warnings`.
+- `test` builds and tests on five native runners, then runs the headless CLI.
+- `macos-intel` cross-builds the `x86_64-apple-darwin` target, because GitHub
+  no longer hosts an Intel macOS runner.
+
+The repository is public. The workflow needs no secret, and a fork runs the same
+checks without setup.
 
 ## License
 

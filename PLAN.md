@@ -14,6 +14,7 @@ specification does not change.
    `TransportDriver`, `FaultProfile`, `ProjectConfig`.
 4. Added the `.bforge.toml` schema and one sample workspace file.
 5. Added the `bforge` CLI with the `help` and `version` commands.
+6. Added the GitHub Actions workflow for the six target platforms.
 
 ## What is not implemented
 
@@ -43,12 +44,16 @@ Every crate compiles and holds types only. No crate runs an algorithm yet.
 - `ConfigError` shape for semantic validation. Duplicate port IDs, baud limits
   and unknown references are unchecked today.
 - License files. `LICENSE-MIT` and `LICENSE-APACHE` are not in the tree yet.
+- The `windows-11-arm` runner label is a public preview. Confirm it before the
+  first release build, and drop the matrix entry when GitHub removes it.
 
 ## Verified
 
 - `cargo build --workspace` succeeds, no warnings.
 - `cargo test --workspace` passes, one test: the sample `.bforge.toml` parses
   into `ProjectConfig`.
+- `cargo fmt --all --check` and `cargo clippy --workspace --all-targets -D
+  warnings` pass.
 - `bforge version` prints `bforge 0.1.0`.
 
 Toolchain used for the check: `stable-x86_64-pc-windows-gnu` on Windows, because
