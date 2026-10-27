@@ -8,6 +8,9 @@
 
 pub mod pipeline;
 pub mod slab;
+pub mod validate;
+
+pub use validate::ConfigIssue;
 
 use serde::{Deserialize, Serialize};
 

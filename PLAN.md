@@ -26,6 +26,7 @@ state through one contract (F1.7).
 | --- | --- | --- | --- |
 | S1 pipeline | F1.1.1 to F1.1.6 | done | 4 ports at 1.2 MB/s, 14.40 MB, 0 gaps, 0 overruns |
 | S2 transport and vault | F1.2.2, F1.2.7, F1.3.1 to F1.3.3, F1.3.6 | done | ESP32-C3 recorded over COM8; mock session 2.39 MB at 1.20 MB/s, window read back |
+| S3 framing and validation | F1.4.1, F1.4.2, F1.4.6, F1.5.1 | done | 2000 COBS frames through 4 KB slabs, 0 invalid, all CRC-32C valid; `bforge config check` names each problem |
 
 S1 notes:
 
@@ -54,8 +55,21 @@ S2 notes:
 - Hardware throughput is unmeasured: the demo proves the path, not the rate.
   F1.6.1 needs a firmware that streams without pause.
 
-Next action: stage S3. F1.4.1 (byte machine), F1.4.2 (delimiter and COBS),
-F1.4.6 (CRC engines) and F1.5.1 (config validation) per `IMPLEMENTATION.md`.
+S3 notes:
+
+- Validation reports a path such as `ports[0].baud_rate`, not a line number.
+  A line number is not reachable after deserialization; syntax errors keep the
+  parser's line and column.
+- The four modes that are not implemented yet (`slip`, `intel_hex`,
+  `header_length`, `idle_gap`) validate and then return `UnsupportedMode`, so a
+  configuration cannot silently fall back.
+- The checksum engines are bitwise. They carried 156 MB/s in the S3 run, so a
+  table-driven version is not needed for the 12 Mbaud target.
+- `MockTransport::stream` replays a fixed byte script. It is the hook for framing
+  and dissector tests, and it is how the S3 demo feeds the pipeline.
+
+Next action: stage S4. F1.5.2 (`ports list`), F1.5.3 (`record`), F1.5.4
+(`replay`) and F1.7.1 to F1.7.3 (the UI state contract) per `IMPLEMENTATION.md`.
 
 ## What the setup did
 

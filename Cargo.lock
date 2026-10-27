@@ -20,6 +20,7 @@ dependencies = [
 name = "bforge-core"
 version = "0.1.0"
 dependencies = [
+ "bforge-framer",
  "bforge-hal",
  "bforge-storage",
  "crossbeam-channel",
