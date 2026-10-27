@@ -66,6 +66,115 @@ Scope B ships a tool a firmware engineer can use every day. It defers hotplug,
 port yielding, TCP, SLIP/Intel HEX, mmap compression and the assert language to
 a follow-up. See "Phase 1B" below.
 
+## Flow from start to finish
+
+The phases say what to build. This section says in which order, what each step
+unblocks, and what exists when a step ends. Sixteen stages, four release cuts.
+
+```text
+P0  scaffold ................................ done
+ |
+ v
+S1  pipeline skeleton ............... gate G0        bytes move, counters count
+ |
+ v
+S2  real transport and vault ........ gate G2        UART or TCP, recorded and read back
+ |
+ v
+S3  framing and checksums ............ gate G3        frames, not a byte soup
+ |
+ v
+S4  CLI plus UI state contract                        record, replay, status --json
+ |
+ v
+S5  stress and memory proof                           two numbers, measured
+ |                                                    >>> v0.1 headless usable
+ +-------------------+---------------------+
+ |                   |                     |
+ v                   v                     v
+S6 transport and     S7 GUI shell          S11 dissectors ...... gate G5
+   vault hardening    ..... gate G4, G7     |  struct parser, native packs
+ |  hotplug, yield    six zones, responsive  v
+ |  crash safety      |                    S12 ELF badges
+ +--------------------+                     >>> v0.3 full decode
+ |                    |
+ |                    v
+ |                  S8 stream and plots (see)
+ |                    |
+ |                    v
+ |                  S9 act: forge, ribbon, sidebar
+ |                    |
+ |                    v
+ |                  S10 inspector and polish  >>> v0.2 desktop usable
+ |                    |
+ +--------------------+---------------------+
+                      v
+S13 intercept: tap and bridge
+                      v
+S14 fault: engine, Lua, studio ...... gate G6
+                      v
+S15 automate: control plane, transfers, diff
+                      v
+S16 release: license, installers, signing  >>> v1.0
+```
+
+### Stages
+
+| Stage | Work | What exists at the end | Demo |
+| --- | --- | --- | --- |
+| S1 | F1.1.1 to F1.1.6 | Slab pool, reader loop, fan-out, counters, mock source | Mock source fills the counters at 1.2 MB/s |
+| S2 | F1.2.2, F1.2.7, F1.3.1 to F1.3.3, F1.3.6 | UART and TCP drivers, `.bflog` writer and reader | Record 100 MB over UART, read a window back |
+| S3 | F1.4.1, F1.4.2, F1.4.6, F1.5.1 | Delimiter and COBS framing, three CRCs, config checks | COBS frames split at every boundary |
+| S4 | F1.5.2 to F1.5.4, F1.7.1 to F1.7.3 | `record`, `replay`, `ports list`, `status --json` | Headless round trip from the shell |
+| S5 | F1.6.1, F1.6.2 | Stress and memory harness, published numbers | 12 Mbaud, 0 dropped, RSS under 150 MB |
+| S6 | F1.2.3 to F1.2.6, F1.3.4, F1.3.5, F1.3.7, F1.4.3 to F1.4.5, F1.4.7, F1.5.5, F1.5.6, F1.6.3, F1.7.4 | Pins, USB binding, hotplug, yield, compression, index, crash recovery, assert | Replug during a session, flash, keep recording |
+| S7 | F2.1, F2.2, F2.11 | Window, tokens, six zones, responsive tiers, states | Six zones on one screen at four widths |
+| S8 | F2.3, F2.4 | Live stream, hex, plots, DVR scrubber | Drag the playhead, the stream follows |
+| S9 | F2.6, F2.7, F2.8 | Forge, ribbon, pins, yield button, footer, sidebar | Send a macro, toggle DTR, record from the GUI |
+| S10 | F2.5, F2.9, F2.10 | Inspector placeholder, hover highlight, accessibility | Hover a byte, the field lights up |
+| S11 | F3.1 to F3.4, F3.7 | Struct and native pack decoding in the tree | A firmware `.h` file alone decodes the stream |
+| S12 | F3.5, F3.6, F3.8 | ELF symbolizer, defmt, inline badges | A crash address becomes `file:line` on click |
+| S13 | F4.1, F4.2, F4.9.1 | Passive tap, active bridge, MITM pill | Two ports, one timeline |
+| S14 | F4.3, F4.4, F4.9.2, F4.9.3 | Fault engine, Lua runtime, fault studio | A bit flip leaves the wire and the CRC fails |
+| S15 | F4.5 to F4.8, F4.9.4, F4.9.5, F4.10 | Control plane, transfers, diff view, triggers | pytest drives a fault-injection run |
+| S16 | C3, C5 | License files, installers, signing, user guide | Install on a clean machine |
+
+### Parallel tracks
+
+After S5, three tracks can run at the same time with different owners. They meet
+again at S13.
+
+| Track | Stages | Depends on | Blocks |
+| --- | --- | --- | --- |
+| A. Transport and vault hardening | S6 | S2, S3 | Nothing on the GUI path |
+| B. GUI | S7 to S10 | S4 for the contract, S2 for data | S13, S14, S15 |
+| C. Dissection | S11, S12 | S3 for frames | S14, because Lua needs `dissect` |
+
+S6 can also start during S3, because the pin, USB and hotplug work shares no code
+with framing.
+
+### Critical path
+
+The longest chain, and the one to protect:
+
+```text
+S1 -> S2 -> S3 -> S4 -> S7 -> S8 -> S10 -> S11 -> S12 -> S13 -> S14 -> S15 -> S16
+```
+
+Track A is not on it. A slip in S6 delays a hardware feature, not a release cut.
+
+### Release cuts
+
+| Cut | After | A user can | Not yet |
+| --- | --- | --- | --- |
+| v0.1 headless | S5 | Record, replay and assert over UART and TCP from CI | No GUI |
+| v0.2 desktop | S10 | Watch, plot, scrub and send from the window | No field decoding |
+| v0.3 decode | S12 | Read structs and crash badges on screen | No interception |
+| v1.0 | S16 | Inject faults, run pytest, diff sessions, install | — |
+
+Each cut is a working product, not a checkpoint. Nothing ships that a user
+cannot run on a real board.
+
 ## Decision gates
 
 A gate is a short spike with a written answer. No feature that depends on a gate
