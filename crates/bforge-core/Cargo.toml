@@ -9,8 +9,10 @@ description = "Coordinator and workspace configuration for BaudForge"
 [dependencies]
 serde.workspace = true
 toml.workspace = true
+serde_json.workspace = true
 bforge-hal.workspace = true
 bforge-framer.workspace = true
+bforge-storage.workspace = true
 rtrb.workspace = true
 
 [dev-dependencies]

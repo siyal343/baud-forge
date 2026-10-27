@@ -7,7 +7,9 @@
 //! Setup only: the schema parses, nothing acts on it yet.
 
 pub mod pipeline;
+pub mod session;
 pub mod slab;
+pub mod ui;
 pub mod validate;
 
 pub use validate::ConfigIssue;

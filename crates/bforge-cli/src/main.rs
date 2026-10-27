@@ -1,28 +1,41 @@
-//! Headless entry point of BaudForge.
+//! Headless entry point of BaudForge (S4).
 //!
-//! S3 surface: `bforge config check` validates a workspace file and reports every
-//! problem with its path. `record`, `replay`, `assert` and `yield` are S4.
+//! `ports list`, `record`, `replay`, `status`, `config check`.
 
+use bforge_core::ProjectConfig;
+use bforge_core::session::{ReplayOptions, Session, replay_to, session_ports_from_config};
+use bforge_hal::uart::{UartConfig, UartTransport, available};
+use bforge_hal::{LineConfig, TransportDriver};
+use bforge_storage::LogReader;
 use std::path::Path;
 use std::process::ExitCode;
+use std::time::{Duration, Instant};
 
 const USAGE: &str = "\
 bforge <command>
 
 Commands:
-  help                        Show this text
-  version                     Show the version
-  config check <file>         Validate a .bforge.toml workspace
-  record                      Record a session to a .bflog file      (planned)
-  replay                      Send a .bflog session to a port        (planned)
-  assert                      Compare a session against a baseline   (planned)
-  yield                       Release a port so a flash tool can use it (planned)
+  help                          Show this text
+  version                       Show the version
+  config check <file>           Validate a .bforge.toml workspace
+  ports list [-c <file>]        List serial ports and the workspace match
+  record -c <file> -o <file>    Record the workspace into a .bflog vault
+         [--port <id>]... [--duration 5s] [--json] [--watch]
+  replay <vault> --to <device>  Send a vault back out of a port
+         [--baud 115200] [--speed 1.0]
+         or: -c <file> --port <id>
+  status -c <file>              Print the UI state contract as JSON
+         [--duration 1s] [--watch]
+
+`record` runs until the duration ends, or until Enter is pressed when no
+duration is given.
 ";
 
 fn main() -> ExitCode {
-    let mut args = std::env::args().skip(1);
+    let args: Vec<String> = std::env::args().skip(1).collect();
+    let command = args.first().map(String::as_str);
 
-    match args.next().as_deref() {
+    match command {
         None | Some("help") | Some("-h") | Some("--help") => {
             print!("{USAGE}");
             ExitCode::SUCCESS
@@ -31,13 +44,17 @@ fn main() -> ExitCode {
             println!("bforge {}", env!("CARGO_PKG_VERSION"));
             ExitCode::SUCCESS
         }
-        Some("config") => match args.next().as_deref() {
-            Some("check") => match args.next() {
-                Some(path) => check_config(&path),
+        Some("config") => match args.get(1).map(String::as_str) {
+            Some("check") => match args.get(2) {
+                Some(path) => check_config(path),
                 None => usage_error("config check needs a file"),
             },
             _ => usage_error("config needs the `check` subcommand"),
         },
+        Some("ports") => ports(&args[1..]),
+        Some("record") => record(&args[1..]),
+        Some("replay") => replay(&args[1..]),
+        Some("status") => status(&args[1..]),
         Some(other) => usage_error(&format!("unknown command `{other}`")),
     }
 }
@@ -48,38 +65,430 @@ fn usage_error(message: &str) -> ExitCode {
     ExitCode::FAILURE
 }
 
-fn check_config(path: &str) -> ExitCode {
-    let text = match std::fs::read_to_string(Path::new(path)) {
-        Ok(text) => text,
-        Err(error) => {
-            eprintln!("error: cannot read {path}: {error}");
-            return ExitCode::FAILURE;
-        }
-    };
+/// The smallest argument reader that covers this CLI.
+struct Args {
+    rest: Vec<String>,
+}
 
-    let config = match bforge_core::parse(&text) {
-        Ok(config) => config,
-        Err(error) => {
-            // The parser carries the line and the column of a syntax error.
-            eprintln!("error: {path}: {error}");
-            return ExitCode::FAILURE;
+impl Args {
+    fn new(args: &[String]) -> Self {
+        Self {
+            rest: args.to_vec(),
         }
-    };
+    }
 
+    /// Remove `--name value` and return the value.
+    fn value(&mut self, name: &str) -> Option<String> {
+        let index = self.rest.iter().position(|arg| arg == name)?;
+        if index + 1 >= self.rest.len() {
+            return None;
+        }
+        let value = self.rest.remove(index + 1);
+        self.rest.remove(index);
+        Some(value)
+    }
+
+    /// Remove every `--name value` pair.
+    fn values(&mut self, name: &str) -> Vec<String> {
+        let mut found = Vec::new();
+        while let Some(value) = self.value(name) {
+            found.push(value);
+        }
+        found
+    }
+
+    fn flag(&mut self, name: &str) -> bool {
+        match self.rest.iter().position(|arg| arg == name) {
+            Some(index) => {
+                self.rest.remove(index);
+                true
+            }
+            None => false,
+        }
+    }
+
+    fn positional(&mut self) -> Option<String> {
+        if self.rest.is_empty() {
+            None
+        } else {
+            Some(self.rest.remove(0))
+        }
+    }
+
+    fn unknown(&self) -> Option<&String> {
+        self.rest.iter().find(|arg| arg.starts_with("--"))
+    }
+}
+
+fn parse_duration(text: &str) -> Option<Duration> {
+    let text = text.trim();
+    if let Some(value) = text.strip_suffix("ms") {
+        return value.parse().ok().map(Duration::from_millis);
+    }
+    if let Some(value) = text.strip_suffix('s') {
+        let seconds: f64 = value.parse().ok()?;
+        return Some(Duration::from_secs_f64(seconds));
+    }
+    text.parse().ok().map(Duration::from_secs)
+}
+
+fn load_config(path: &str) -> Result<ProjectConfig, ExitCode> {
+    let text = std::fs::read_to_string(Path::new(path)).map_err(|error| {
+        eprintln!("error: cannot read {path}: {error}");
+        ExitCode::FAILURE
+    })?;
+    let config = bforge_core::parse(&text).map_err(|error| {
+        eprintln!("error: {path}: {error}");
+        ExitCode::FAILURE
+    })?;
     let issues = config.validate();
-    if issues.is_empty() {
-        println!(
-            "{path}: ok, {} port(s), {} command(s), {} alert(s)",
-            config.ports.len(),
-            config.commands.len(),
-            config.alerts.len()
-        );
-        return ExitCode::SUCCESS;
+    if !issues.is_empty() {
+        for issue in &issues {
+            println!("{path}: {issue}");
+        }
+        eprintln!("{} problem(s) in {path}", issues.len());
+        return Err(ExitCode::FAILURE);
+    }
+    Ok(config)
+}
+
+fn check_config(path: &str) -> ExitCode {
+    match load_config(path) {
+        Ok(config) => {
+            println!(
+                "{path}: ok, {} port(s), {} command(s), {} alert(s)",
+                config.ports.len(),
+                config.commands.len(),
+                config.alerts.len()
+            );
+            ExitCode::SUCCESS
+        }
+        Err(code) => code,
+    }
+}
+
+fn ports(args: &[String]) -> ExitCode {
+    let mut args = Args::new(args);
+    let _ = args.flag("list");
+    let config_path = args.value("-c");
+    if let Some(unknown) = args.unknown() {
+        return usage_error(&format!("unknown option `{unknown}`"));
     }
 
-    for issue in &issues {
-        println!("{path}: {issue}");
+    let config = match config_path.as_deref().map(load_config).transpose() {
+        Ok(config) => config,
+        Err(code) => return code,
+    };
+
+    let devices = match available() {
+        Ok(devices) => devices,
+        Err(error) => {
+            eprintln!("error: cannot enumerate ports: {error}");
+            return ExitCode::FAILURE;
+        }
+    };
+
+    println!(
+        "{:<10} {:<10} {:<20} {:<18} state",
+        "device", "vid:pid", "serial", "workspace port"
+    );
+    for device in devices {
+        let matched = config.as_ref().and_then(|config| {
+            config
+                .ports
+                .iter()
+                .find(|port| matches(port, &device))
+                .map(|port| port.id.clone())
+        });
+        let state = if matched.is_some() { "bound" } else { "-" };
+        println!(
+            "{:<10} {:<10} {:<20} {:<18} {}",
+            device.device_path,
+            device.vid_pid.unwrap_or_else(|| "-".into()),
+            device.serial.unwrap_or_else(|| "-".into()),
+            matched.unwrap_or_else(|| "-".into()),
+            state
+        );
     }
-    eprintln!("{} problem(s) in {path}", issues.len());
-    ExitCode::FAILURE
+    ExitCode::SUCCESS
+}
+
+fn matches(port: &bforge_core::PortConfig, device: &bforge_hal::DeviceId) -> bool {
+    if let Some(path) = &port.device_path {
+        return path == &device.device_path;
+    }
+    if let Some(tuple) = &port.match_vid_pid {
+        if device.vid_pid.as_deref() != Some(tuple.as_str()) {
+            return false;
+        }
+        return port
+            .match_serial
+            .as_ref()
+            .is_none_or(|serial| device.serial.as_deref() == Some(serial.as_str()));
+    }
+    false
+}
+
+fn record(args: &[String]) -> ExitCode {
+    let mut args = Args::new(args);
+    let config_path = args.value("-c");
+    let out = args.value("-o");
+    let only = args.values("--port");
+    let duration = args.value("--duration");
+    let json = args.flag("--json");
+    let watch = args.flag("--watch");
+    if let Some(unknown) = args.unknown() {
+        return usage_error(&format!("unknown option `{unknown}`"));
+    }
+    let (Some(config_path), Some(out)) = (config_path, out) else {
+        return usage_error("record needs -c <workspace> and -o <vault>");
+    };
+    let duration = match duration.as_deref() {
+        Some(text) => match parse_duration(text) {
+            Some(duration) => Some(duration),
+            None => return usage_error("--duration needs 500ms, 5s or a number of seconds"),
+        },
+        None => None,
+    };
+
+    let config = match load_config(&config_path) {
+        Ok(config) => config,
+        Err(code) => return code,
+    };
+    let ports = match session_ports_from_config(&config, &only) {
+        Ok(ports) => ports,
+        Err(error) => {
+            eprintln!("error: {error}");
+            return ExitCode::FAILURE;
+        }
+    };
+
+    let mut session = match Session::start(
+        ports,
+        Some(Path::new(&out)),
+        config.workspace.elf_path.clone(),
+    ) {
+        Ok(session) => session,
+        Err(error) => {
+            eprintln!("error: {error}");
+            return ExitCode::FAILURE;
+        }
+    };
+
+    let events = session.subscribe();
+    let stop = stop_signal(duration);
+    println!("recording {} port(s) into {out}", session.port_count());
+
+    let mut last_report = Instant::now();
+    loop {
+        match session.pump_once() {
+            Ok(0) => std::thread::sleep(Duration::from_millis(2)),
+            Ok(_) => {}
+            Err(error) => {
+                eprintln!("error: {error}");
+                return ExitCode::FAILURE;
+            }
+        }
+        if watch {
+            while let Ok(event) = events.try_recv() {
+                println!("{}", serde_json::to_string(&event).unwrap_or_default());
+            }
+        }
+        if stop() {
+            break;
+        }
+        if !json && last_report.elapsed() > Duration::from_secs(1) {
+            let snapshot = session.snapshot();
+            println!(
+                "{:>6.1}s  {} chunks  {:.2} MB",
+                snapshot.session.elapsed_ms as f64 / 1000.0,
+                snapshot.session.chunks,
+                snapshot.session.payload_bytes as f64 / 1_000_000.0
+            );
+            last_report = Instant::now();
+        }
+    }
+
+    let snapshot_before = session.snapshot();
+    match session.seal() {
+        Ok(summary) => {
+            let seconds = snapshot_before.session.elapsed_ms as f64 / 1000.0;
+            println!(
+                "\nsealed {}: {} chunks, {} bytes in {:.2} s ({:.0} B/s), {} segment(s)",
+                summary.path.display(),
+                summary.chunks,
+                summary.payload_bytes,
+                seconds,
+                summary.payload_bytes as f64 / seconds.max(0.001),
+                summary.segments
+            );
+            if json {
+                println!(
+                    "{}",
+                    serde_json::to_string_pretty(&snapshot_before).unwrap()
+                );
+            }
+            ExitCode::SUCCESS
+        }
+        Err(error) => {
+            eprintln!("error: {error}");
+            ExitCode::FAILURE
+        }
+    }
+}
+
+/// A stop condition: a deadline, or Enter on standard input.
+fn stop_signal(duration: Option<Duration>) -> impl Fn() -> bool {
+    let deadline = duration.map(|duration| Instant::now() + duration);
+    let pressed = std::sync::Arc::new(std::sync::atomic::AtomicBool::new(false));
+    if deadline.is_none() {
+        let pressed = std::sync::Arc::clone(&pressed);
+        std::thread::spawn(move || {
+            let mut line = String::new();
+            let _ = std::io::stdin().read_line(&mut line);
+            pressed.store(true, std::sync::atomic::Ordering::Relaxed);
+        });
+    }
+    move || {
+        deadline.is_some_and(|deadline| Instant::now() >= deadline)
+            || pressed.load(std::sync::atomic::Ordering::Relaxed)
+    }
+}
+
+fn replay(args: &[String]) -> ExitCode {
+    let mut args = Args::new(args);
+    let vault = args.positional();
+    let to = args.value("--to");
+    let baud = args
+        .value("--baud")
+        .and_then(|value| value.parse::<u32>().ok())
+        .unwrap_or(115_200);
+    let speed = args
+        .value("--speed")
+        .and_then(|value| value.parse::<f64>().ok())
+        .unwrap_or(1.0);
+    let config_path = args.value("-c");
+    let port_id = args.value("--port");
+    if let Some(unknown) = args.unknown() {
+        return usage_error(&format!("unknown option `{unknown}`"));
+    }
+    let Some(vault) = vault else {
+        return usage_error("replay needs a vault file");
+    };
+
+    let mut reader = match LogReader::open(&vault) {
+        Ok(reader) => reader,
+        Err(error) => {
+            eprintln!("error: {vault}: {error}");
+            return ExitCode::FAILURE;
+        }
+    };
+
+    let mut transport: Box<dyn TransportDriver> = if let Some(device) = to {
+        Box::new(UartTransport::new(UartConfig {
+            device,
+            line: LineConfig {
+                baud_rate: baud,
+                ..Default::default()
+            },
+            read_timeout: Duration::from_millis(50),
+        }))
+    } else {
+        let (Some(config_path), Some(port_id)) = (config_path, port_id) else {
+            return usage_error("replay needs --to <device>, or -c <workspace> --port <id>");
+        };
+        let config = match load_config(&config_path) {
+            Ok(config) => config,
+            Err(code) => return code,
+        };
+        match session_ports_from_config(&config, std::slice::from_ref(&port_id)) {
+            Ok(mut ports) => ports.remove(0).transport,
+            Err(error) => {
+                eprintln!("error: {error}");
+                return ExitCode::FAILURE;
+            }
+        }
+    };
+
+    println!(
+        "replaying {vault}: {} chunks at speed {speed}",
+        reader.chunks()
+    );
+    match replay_to(&mut reader, transport.as_mut(), ReplayOptions { speed }) {
+        Ok(report) => {
+            println!(
+                "sent {} chunks, {} bytes in {:.2} s, worst lateness {:.1} ms",
+                report.chunks,
+                report.payload_bytes,
+                report.elapsed.as_secs_f64(),
+                report.max_lag_ms
+            );
+            ExitCode::SUCCESS
+        }
+        Err(error) => {
+            eprintln!("error: {error}");
+            ExitCode::FAILURE
+        }
+    }
+}
+
+fn status(args: &[String]) -> ExitCode {
+    let mut args = Args::new(args);
+    let config_path = args.value("-c");
+    let duration = args
+        .value("--duration")
+        .as_deref()
+        .and_then(parse_duration)
+        .unwrap_or(Duration::from_secs(1));
+    let watch = args.flag("--watch");
+    if let Some(unknown) = args.unknown() {
+        return usage_error(&format!("unknown option `{unknown}`"));
+    }
+    let Some(config_path) = config_path else {
+        return usage_error("status needs -c <workspace>");
+    };
+
+    let config = match load_config(&config_path) {
+        Ok(config) => config,
+        Err(code) => return code,
+    };
+    let ports = match session_ports_from_config(&config, &[]) {
+        Ok(ports) => ports,
+        Err(error) => {
+            eprintln!("error: {error}");
+            return ExitCode::FAILURE;
+        }
+    };
+    let mut session = match Session::start(ports, None, config.workspace.elf_path.clone()) {
+        Ok(session) => session,
+        Err(error) => {
+            eprintln!("error: {error}");
+            return ExitCode::FAILURE;
+        }
+    };
+
+    let events = session.subscribe();
+    let deadline = Instant::now() + duration;
+    while Instant::now() < deadline {
+        match session.pump_once() {
+            Ok(0) => std::thread::sleep(Duration::from_millis(2)),
+            Ok(_) => {}
+            Err(error) => {
+                eprintln!("error: {error}");
+                return ExitCode::FAILURE;
+            }
+        }
+        if watch {
+            while let Ok(event) = events.try_recv() {
+                println!("{}", serde_json::to_string(&event).unwrap_or_default());
+            }
+        }
+    }
+
+    if !watch {
+        let snapshot = session.snapshot();
+        println!("{}", serde_json::to_string_pretty(&snapshot).unwrap());
+    }
+    let _ = session.seal();
+    ExitCode::SUCCESS
 }

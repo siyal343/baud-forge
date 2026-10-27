@@ -57,6 +57,18 @@ impl PinStateFlags {
     }
 }
 
+impl PortState {
+    /// The name used in the status contract.
+    pub fn as_str(self) -> &'static str {
+        match self {
+            Self::Closed => "closed",
+            Self::Open => "open",
+            Self::Reconnecting => "reconnecting",
+            Self::Yielded => "yielded",
+        }
+    }
+}
+
 /// Lifecycle state of one transport (FR-HAL-03).
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Default, Serialize, Deserialize)]
 pub enum PortState {

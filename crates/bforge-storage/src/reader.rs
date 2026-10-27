@@ -4,7 +4,7 @@
 //! 1024 chunks, so a window read touches only the records it returns. Memory
 //! stays constant, whatever the file size.
 
-use crate::format::{HEADER_LEN, INDEX_STRIDE, LogHeader, RECORD_HEADER_LEN, decode_record};
+use crate::format::{HEADER_LEN, LogHeader, RECORD_HEADER_LEN, decode_record};
 use crate::{RawChunk, SparseIndex, StorageError};
 use std::fs::File;
 use std::io::{Read, Seek, SeekFrom};
@@ -79,22 +79,25 @@ impl LogReader {
         self.damaged_tail
     }
 
-    /// Read one record by chunk sequence. Returns `None` past the last record.
-    pub fn read_at(&mut self, seq_id: u64) -> Result<Option<LogRecord>, StorageError> {
-        if seq_id >= self.chunks {
+    /// Read one record by its position in the file, counting from zero.
+    ///
+    /// The seek key is the record ordinal, not the chunk sequence: every port
+    /// starts its own sequence at zero, so the sequence in a record is unique
+    /// only within that port. `chunk.seq_id` is carried through untouched.
+    pub fn read_at(&mut self, frame_id: u64) -> Result<Option<LogRecord>, StorageError> {
+        if frame_id >= self.chunks {
             return Ok(None);
         }
-        let mut position = match self.index.seek_frame(seq_id) {
-            Some(entry) => entry.file_offset,
-            None => HEADER_LEN as u64,
+        let (mut ordinal, mut position) = match self.index.seek_frame(frame_id) {
+            Some(entry) => (entry.frame_id, entry.file_offset),
+            None => (0, HEADER_LEN as u64),
         };
 
-        // At most INDEX_STRIDE records sit between the index entry and the target.
-        for _ in 0..INDEX_STRIDE {
+        while ordinal <= frame_id {
             let chunk = self.read_record_at(position)?;
             let len = chunk.payload_len as u64;
             let payload_offset = position + RECORD_HEADER_LEN as u64;
-            if chunk.seq_id == seq_id {
+            if ordinal == frame_id {
                 let mut payload = vec![0u8; len as usize];
                 self.file.seek(SeekFrom::Start(payload_offset))?;
                 self.file.read_exact(&mut payload)?;
@@ -108,17 +111,16 @@ impl LogReader {
                 return Ok(Some(record));
             }
             position = payload_offset + len;
+            ordinal += 1;
         }
-        Err(StorageError::Io(format!(
-            "chunk {seq_id} is not within {INDEX_STRIDE} records of its index entry"
-        )))
+        Ok(None)
     }
 
-    /// Read `count` records starting at `seq_id`, clipped to the end of file.
-    pub fn window(&mut self, seq_id: u64, count: usize) -> Result<Vec<LogRecord>, StorageError> {
+    /// Read `count` records starting at record `frame_id`, clipped to the end.
+    pub fn window(&mut self, frame_id: u64, count: usize) -> Result<Vec<LogRecord>, StorageError> {
         let mut records = Vec::with_capacity(count);
         for offset in 0..count as u64 {
-            match self.read_at(seq_id + offset)? {
+            match self.read_at(frame_id + offset)? {
                 Some(record) => records.push(record),
                 None => break,
             }

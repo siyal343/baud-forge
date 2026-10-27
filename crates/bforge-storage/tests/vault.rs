@@ -145,6 +145,35 @@ fn a_truncated_tail_is_reported_not_fatal() {
 }
 
 #[test]
+fn records_from_two_ports_keep_their_own_sequences() {
+    // Every port starts its sequence at zero, so the file holds two records with
+    // seq_id 0. The seek key is the record ordinal, not the sequence.
+    let path = temp_path("two-ports");
+    let mut writer = LogWriter::create(&path, header()).unwrap();
+    for seq in 0..2u64 {
+        for port in 0..2u16 {
+            let mut record = chunk(seq, 16);
+            record.port_id = port;
+            writer
+                .append(&record, &payload(seq + u64::from(port) * 10, 16))
+                .unwrap();
+        }
+    }
+    writer.seal().unwrap();
+
+    let mut reader = LogReader::open(&path).unwrap();
+    assert_eq!(reader.chunks(), 4);
+    let window = reader.window(0, 4).unwrap();
+    let seen: Vec<(u16, u64)> = window
+        .iter()
+        .map(|record| (record.chunk.port_id, record.chunk.seq_id))
+        .collect();
+    assert_eq!(seen, vec![(0, 0), (1, 0), (0, 1), (1, 1)]);
+    assert_eq!(window[1].payload, payload(10, 16));
+    let _ = std::fs::remove_file(&path);
+}
+
+#[test]
 fn chunks_carry_every_direction() {
     let path = temp_path("directions");
     let mut writer = LogWriter::create(&path, header()).unwrap();

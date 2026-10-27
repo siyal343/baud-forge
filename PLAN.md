@@ -27,6 +27,7 @@ state through one contract (F1.7).
 | S1 pipeline | F1.1.1 to F1.1.6 | done | 4 ports at 1.2 MB/s, 14.40 MB, 0 gaps, 0 overruns |
 | S2 transport and vault | F1.2.2, F1.2.7, F1.3.1 to F1.3.3, F1.3.6 | done | ESP32-C3 recorded over COM8; mock session 2.39 MB at 1.20 MB/s, window read back |
 | S3 framing and validation | F1.4.1, F1.4.2, F1.4.6, F1.5.1 | done | 2000 COBS frames through 4 KB slabs, 0 invalid, all CRC-32C valid; `bforge config check` names each problem |
+| S4 record, replay, status | F1.5.2 to F1.5.4, F1.7.1 to F1.7.3 | done | ESP32-C3: 89 chunks sealed, JSON snapshot, JSONL events, replay at 4x with 2.3 ms worst lateness |
 
 S1 notes:
 
@@ -68,8 +69,22 @@ S3 notes:
 - `MockTransport::stream` replays a fixed byte script. It is the hook for framing
   and dissector tests, and it is how the S3 demo feeds the pipeline.
 
-Next action: stage S4. F1.5.2 (`ports list`), F1.5.3 (`record`), F1.5.4
-(`replay`) and F1.7.1 to F1.7.3 (the UI state contract) per `IMPLEMENTATION.md`.
+S4 notes:
+
+- The vault seek key is the record ordinal, not the chunk sequence. Every port
+  starts its own sequence at zero, so a two-port recording holds two records with
+  `seq_id 0`. The reader compared against `seq_id` and failed on the second port;
+  `records_from_two_ports_keep_their_own_sequences` now holds the line.
+- The event bus replays the last event to a new subscriber. Without it the CLI,
+  which subscribes after `Session::start`, never sees `Started`.
+- A recorder runs one consumer per port. The framing consumer arrives in S5, so
+  overruns are zero by construction today.
+- `record` without `--duration` stops on Enter. Ctrl-C leaves an unsealed vault,
+  which the reader reports as `damaged_tail` until F1.3.7.
+
+Next action: stage S5, the measurement stage. F1.6.1 (stress harness, 4 ports at
+12 Mbaud), F1.6.2 (memory assertion) and F1.6.3 (nightly job) per
+`IMPLEMENTATION.md`. After S5 the work forks into the three tracks.
 
 ## What the setup did
 

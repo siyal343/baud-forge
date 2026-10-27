@@ -49,6 +49,8 @@ impl Default for PipelineConfig {
 /// Counters for one pipeline.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
 pub struct PipelineStats {
+    /// Pins and error bits from the most recent chunk.
+    pub line_state: u16,
     pub chunks: u64,
     pub bytes: u64,
     /// Slabs dropped because a non-logger consumer was full.
@@ -69,6 +71,7 @@ impl PipelineStats {
 
 #[derive(Debug, Default)]
 struct Counters {
+    line_state: AtomicU64,
     chunks: AtomicU64,
     bytes: AtomicU64,
     overruns: AtomicU64,
@@ -79,6 +82,7 @@ struct Counters {
 impl Counters {
     fn snapshot(&self) -> PipelineStats {
         PipelineStats {
+            line_state: self.line_state.load(Ordering::Relaxed) as u16,
             chunks: self.chunks.load(Ordering::Relaxed),
             bytes: self.bytes.load(Ordering::Relaxed),
             overruns: self.overruns.load(Ordering::Relaxed),
@@ -220,6 +224,9 @@ fn read_loop(
         seq_id += 1;
         counters.chunks.fetch_add(1, Ordering::Relaxed);
         counters.bytes.fetch_add(len as u64, Ordering::Relaxed);
+        counters
+            .line_state
+            .store(u64::from(meta.line_state.0), Ordering::Relaxed);
 
         let slab = Arc::new(Slab::new(meta, buffer, Some(pool.recycle_handle())));
 

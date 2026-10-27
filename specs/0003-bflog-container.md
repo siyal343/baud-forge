@@ -27,9 +27,13 @@ the persisted index (F1.3.5), full crash recovery (F1.3.7), and the exporters
    boundary, and always on `seal`. A lost tail is therefore at most one segment
    of data, never a corrupted middle.
 5. The reader scans record headers once on open and keeps one index entry per
-   1024 chunks. A window read seeks to the nearest entry, then walks forward at
-   most 1024 records.
-6. A file that ends in a partial record opens successfully. `damaged_tail`
+   1024 records. A window read seeks to the nearest entry, then walks forward.
+6. The seek key is the record ordinal, counted from zero in file order. The
+   chunk sequence in a record is the port's own counter, so two ports both
+   produce sequence 0. A reader that seeks by sequence reads the wrong record
+   for the second port; `records_from_two_ports_keep_their_own_sequences` holds
+   that line.
+7. A file that ends in a partial record opens successfully. `damaged_tail`
    reports it and the reader stops at the last complete record.
 
 ## Data

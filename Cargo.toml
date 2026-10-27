@@ -36,6 +36,7 @@ repository = "https://github.com/siyal343/baud-forge"
 [workspace.dependencies]
 serde = { version = "1.0", features = ["derive"] }
 toml = "0.8"
+serde_json = "1"
 rtrb = "0.3"
 crossbeam-channel = "0.5"
 serialport = "4"
