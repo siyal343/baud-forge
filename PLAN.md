@@ -55,6 +55,9 @@ Every crate compiles and holds types only. No crate runs an algorithm yet.
 - `cargo fmt --all --check` and `cargo clippy --workspace --all-targets -D
   warnings` pass.
 - `bforge version` prints `bforge 0.1.0`.
+- CI run 40473503649 passed on all seven jobs: format and lints, five native
+  test runners, and the macOS Intel cross-build. The `windows-11-arm` and
+  `ubuntu-24.04-arm` labels resolved.
 
 Toolchain used for the check: `stable-x86_64-pc-windows-gnu` on Windows, because
 this machine has no MSVC linker. The project itself does not depend on that
