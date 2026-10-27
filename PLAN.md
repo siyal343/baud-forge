@@ -5,7 +5,9 @@ Setup record and status of the BaudForge project. The design source is
 specification does not change.
 
 The work breakdown, with phases, features, subfeatures and gates, is in
-[IMPLEMENTATION.md](IMPLEMENTATION.md).
+[IMPLEMENTATION.md](IMPLEMENTATION.md). It now also carries the GUI: every
+subfeature names the workbench band that shows it, and the engine publishes that
+state through one contract (F1.7).
 
 ## Status
 

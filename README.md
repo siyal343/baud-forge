@@ -164,6 +164,33 @@ fields = [
 `alerts` runs a condition against the live stream and fires actions, such as a
 pin pulse or a webhook.
 
+## GUI workbench
+
+The desktop window follows [`specs/UI-UX-Guide.md`](specs/UI-UX-Guide.md). Six
+bands fill one screen, with no modal dialogs.
+
+| Band | Content |
+| --- | --- |
+| 1. Hardware ribbon | Port pill, baud, yield button, live pin matrix |
+| 2. Left sidebar | Connected ports, loaded schemas, saved macros |
+| 3A. Stream and hex | Δt in µs, direction, hex, decoded text and inline badges |
+| 3B. Telemetry and DVR | WebGL plots, state lanes, time scrubber |
+| 4. Right inspector | Dissector tree and fault injector |
+| 5. Command forge | Typed field pills with a live encoded preview |
+| 6. Telemetry footer | Vault size, dropped bytes, throughput, ELF sync |
+
+Four interactions define the product: byte-to-field highlighting in both
+directions, plot-this-field on every numeric leaf, inline ELF crash badges with
+a source popover, and a visible flash-yield handover.
+
+Color carries state only: emerald for valid and connected, cyan for transmit and
+selection, amber for yield and drift, crimson for faults. Every color also gets
+a label or an icon, so the display works for a color-blind engineer.
+
+One rule ties the engine to the screen: **every state an engineer can see has a
+GUI surface in the same phase or earlier.** The engine publishes that state
+through one contract, so the CLI can print it as JSON and the GUI draws it.
+
 ## Build
 
 Clone the repository first:
