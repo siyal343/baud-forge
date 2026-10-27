@@ -237,6 +237,7 @@ cargo +stable-x86_64-pc-windows-gnu build --workspace
 | 4. MITM and faults | 13–16 | Active bridge, bit-error generator, Lua runtime, session diff, hardware triggers |
 
 Work breakdown by phase, feature and subfeature: [IMPLEMENTATION.md](IMPLEMENTATION.md).
+A one-page plan sheet in Apollo handbook style: [docs/handbook/baudforge-plan.pdf](docs/handbook/baudforge-plan.pdf).
 Progress notes: [PLAN.md](PLAN.md).
 
 ## Continuous integration
