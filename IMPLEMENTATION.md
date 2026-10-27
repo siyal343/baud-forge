@@ -191,6 +191,10 @@ F1.4.4, F1.4.5, F1.4.7, F1.5.5, F1.5.6, F1.6.3.
 
 Owns: `bforge-gui`, `ui/`. Depends on: F1.3.6 and F1.5.3.
 
+The visual language, the color tokens, the type scale and the five-zone layout
+come from [`specs/UI-UX-Guide.md`](specs/UI-UX-Guide.md). It is the input for
+F2.2.1 and for the renderers in F2.3 and F2.4.
+
 ### F2.1 Desktop host
 
 | ID | Subfeature | Size | Done when |
@@ -204,7 +208,7 @@ Owns: `bforge-gui`, `ui/`. Depends on: F1.3.6 and F1.5.3.
 
 | ID | Subfeature | Size | Done when |
 | --- | --- | --- | --- |
-| F2.2.1 | SolidJS, Vite, TypeScript, lint and format, token file | M | `npm ci && npm run build` is green in CI |
+| F2.2.1 | SolidJS, Vite, TypeScript, lint and format, tokens from the UI guide | M | `npm ci && npm run build` is green in CI |
 | F2.2.2 | App shell: split panes, toolbars, status bar, keyboard map | M | Layout survives a window resize at 60 FPS |
 
 ### F2.3 Terminal
