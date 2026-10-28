@@ -224,3 +224,56 @@ fn a_frame_limit_must_be_sane() {
     let ok = parse(&framing_doc("{ mode = \"cobs\", max_frame = 4096 }"));
     assert!(ok.validate().is_empty(), "{:?}", ok.validate());
 }
+
+fn transport_doc(port_lines: &str) -> String {
+    format!(
+        r#"
+[workspace]
+name = "transports"
+version = "1.0"
+
+[[ports]]
+{port_lines}
+"#
+    )
+}
+
+#[test]
+fn a_socket_port_needs_an_address() {
+    let missing = parse(&transport_doc(
+        "id = \"sim\"\ntransport = \"tcp-client\"\nbaud_rate = 115200\nframing = { mode = \"cobs\" }",
+    ));
+    assert_eq!(issue_paths(&missing), vec!["ports[0].address".to_string()]);
+
+    let malformed = parse(&transport_doc(
+        "id = \"sim\"\ntransport = \"udp\"\naddress = \"localhost\"\nbaud_rate = 115200\nframing = { mode = \"cobs\" }",
+    ));
+    assert_eq!(
+        issue_paths(&malformed),
+        vec!["ports[0].address".to_string()]
+    );
+
+    let ok = parse(&transport_doc(
+        "id = \"sim\"\ntransport = \"tcp-client\"\naddress = \"127.0.0.1:9100\"\nbaud_rate = 115200\nframing = { mode = \"cobs\" }",
+    ));
+    assert!(ok.validate().is_empty(), "{:?}", ok.validate());
+}
+
+#[test]
+fn an_unknown_transport_is_named() {
+    let doc = parse(&transport_doc(
+        "id = \"sim\"\ntransport = \"carrier-pigeon\"\naddress = \"x:1\"\nbaud_rate = 115200\nframing = { mode = \"cobs\" }",
+    ));
+    assert_eq!(issue_paths(&doc), vec!["ports[0].transport".to_string()]);
+}
+
+#[test]
+fn a_serial_port_still_needs_a_binding() {
+    let doc = parse(&transport_doc(
+        "id = \"serial\"\nbaud_rate = 115200\nframing = { mode = \"cobs\" }",
+    ));
+    assert_eq!(
+        issue_paths(&doc),
+        vec!["ports[0].match_vid_pid".to_string()]
+    );
+}

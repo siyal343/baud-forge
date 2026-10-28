@@ -38,6 +38,7 @@ state through one contract (F1.7).
 | S6d yield | F1.2.6, F1.5.6 | done | a second process can open COM8 while the session reports yielded, and the session takes it back when the window ends |
 | Test firmware | `firmware/bforge_test` | done | esptool flashed 298 880 bytes while the session reported yielded; the new firmware decodes through its header; 0.69 MB/s measured over USB |
 | S8b assert fields | D-15 | done | a 6 s recording from the board decodes to 122 frames and passes 5 field, protocol and count checks |
+| S9 sockets | F1.2.7 (TCP, UDP, config) | done | simulator over loopback: tail decodes, record stores 60 frames, assert passes 3 of 3, no hardware |
 
 S1 notes:
 
@@ -192,9 +193,11 @@ S8 notes:
 CI also builds the app now: every green run uploads a release `bforge` binary per
 platform, and a `v*` tag publishes all six through the release workflow.
 
-Next action: the rest of Track A needs the board in someone's hands (pins at
-1 kHz, hotplug, yield). The next verifiable step is the record path gaining framed
-rows, which closes D-15 and lets `assert` check fields instead of bytes.
+Next action: with sockets in the config, CI can exercise the whole chain, so the
+next step is the one that makes the product useful to a team: the native protocol
+packs (CCSDS and ECSS PUS, CSP, Modbus RTU), each with a hand-built fixture. The
+GUI still waits for a machine with MSVC, and the 12 Mbaud number still waits for a
+UART bridge.
 
 ## What the setup did
 

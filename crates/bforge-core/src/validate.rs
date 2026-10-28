@@ -106,11 +106,33 @@ impl ProjectConfig {
                 ));
             }
 
-            if port.match_vid_pid.is_none() && port.device_path.is_none() {
-                issues.push(ConfigIssue::new(
-                    format!("{at}.match_vid_pid"),
-                    "a port needs match_vid_pid or device_path, or it binds to nothing",
-                ));
+            let transport = port.transport.as_deref().unwrap_or("serial");
+            match transport {
+                "serial" => {
+                    if port.match_vid_pid.is_none() && port.device_path.is_none() {
+                        issues.push(ConfigIssue::new(
+                            format!("{at}.match_vid_pid"),
+                            "a serial port needs match_vid_pid or device_path, or it binds to nothing",
+                        ));
+                    }
+                }
+                "tcp-client" | "tcp-server" | "udp" => match port.address.as_deref() {
+                    None => issues.push(ConfigIssue::new(
+                        format!("{at}.address"),
+                        format!("transport `{transport}` needs an address"),
+                    )),
+                    Some(address) if !address.contains(':') => issues.push(ConfigIssue::new(
+                        format!("{at}.address"),
+                        format!("`{address}` is not `host:port`"),
+                    )),
+                    Some(_) => {}
+                },
+                other => issues.push(ConfigIssue::new(
+                    format!("{at}.transport"),
+                    format!(
+                        "`{other}` is not a transport; use serial, tcp-client, tcp-server or udp"
+                    ),
+                )),
             }
             if let Some(tuple) = &port.match_vid_pid
                 && !is_valid_tuple(tuple)

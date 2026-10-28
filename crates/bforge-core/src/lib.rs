@@ -52,6 +52,10 @@ pub struct PortConfig {
     pub match_serial: Option<String>,
     /// OS device path used when the USB tuple does not match.
     pub device_path: Option<String>,
+    /// `serial` (default), `tcp-client`, `tcp-server` or `udp`.
+    pub transport: Option<String>,
+    /// Socket address for the socket transports, for example `127.0.0.1:9100`.
+    pub address: Option<String>,
     pub baud_rate: u32,
     pub framing: FramingConfig,
     pub dissector: Option<DissectorConfig>,

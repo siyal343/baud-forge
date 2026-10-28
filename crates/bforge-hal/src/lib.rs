@@ -11,6 +11,7 @@ use serde::{Deserialize, Serialize};
 pub mod mock;
 pub mod tcp;
 pub mod uart;
+pub mod udp;
 
 /// Minimum accepted baud rate (FR-HAL-01).
 pub const MIN_BAUD: u32 = 110;

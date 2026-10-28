@@ -8,7 +8,9 @@ use crate::control::{ControlServer, ControlTarget};
 use crate::pipeline::{Pipeline, PipelineConfig, YieldRequest};
 use crate::ui::{CONTRACT_VERSION, EventBus, PinsView, PortView, SessionView, UiEvent, UiSnapshot};
 use crate::{PortConfig, ProjectConfig};
+use bforge_hal::tcp::{TcpConfig, TcpTransport};
 use bforge_hal::uart::{UartConfig, UartTransport, available};
+use bforge_hal::udp::{UdpConfig, UdpTransport};
 use bforge_hal::{LineConfig, PinStateFlags, TransportDriver};
 use bforge_storage::{LogHeader, LogReader, LogSummary, LogWriter, RawChunk, StorageError};
 use std::path::{Path, PathBuf};
@@ -27,6 +29,8 @@ pub enum SessionError {
     Storage(StorageError),
     /// Nothing to record: every requested port was filtered out.
     NoPorts,
+    /// A port configuration cannot be used, for example a socket port with no address.
+    Settings(String),
 }
 
 impl std::fmt::Display for SessionError {
@@ -35,6 +39,7 @@ impl std::fmt::Display for SessionError {
             Self::NoDevice(id) => write!(f, "no device matches port `{id}`"),
             Self::Storage(error) => write!(f, "vault: {error}"),
             Self::NoPorts => write!(f, "no ports selected"),
+            Self::Settings(message) => write!(f, "{message}"),
         }
     }
 }
@@ -424,23 +429,52 @@ pub fn session_ports_from_config(
         if !only.is_empty() && !only.contains(&port.id) {
             continue;
         }
-        let Some(device) = resolve_device(port, &devices, strictly) else {
-            return Err(SessionError::NoDevice(port.id.clone()));
+
+        let transport_name = port.transport.as_deref().unwrap_or("serial");
+        let (device, transport): (String, Box<dyn TransportDriver + Send>) = match transport_name {
+            "serial" => {
+                let Some(device) = resolve_device(port, &devices, strictly) else {
+                    return Err(SessionError::NoDevice(port.id.clone()));
+                };
+                let transport = UartTransport::new(UartConfig {
+                    device: device.clone(),
+                    line: LineConfig {
+                        baud_rate: port.baud_rate,
+                        ..Default::default()
+                    },
+                    read_timeout: Duration::from_millis(50),
+                });
+                (device, Box::new(transport))
+            }
+            "tcp-client" | "tcp-server" | "udp" => {
+                let address = port.address.clone().ok_or_else(|| {
+                    SessionError::Settings(format!(
+                        "port `{}` uses `{transport_name}` and needs an address",
+                        port.id
+                    ))
+                })?;
+                let transport: Box<dyn TransportDriver + Send> = match transport_name {
+                    "tcp-client" => Box::new(TcpTransport::new(TcpConfig::client(address.clone()))),
+                    "tcp-server" => Box::new(TcpTransport::new(TcpConfig::server(address.clone()))),
+                    _ => Box::new(UdpTransport::new(UdpConfig::new(address.clone(), None))),
+                };
+                (address, transport)
+            }
+            other => {
+                return Err(SessionError::Settings(format!(
+                    "port `{}` names transport `{other}`, which is not serial, tcp-client, tcp-server or udp",
+                    port.id
+                )));
+            }
         };
+
         ports.push(SessionPort {
             id: port.id.clone(),
-            device: device.clone(),
+            device,
             baud_rate: port.baud_rate,
             framing: port.framing.mode.clone(),
             checksum: port.framing.crc.clone(),
-            transport: Box::new(UartTransport::new(UartConfig {
-                device,
-                line: LineConfig {
-                    baud_rate: port.baud_rate,
-                    ..Default::default()
-                },
-                read_timeout: Duration::from_millis(50),
-            })),
+            transport,
         });
     }
 

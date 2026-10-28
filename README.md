@@ -160,7 +160,9 @@ fields = [
 ]
 ```
 
-`ports` binds a device by USB tuple, with the OS device path as fallback.
+`ports` binds a device by USB tuple, with the OS device path as fallback. A port
+can also name a socket transport (`tcp-client`, `tcp-server`, `udp`) and an
+`address`, which is how a simulator or a radio link reaches the same pipeline.
 `commands` builds a frame from named fields and appends the checksum.
 `alerts` runs a condition against the live stream and fires actions, such as a
 pin pulse or a webhook.
