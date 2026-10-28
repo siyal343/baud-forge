@@ -198,3 +198,121 @@ fn chunks_carry_every_direction() {
     }
     let _ = std::fs::remove_file(&path);
 }
+
+#[test]
+fn the_saved_index_opens_without_scanning() {
+    let path = temp_path("persisted-index");
+    write_session(&path, 3_000, 64);
+
+    let index_file = bforge_storage::index_path(&path);
+    assert!(index_file.exists(), "the writer must save an index");
+
+    let mut reader = LogReader::open(&path).unwrap();
+    assert_eq!(
+        reader.index_source(),
+        bforge_storage::IndexSource::Persisted
+    );
+    assert_eq!(reader.chunks(), 3_000);
+    assert_eq!(reader.payload_bytes(), 3_000 * 64);
+    let window = reader.window(2_990, 10).unwrap();
+    assert_eq!(window.len(), 10);
+    assert_eq!(window[0].payload, payload(2_990, 64));
+
+    let _ = std::fs::remove_file(&path);
+    let _ = std::fs::remove_file(index_file);
+}
+
+#[test]
+fn a_stale_index_falls_back_to_a_scan() {
+    let path = temp_path("stale-index");
+    write_session(&path, 1_500, 32);
+    let index_file = bforge_storage::index_path(&path);
+
+    // Append bytes after the seal: the index no longer describes this file.
+    let mut file = std::fs::OpenOptions::new()
+        .append(true)
+        .open(&path)
+        .unwrap();
+    use std::io::Write as _;
+    file.write_all(&[0u8; 16]).unwrap();
+    drop(file);
+
+    let reader = LogReader::open(&path).unwrap();
+    assert_eq!(reader.index_source(), bforge_storage::IndexSource::Scanned);
+    assert!(reader.damaged_tail());
+    let _ = std::fs::remove_file(&path);
+    let _ = std::fs::remove_file(index_file);
+}
+
+#[test]
+fn repair_truncates_a_partial_tail_and_keeps_the_records() {
+    let path = temp_path("repair");
+    write_session(&path, 4, 100);
+    let index_file = bforge_storage::index_path(&path);
+
+    let file = std::fs::OpenOptions::new().write(true).open(&path).unwrap();
+    let full = file.metadata().unwrap().len();
+    file.set_len(full - 37).unwrap();
+    drop(file);
+
+    let report = bforge_storage::repair(&path).unwrap();
+    assert_eq!(report.kept_chunks, 3);
+    // The fourth record keeps 95 of its 132 bytes, so 95 bytes are removed.
+    assert_eq!(report.removed_bytes, 95);
+    assert_eq!(
+        std::fs::metadata(&path).unwrap().len(),
+        256 + 3 * (32 + 100)
+    );
+    assert!(!index_file.exists(), "a repair invalidates the saved index");
+
+    let reader = LogReader::open(&path).unwrap();
+    assert!(!reader.damaged_tail());
+    assert_eq!(reader.chunks(), 3);
+    let _ = std::fs::remove_file(&path);
+}
+
+#[test]
+fn every_truncation_point_recovers_to_whole_records() {
+    let path = temp_path("truncation-sweep");
+    write_session(&path, 5, 40);
+    let good = std::fs::read(&path).unwrap();
+    let record_len = 32 + 40;
+
+    for cut in 0..=good.len() {
+        let _ = std::fs::write(&path, &good[..cut]);
+        let _ = std::fs::remove_file(bforge_storage::index_path(&path));
+
+        if cut < 256 {
+            // No header, so the file is not a vault and there is nothing to keep.
+            assert!(LogReader::open(&path).is_err(), "cut at {cut}");
+            assert!(bforge_storage::repair(&path).is_err(), "cut at {cut}");
+            continue;
+        }
+
+        let complete = (cut - 256) / record_len;
+        let reader = LogReader::open(&path).unwrap();
+        assert_eq!(reader.chunks(), complete as u64, "cut at {cut}");
+
+        let report = bforge_storage::repair(&path).unwrap();
+        assert_eq!(report.kept_chunks, complete as u64, "cut at {cut}");
+        assert_eq!(
+            std::fs::metadata(&path).unwrap().len(),
+            (256 + complete * record_len) as u64,
+            "cut at {cut}"
+        );
+    }
+    let _ = std::fs::remove_file(&path);
+}
+
+#[test]
+fn repairing_a_healthy_vault_changes_nothing() {
+    let path = temp_path("repair-healthy");
+    write_session(&path, 2, 16);
+    let before = std::fs::metadata(&path).unwrap().len();
+    let report = bforge_storage::repair(&path).unwrap();
+    assert_eq!(report.removed_bytes, 0);
+    assert_eq!(report.kept_chunks, 2);
+    assert_eq!(std::fs::metadata(&path).unwrap().len(), before);
+    let _ = std::fs::remove_file(&path);
+    let _ = std::fs::remove_file(bforge_storage::index_path(&path));
+}

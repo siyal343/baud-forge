@@ -26,6 +26,10 @@ Commands:
          or: -c <file> --port <id>
   status -c <file>              Print the UI state contract as JSON
          [--duration 1s] [--watch]
+  assert <vault> -r <rules>     Check a vault against a TOML rule file
+         [--json]
+  vault info <vault>            Report records, bytes, index source, damage
+  vault repair <vault>          Truncate a killed session to its last record
 
 `record` runs until the duration ends, or until Enter is pressed when no
 duration is given.
@@ -55,6 +59,8 @@ fn main() -> ExitCode {
         Some("record") => record(&args[1..]),
         Some("replay") => replay(&args[1..]),
         Some("status") => status(&args[1..]),
+        Some("assert") => assert_vault(&args[1..]),
+        Some("vault") => vault(&args[1..]),
         Some(other) => usage_error(&format!("unknown command `{other}`")),
     }
 }
@@ -491,4 +497,140 @@ fn status(args: &[String]) -> ExitCode {
     }
     let _ = session.seal();
     ExitCode::SUCCESS
+}
+
+fn assert_vault(args: &[String]) -> ExitCode {
+    let mut args = Args::new(args);
+    let vault = args.positional();
+    let rules_path = args.value("-r");
+    let json = args.flag("--json");
+    if let Some(unknown) = args.unknown() {
+        return usage_error(&format!("unknown option `{unknown}`"));
+    }
+    let (Some(vault), Some(rules_path)) = (vault, rules_path) else {
+        return usage_error("assert needs a vault and -r <rules>");
+    };
+
+    let rules_text = match std::fs::read_to_string(&rules_path) {
+        Ok(text) => text,
+        Err(error) => {
+            eprintln!("error: cannot read {rules_path}: {error}");
+            return ExitCode::FAILURE;
+        }
+    };
+    let rules = match bforge_core::assert::parse_rules(&rules_text) {
+        Ok(rules) => rules,
+        Err(error) => {
+            eprintln!("error: {rules_path}: {error}");
+            return ExitCode::FAILURE;
+        }
+    };
+    let problems = bforge_core::assert::validate_rules(&rules);
+    if !problems.is_empty() {
+        for problem in &problems {
+            println!("{rules_path}: {problem}");
+        }
+        eprintln!("{} problem(s) in {rules_path}", problems.len());
+        return ExitCode::FAILURE;
+    }
+
+    let mut reader = match LogReader::open(&vault) {
+        Ok(reader) => reader,
+        Err(error) => {
+            eprintln!("error: {vault}: {error}");
+            return ExitCode::FAILURE;
+        }
+    };
+    let report = match bforge_core::assert::evaluate(&vault, &mut reader, &rules) {
+        Ok(report) => report,
+        Err(error) => {
+            eprintln!("error: {vault}: {error}");
+            return ExitCode::FAILURE;
+        }
+    };
+
+    if json {
+        println!("{}", serde_json::to_string_pretty(&report).unwrap());
+    } else {
+        println!(
+            "{vault}: {} chunks, {} bytes",
+            report.chunks, report.payload_bytes
+        );
+        for check in &report.checks {
+            println!(
+                "  {} {:<10} {}  {}",
+                if check.passed { "PASS" } else { "FAIL" },
+                check.kind,
+                check.name,
+                check.detail
+            );
+        }
+        println!(
+            "{} of {} checks passed",
+            report.checks.len() - report.failures(),
+            report.checks.len()
+        );
+    }
+
+    if report.passed() {
+        ExitCode::SUCCESS
+    } else {
+        ExitCode::FAILURE
+    }
+}
+
+fn vault(args: &[String]) -> ExitCode {
+    let mut args = Args::new(args);
+    match args.positional().as_deref() {
+        Some("info") => vault_info(&mut args),
+        Some("repair") => vault_repair(&mut args),
+        Some(other) => usage_error(&format!("unknown vault command `{other}`")),
+        None => usage_error("vault needs `info` or `repair` and a file"),
+    }
+}
+
+fn vault_info(args: &mut Args) -> ExitCode {
+    let Some(path) = args.positional() else {
+        return usage_error("vault info needs a file");
+    };
+    let reader = match LogReader::open(&path) {
+        Ok(reader) => reader,
+        Err(error) => {
+            eprintln!("error: {path}: {error}");
+            return ExitCode::FAILURE;
+        }
+    };
+    println!("{path}");
+    println!("  records      {}", reader.chunks());
+    println!("  payload      {} bytes", reader.payload_bytes());
+    println!("  file         {} bytes", reader.file_bytes());
+    println!(
+        "  index        {} ({})",
+        reader.index_source(),
+        reader.index_entries()
+    );
+    println!("  damaged tail {}", reader.damaged_tail());
+    if reader.damaged_tail() {
+        println!("  run `bforge vault repair {path}` to cut the partial record");
+    }
+    ExitCode::SUCCESS
+}
+
+fn vault_repair(args: &mut Args) -> ExitCode {
+    let Some(path) = args.positional() else {
+        return usage_error("vault repair needs a file");
+    };
+    match bforge_storage::repair(&path) {
+        Ok(report) => {
+            println!(
+                "{path}: kept {} records, removed {} bytes",
+                report.kept_chunks, report.removed_bytes
+            );
+            ExitCode::SUCCESS
+        }
+        Err(error) => {
+            eprintln!("error: {path}: {error}");
+            ExitCode::FAILURE
+        }
+    }
 }

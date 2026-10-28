@@ -13,6 +13,7 @@
 //! sparse index in memory on open, at one entry per 1024 chunks.
 
 pub mod format;
+pub mod index;
 pub mod reader;
 pub mod writer;
 
@@ -21,7 +22,8 @@ use serde::{Deserialize, Serialize};
 
 pub use format::LogHeader;
 pub use format::{HEADER_LEN, INDEX_STRIDE, MAGIC, RECORD_HEADER_LEN, SEGMENT_LEN};
-pub use reader::{LogReader, LogRecord};
+pub use index::{INDEX_MAGIC, index_path};
+pub use reader::{IndexSource, LogReader, LogRecord, RepairReport, repair};
 pub use writer::{LogSummary, LogWriter};
 
 /// Fundamental atomic unit of the SPMC pipeline (ADR-002).
@@ -58,6 +60,16 @@ pub struct SparseIndex {
 }
 
 impl SparseIndex {
+    /// Build an index from entries that were read from a file.
+    pub fn from_entries(entries: Vec<IndexEntry>) -> Self {
+        Self { entries }
+    }
+
+    /// The entries, in file order.
+    pub fn entries(&self) -> &[IndexEntry] {
+        &self.entries
+    }
+
     /// Keep one entry per [`INDEX_STRIDE`] chunks.
     pub fn push(&mut self, frame_id: u64, timestamp_ns: u64, file_offset: u64) {
         if !frame_id.is_multiple_of(INDEX_STRIDE) {

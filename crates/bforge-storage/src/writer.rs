@@ -4,8 +4,8 @@
 //! by its payload. The writer flushes and syncs when it crosses a 64 MB segment
 //! boundary, and always on `seal`, so a lost tail is at most one segment.
 
-use crate::RawChunk;
 use crate::format::{HEADER_LEN, LogHeader, RECORD_HEADER_LEN, SEGMENT_LEN, encode_record};
+use crate::{RawChunk, SparseIndex, index};
 use std::fs::{File, OpenOptions};
 use std::io::{BufWriter, Write};
 use std::path::{Path, PathBuf};
@@ -29,6 +29,7 @@ pub struct LogWriter {
     chunks: u64,
     payload_bytes: u64,
     segments: u32,
+    index: SparseIndex,
     sealed: bool,
 }
 
@@ -56,6 +57,7 @@ impl LogWriter {
             chunks: 0,
             payload_bytes: 0,
             segments: 1,
+            index: SparseIndex::default(),
             sealed: false,
         })
     }
@@ -73,6 +75,9 @@ impl LogWriter {
         self.file.write_all(&encode_record(chunk))?;
         self.file.write_all(payload)?;
 
+        // Keyed by the record ordinal: every port starts its sequence at zero.
+        self.index
+            .push(self.chunks, chunk.timestamp_ns, record_offset);
         self.offset += (RECORD_HEADER_LEN + payload.len()) as u64;
         self.chunks += 1;
         self.payload_bytes += payload.len() as u64;
@@ -93,9 +98,13 @@ impl LogWriter {
         self.chunks
     }
 
-    /// Flush, sync, and report what the session contains.
+    /// Flush, sync, save the index, and report what the session contains.
+    ///
+    /// The index is a cache: if saving it fails, the session is still sealed and
+    /// the reader will scan. Losing the file must not lose the data.
     pub fn seal(mut self) -> std::io::Result<LogSummary> {
         self.flush_and_sync()?;
+        self.save_index();
         self.sealed = true;
         Ok(LogSummary {
             path: self.path.clone(),
@@ -104,6 +113,11 @@ impl LogWriter {
             file_bytes: self.offset,
             segments: self.segments,
         })
+    }
+
+    fn save_index(&self) {
+        let bytes = index::encode(self.offset, self.chunks, self.index.entries());
+        let _ = std::fs::write(index::index_path(&self.path), bytes);
     }
 
     fn flush_and_sync(&mut self) -> std::io::Result<()> {

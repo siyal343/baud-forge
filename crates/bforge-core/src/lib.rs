@@ -6,6 +6,7 @@
 //!
 //! Setup only: the schema parses, nothing acts on it yet.
 
+pub mod assert;
 pub mod mem;
 pub mod pipeline;
 pub mod session;

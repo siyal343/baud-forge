@@ -30,6 +30,7 @@ state through one contract (F1.7).
 | S4 record, replay, status | F1.5.2 to F1.5.4, F1.7.1 to F1.7.3 | done | ESP32-C3: 89 chunks sealed, JSON snapshot, JSONL events, replay at 4x with 2.3 ms worst lateness |
 | S5 measurement | F1.6.1, F1.6.2, F1.6.3 | done | 4 ports at 12 Mbaud for 60 s: 288 MB, 0 gaps, 11.9 MiB peak; 512 MiB vault read at 21.5 MiB peak |
 | S6a framers | F1.4.3, F1.4.4, F1.4.5, F1.4.7 | done | all six framing modes implemented; 38 framer tests, 4 property tests over random splits |
+| S6b vault and CLI | F1.3.5, F1.3.7, F1.5.5, F1.7.4 | done | index sidecar opens without scanning; repair cut a 33-byte tail to 56 records; assert passed 3 of 3 on a live recording; 5 contract tests |
 
 S1 notes:
 
@@ -116,14 +117,29 @@ S6a notes:
   twenty rounds per machine, with a deterministic generator so a failure
   reproduces.
 
-Remaining in S6: pins at 1 kHz (F1.2.3), USB tuple binding (F1.2.4), hotplug and
-reconnect (F1.2.5), port yield (F1.2.6, F1.5.6), segment compression (F1.3.4),
-the persisted index (F1.3.5), crash recovery (F1.3.7), `bforge assert` (F1.5.5)
-and the contract test (F1.7.4).
+S6b notes:
 
-Next action: S6b, the vault and the CLI. F1.3.7 (crash recovery), F1.3.5
-(persisted index), F1.5.5 (`bforge assert`) and F1.7.4 (contract test) need no
-hardware, and `assert` is what makes the tool useful in CI.
+- The writer keys its index by record ordinal, not by the port sequence. The same
+  mistake that broke the reader in S4 would have written a useless index; the
+  storage test that holds the line now covers both sides.
+- The index is a cache with a hard link to one file length. A stale index sends
+  the reader back to a scan, and a repair always scans fresh, because a stale
+  index must not decide how much of a damaged file to keep.
+- `repair` is a truncation, not a rewrite. The test sweeps every byte offset of a
+  five-record vault and asserts both the record count and the repaired length.
+- `bforge assert` reads the rule file before the vault, so a rule typo cannot look
+  like a failed expectation.
+- The contract test lists 25 zone fields with the JSON pointer that feeds each
+  one. A zone field without a source fails there.
+
+Remaining in S6: pins at 1 kHz (F1.2.3), USB tuple binding (F1.2.4), hotplug and
+reconnect (F1.2.5), port yield (F1.2.6, F1.5.6) and segment compression (F1.3.4).
+The first four want the board plugged and unplugged by a person, and compression
+wants a measurement before a format.
+
+Next action: Track C, S11. The dissector IR executor and the C struct parser need
+no hardware and no MSVC linker, and the framing stage now hands them whole frames
+in every mode.
 
 ## What the setup did
 
