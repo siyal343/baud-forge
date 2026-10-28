@@ -32,6 +32,7 @@ state through one contract (F1.7).
 | S6a framers | F1.4.3, F1.4.4, F1.4.5, F1.4.7 | done | all six framing modes implemented; 38 framer tests, 4 property tests over random splits |
 | S6b vault and CLI | F1.3.5, F1.3.7, F1.5.5, F1.7.4 | done | index sidecar opens without scanning; repair cut a 33-byte tail to 56 records; assert passed 3 of 3 on a live recording; 5 contract tests |
 | S11 dissection | F3.1, F3.2 (subset) | done | a 19-byte firmware frame decodes field by field from its header alone; 180k frames/s; 22 dissect tests |
+| S12 symbolization | F3.5 | done | a fault line resolves 2 of 4 pointers to file:line in 1.2 us each; 17 elf tests |
 
 S1 notes:
 
@@ -152,9 +153,29 @@ S11 notes:
 - Decoding allocates a `String` per field. 180k frames/s is three times the target
   on 19-byte frames; the borrowed copy waits for the UI (D-38).
 
-Next action: S12, the ELF symbolizer. It needs no hardware and no MSVC linker:
-`gimli` and `object` are pure Rust, and a crash address turning into
-`file:line` is the other half of "the tool explains the firmware".
+S12 notes:
+
+- `object` and `addr2line` are pure Rust, so this built without a C compiler.
+  ELF, PE and Mach-O all load, which is why the tests can use the test binary as
+  the image and still exercise the same code a firmware `.elf` would.
+- `addr2line` panics on `u64::MAX`: an integer overflow inside the line lookup.
+  `resolve` now refuses any address outside the image's symbol span before the
+  lookup, so a garbage hex number in a crash log returns `None` instead of taking
+  the process down.
+- The pointer scanner accepts 8 to 16 hex digits, not only 8 or 16: a 64-bit
+  address prints without its leading zeros (`0x140001434`).
+- The demo resolves 2 of 4 pointers in a fault line. `SP` and `CFSR` are data and
+  status, so no line exists for them, and the tool says so instead of guessing.
+- The image is our own debug binary: the board's sketch `.elf` is not on this
+  machine (D-46).
+
+CI now builds the app: every green run uploads a `bforge` binary for that
+platform as an artifact, and `.github/workflows/release.yml` builds all six
+targets on a tag and publishes them as a GitHub release.
+
+Next action: S8's engine half. Framing and dissection both exist and are not
+wired to the pipeline; a `bforge tail` that frames, decodes and prints rows would
+put them on a path the GUI can consume, without needing the GUI to exist.
 
 ## What the setup did
 

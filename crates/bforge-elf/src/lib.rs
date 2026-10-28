@@ -1,25 +1,21 @@
-//! Firmware symbolization (FR-SYM-01).
+//! Firmware symbolization (F3.5).
 //!
-//! Watches a configured `.elf` file and resolves addresses in incoming frames
-//! to `file:line (function)` for the UI badge and the editor jump.
+//! A crash log prints addresses. This module turns one into a place in the source:
+//! a file, a line and a function, using the DWARF line table of the firmware image
+//! and its symbol table as a fallback. It never guesses: an address that the image
+//! does not describe returns `None`, and the caller shows the raw hex.
 //!
-//! Setup only: the contract exists, no ELF reading is implemented.
+//! S12 scope: load, resolve, scan a text stream for pointers, and build the editor
+//! command. The file watch and the defmt/pw_tokenizer decoders are D-43 and D-42.
 
-use std::path::Path;
+pub mod editor;
+pub mod image;
+pub mod scan;
 
 pub use bforge_dissect::SourceLocation;
-
-/// Reads symbols and debug information from a firmware image.
-pub trait Symbolizer {
-    /// Reload the image, for example after `cargo build` rewrote it.
-    fn load(&mut self, elf: &Path) -> Result<(), SymbolizeError>;
-
-    /// Resolve a code address. Return `None` when the address is unknown.
-    fn resolve(&self, address: u64) -> Option<SourceLocation>;
-
-    /// Decode a `defmt` or `pw_tokenizer` frame into readable text.
-    fn decode_log_frame(&self, frame: &[u8]) -> Option<String>;
-}
+pub use editor::Editor;
+pub use image::{ElfImage, Function};
+pub use scan::{AddressHit, scan_pointers};
 
 /// Symbolization failure.
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -28,3 +24,15 @@ pub enum SymbolizeError {
     Unreadable(String),
     Unsupported(String),
 }
+
+impl std::fmt::Display for SymbolizeError {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            Self::NotFound(path) => write!(f, "{path} does not exist"),
+            Self::Unreadable(message) => write!(f, "cannot read the image: {message}"),
+            Self::Unsupported(what) => write!(f, "{what} is not supported"),
+        }
+    }
+}
+
+impl std::error::Error for SymbolizeError {}

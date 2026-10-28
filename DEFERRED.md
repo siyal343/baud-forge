@@ -77,6 +77,11 @@ The plan lives in [IMPLEMENTATION.md](IMPLEMENTATION.md), progress in
 | D-39 | No protocol packs (CCSDS, ECSS PUS, CSP, MAVLink, Modbus) | F3.4. Each needs a captured fixture to be trusted. | F3.4 | Aerospace and robotics users must export their schema as a C header first. |
 | D-40 | The dissector is not wired to the pipeline | Nothing decodes per chunk yet; framing joins the read path in S8. | S8 | `bforge record` writes raw chunks and the tree exists only in tests and the example. |
 | D-41 | Checksum status comes out as `NotApplicable` | The schema does not say where the checksum sits or which engine it uses. | A schema field for the checksum, plus F1.4.6 wiring | The CRC chip in the inspector will stay empty until then. |
+| D-42 | `defmt` and `pw_tokenizer` frame decoding (F3.6) | Both wire formats are versioned and interned, and there is no firmware image or captured frame on this machine to verify a decoder against. A decoder that is wrong is worse than none: it prints confident nonsense. | A captured `defmt` or `pw_tokenizer` frame from real firmware, plus the exact crate version that produced it | A Rust or Pigweed team sees hex instead of log text. |
+| D-43 | Watching the `.elf` for changes (F3.5 second half) | `notify` is a runtime loop with per-OS backends, and nothing in the pipeline consumes a reload yet. | The live decode path (D-45) | A rebuild needs a manual reload. |
+| D-44 | Demangling Rust symbol names | A demangler is another dependency, and the badge works with the mangled name today. | Demand from a Rust firmware user | Badges show `_RINvNtNt...` for generic frames. |
+| D-45 | Badges in the live stream, source popover, editor launch (F3.8) | Needs the GUI to render the badge and to decide what a click does when the editor is absent. | D-01 | Symbolization exists only in tests and the example. |
+| D-46 | No firmware image to symbolize | The board runs a sketch whose `.elf` we do not have, and the ARM toolchain is not installed. The demo uses our own debug binary, which exercises the same code path. | A `.elf` from the user's build, or `arduino-cli compile --output-dir` on a sketch | The feature is proven on a PE/DWARF host binary, not on ARM firmware. |
 
 ## 6. Process and release
 

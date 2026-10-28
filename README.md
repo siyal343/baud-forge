@@ -251,6 +251,10 @@ every push to `main`, on every pull request and on demand. It has three jobs:
 - `macos-intel` cross-builds the `x86_64-apple-darwin` target, because GitHub
   no longer hosts an Intel macOS runner.
 
+Every green run also builds the release binary and uploads it as an artifact named
+`bforge-<platform>`. A tag `v*` starts `.github/workflows/release.yml`, which
+builds all six targets and publishes them as a GitHub release.
+
 The repository is public. The workflow needs no secret, and a fork runs the same
 checks without setup.
 

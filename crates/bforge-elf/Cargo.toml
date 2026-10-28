@@ -8,3 +8,5 @@ description = "DWARF symbolization and defmt/pw_tokenizer decoding for BaudForge
 
 [dependencies]
 bforge-dissect.workspace = true
+addr2line = { version = "0.25", features = ["std", "loader"] }
+object = "0.36"
