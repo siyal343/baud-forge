@@ -215,6 +215,18 @@ S11 notes:
   live numbers; it does not pretend to be the six-band workbench (D-60).
 - Serving is read-only, loopback only, with no authentication (D-59).
 
+S11 follow-up, found by CI:
+
+- The macos-aarch64 job hung for twenty minutes in
+  `a_yield_releases_the_port_and_takes_it_back_when_the_holder_leaves`. A full
+  logger ring put the reader in a `yield_now` hot loop, and on a loaded macOS runner
+  that could starve the thread that drains the ring or sets the stop flag. The wait
+  now sleeps for the idle interval; the policy is unchanged and no byte is dropped.
+  The test's fake port also delivers at a finite rate now, so the test measures the
+  yield instead of the scheduler.
+- The test job has `timeout-minutes: 12`, so a hung test fails the job rather than
+  occupying a runner.
+
 Next action: the SolidJS frontend. `serve` is the only interface it needs, so the
 work can be done in Edge with hot reload, and the Tauri shell wraps the same files
 afterwards. The engine has published the contract since S4; this is the first phase
