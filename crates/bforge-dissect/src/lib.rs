@@ -3,7 +3,11 @@
 //! A schema source compiles into [`DissectorIr`]. The runtime executes the IR
 //! against a frame, so a new protocol never needs a rebuild of the binary.
 //!
-//! Setup only: the IR and the output types exist, no parser is implemented.
+//! S11 implements the IR executor and a C header parser for packed structs.
+//! Protocol packs (CCSDS, CSP, MAVLink, Modbus) and Protobuf are F3.3 and F3.4.
+
+pub mod cheader;
+pub mod exec;
 
 use bforge_storage::RawChunk;
 use serde::{Deserialize, Serialize};
@@ -61,19 +65,26 @@ pub enum IrOp {
         width: u8,
         big_endian: bool,
     },
-    /// Read `width` bits starting at `bit_offset` of the current word.
-    Bitfield { bit_offset: u8, width: u8 },
+    /// Read `width` bits starting at `bit_offset` inside the storage unit at
+    /// `offset`. Bits count from the least significant bit of the unit.
+    Bitfield {
+        offset: u32,
+        bit_offset: u8,
+        width: u8,
+        big_endian: bool,
+    },
     /// Read a fixed-length array of nested fields.
     Array {
         offset: u32,
         count: u16,
         element: Box<IrOp>,
     },
-    /// Read an enum value and map it to a label when the value matches.
+    /// Read an integer and map it to a label when the value matches.
     Enum {
         offset: u32,
         width: u8,
         variants: Vec<(i64, String)>,
+        big_endian: bool,
     },
     /// Name the field produced by the wrapped operation.
     Label { name: String, op: Box<IrOp> },
@@ -96,6 +107,8 @@ pub struct DecodedField {
     pub byte_len: u32,
     /// Scaled value for the UI, already unit-converted.
     pub value: String,
+    /// The same value as a number, when it is one, so a plot can use it.
+    pub value_num: Option<f64>,
     pub children: Vec<DecodedField>,
 }
 

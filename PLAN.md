@@ -31,6 +31,7 @@ state through one contract (F1.7).
 | S5 measurement | F1.6.1, F1.6.2, F1.6.3 | done | 4 ports at 12 Mbaud for 60 s: 288 MB, 0 gaps, 11.9 MiB peak; 512 MiB vault read at 21.5 MiB peak |
 | S6a framers | F1.4.3, F1.4.4, F1.4.5, F1.4.7 | done | all six framing modes implemented; 38 framer tests, 4 property tests over random splits |
 | S6b vault and CLI | F1.3.5, F1.3.7, F1.5.5, F1.7.4 | done | index sidecar opens without scanning; repair cut a 33-byte tail to 56 records; assert passed 3 of 3 on a live recording; 5 contract tests |
+| S11 dissection | F3.1, F3.2 (subset) | done | a 19-byte firmware frame decodes field by field from its header alone; 180k frames/s; 22 dissect tests |
 
 S1 notes:
 
@@ -137,9 +138,23 @@ reconnect (F1.2.5), port yield (F1.2.6, F1.5.6) and segment compression (F1.3.4)
 The first four want the board plugged and unplugged by a person, and compression
 wants a measurement before a format.
 
-Next action: Track C, S11. The dissector IR executor and the C struct parser need
-no hardware and no MSVC linker, and the framing stage now hands them whole frames
-in every mode.
+S11 notes:
+
+- `tree-sitter-c` cannot build here: the bundled mingw gcc cannot run `cc1`. The
+  parser is hand-written for the specified subset, and the interface is one
+  function, so the swap is local. Recorded as D-35 with its refusals (D-36, D-37).
+- The parser refuses instead of guessing. A wrong layout decodes plausible values
+  from the wrong bytes, which is worse than an error with a line number.
+- Bitfields in an unpacked struct are refused: C alignment for bitfields is
+  compiler-specific, and the specification only needs packed firmware structs.
+- The executor bounds-checks every read and reports absolute offsets, so the hex
+  pane can highlight the bytes a field came from.
+- Decoding allocates a `String` per field. 180k frames/s is three times the target
+  on 19-byte frames; the borrowed copy waits for the UI (D-38).
+
+Next action: S12, the ELF symbolizer. It needs no hardware and no MSVC linker:
+`gimli` and `object` are pure Rust, and a crash address turning into
+`file:line` is the other half of "the tool explains the firmware".
 
 ## What the setup did
 
