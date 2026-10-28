@@ -11,7 +11,7 @@
 //!   and no bytes from the logger.
 
 use crate::slab::{ChunkMeta, DEFAULT_SLAB_BYTES, Slab, SlabPool};
-use bforge_hal::{Direction, TransportDriver};
+use bforge_hal::{Direction, PortState, TransportDriver, TransportError};
 use rtrb::{Consumer, Producer, PushError, RingBuffer};
 use std::sync::Arc;
 use std::sync::atomic::{AtomicBool, AtomicU64, Ordering};
@@ -25,7 +25,28 @@ pub const DEFAULT_QUEUE_CHUNKS: usize = 256;
 /// Sleep used when the transport has nothing to give.
 const IDLE_SLEEP: Duration = Duration::from_micros(200);
 
+/// How often the reader tries to reopen a port that left the bus. Fast at first,
+/// because a cable is usually plugged straight back in, then gentle so a port that
+/// stays away for a minute does not spin a core. Five milliseconds is the ceiling
+/// that keeps a re-enumerated port usable within the 10 ms requirement, once the
+/// 1 ms open call is added.
+const RECONNECT_POLL_FAST: Duration = Duration::from_millis(2);
+const RECONNECT_POLL_SLOW: Duration = Duration::from_millis(5);
+/// After this many fast attempts the reader slows down.
+const RECONNECT_FAST_ATTEMPTS: u32 = 500;
+/// How many reopen attempts before the reader gives up. 1 200 attempts at 5 ms is
+/// six seconds, which covers a re-enumeration and a slow hub.
+const RECONNECT_ATTEMPTS: u32 = 1_200;
+
+/// Pipeline state codes, kept as numbers so the reader thread can publish them.
+const STATE_CLOSED: u64 = 0;
+const STATE_OPEN: u64 = 1;
+const STATE_RECONNECTING: u64 = 2;
+
 /// How one pipeline is built.
+///
+/// A transport that leaves the bus and comes back is reopened by the reader, not
+/// by the caller: the reader owns the handle.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct PipelineConfig {
     pub port_id: u16,
@@ -33,6 +54,8 @@ pub struct PipelineConfig {
     pub queue_chunks: usize,
     /// Consumer 0 is the blocking logger, the rest drop on a full ring.
     pub consumers: usize,
+    /// Reopen attempts after a disconnect before the reader stops.
+    pub reconnect_attempts: u32,
 }
 
 impl Default for PipelineConfig {
@@ -42,6 +65,7 @@ impl Default for PipelineConfig {
             slab_bytes: DEFAULT_SLAB_BYTES,
             queue_chunks: DEFAULT_QUEUE_CHUNKS,
             consumers: 2,
+            reconnect_attempts: RECONNECT_ATTEMPTS,
         }
     }
 }
@@ -49,6 +73,17 @@ impl Default for PipelineConfig {
 /// Counters for one pipeline.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
 pub struct PipelineStats {
+    /// Where the transport is: open, reconnecting, or closed.
+    pub state: PortState,
+    /// How many times the reader reopened the port after a disconnect.
+    pub reconnects: u64,
+    /// How long the port was away, from the first reopen attempt to the
+    /// successful open. It includes the time a person took to plug the cable back
+    /// in, so it measures the outage, not our reaction to it.
+    pub last_reconnect_ms: u64,
+    /// How long the successful `open` call itself took. With the poll interval,
+    /// this is what stands between a re-enumerated device and a live port.
+    pub last_open_ms: u64,
     /// Pins and error bits from the most recent chunk.
     pub line_state: u16,
     pub chunks: u64,
@@ -71,6 +106,10 @@ impl PipelineStats {
 
 #[derive(Debug, Default)]
 struct Counters {
+    state: AtomicU64,
+    reconnects: AtomicU64,
+    last_reconnect_ms: AtomicU64,
+    last_open_ms: AtomicU64,
     line_state: AtomicU64,
     chunks: AtomicU64,
     bytes: AtomicU64,
@@ -82,6 +121,14 @@ struct Counters {
 impl Counters {
     fn snapshot(&self) -> PipelineStats {
         PipelineStats {
+            state: match self.state.load(Ordering::Relaxed) {
+                STATE_OPEN => PortState::Open,
+                STATE_RECONNECTING => PortState::Reconnecting,
+                _ => PortState::Closed,
+            },
+            reconnects: self.reconnects.load(Ordering::Relaxed),
+            last_reconnect_ms: self.last_reconnect_ms.load(Ordering::Relaxed),
+            last_open_ms: self.last_open_ms.load(Ordering::Relaxed),
             line_state: self.line_state.load(Ordering::Relaxed) as u16,
             chunks: self.chunks.load(Ordering::Relaxed),
             bytes: self.bytes.load(Ordering::Relaxed),
@@ -121,6 +168,7 @@ impl Pipeline {
         let reader_counters = Arc::clone(&counters);
         let reader_stop = Arc::clone(&stop);
         let port_id = config.port_id;
+        let reconnect_attempts = config.reconnect_attempts;
 
         let thread = thread::Builder::new()
             .name(format!("bforge-reader-{port_id}"))
@@ -132,6 +180,7 @@ impl Pipeline {
                     reader_counters,
                     reader_stop,
                     port_id,
+                    reconnect_attempts,
                 )
             })
             .expect("reader thread");
@@ -185,14 +234,19 @@ fn read_loop(
     counters: Arc<Counters>,
     stop: Arc<AtomicBool>,
     port_id: u16,
+    reconnect_attempts: u32,
 ) {
     if transport.open().is_err() {
         counters.read_errors.fetch_add(1, Ordering::Relaxed);
         return;
     }
+    counters.state.store(STATE_OPEN, Ordering::Relaxed);
 
     let clock = Instant::now();
     let mut seq_id = 0u64;
+    // Failed reopen attempts since the port last delivered a byte. A port that
+    // opens and fails again immediately must not reset its own budget.
+    let mut failed_reopens = 0u32;
 
     // On stop, a slab that is still waiting for the logger ring is abandoned.
     // Nobody is left to read it, and the wait must not outlive the session.
@@ -205,6 +259,22 @@ fn read_loop(
                 continue;
             }
             Ok(len) => len,
+            Err(TransportError::Disconnected) => {
+                counters.read_errors.fetch_add(1, Ordering::Relaxed);
+                counters.state.store(STATE_RECONNECTING, Ordering::Relaxed);
+                counters.reconnects.fetch_add(1, Ordering::Relaxed);
+                transport.close();
+                if !reopen(
+                    &mut transport,
+                    &counters,
+                    &stop,
+                    reconnect_attempts,
+                    &mut failed_reopens,
+                ) {
+                    break 'read;
+                }
+                continue;
+            }
             Err(_) => {
                 counters.read_errors.fetch_add(1, Ordering::Relaxed);
                 thread::sleep(IDLE_SLEEP);
@@ -212,6 +282,7 @@ fn read_loop(
             }
         };
         buffer.truncate(len);
+        failed_reopens = 0;
 
         let meta = ChunkMeta {
             seq_id,
@@ -261,4 +332,42 @@ fn read_loop(
     }
 
     transport.close();
+    counters.state.store(STATE_CLOSED, Ordering::Relaxed);
+}
+
+/// Try to reopen a port that left the bus. Returns false when the port stays away
+/// for longer than the attempt budget, or when the session is stopping.
+fn reopen(
+    transport: &mut Box<dyn TransportDriver + Send>,
+    counters: &Counters,
+    stop: &AtomicBool,
+    attempt_budget: u32,
+    failed_reopens: &mut u32,
+) -> bool {
+    let started = Instant::now();
+    while *failed_reopens < attempt_budget {
+        if stop.load(Ordering::Relaxed) {
+            return false;
+        }
+        let poll = if *failed_reopens < RECONNECT_FAST_ATTEMPTS {
+            RECONNECT_POLL_FAST
+        } else {
+            RECONNECT_POLL_SLOW
+        };
+        thread::sleep(poll);
+        *failed_reopens += 1;
+
+        let open_started = Instant::now();
+        if transport.open().is_ok() {
+            counters
+                .last_open_ms
+                .store(open_started.elapsed().as_millis() as u64, Ordering::Relaxed);
+            counters
+                .last_reconnect_ms
+                .store(started.elapsed().as_millis() as u64, Ordering::Relaxed);
+            counters.state.store(STATE_OPEN, Ordering::Relaxed);
+            return true;
+        }
+    }
+    false
 }

@@ -88,6 +88,12 @@ pub enum UiEvent {
         /// Chunks per second since the previous stats event.
         chunks_per_sec: u64,
     },
+    PortStateChanged {
+        at_ms: u64,
+        port: String,
+        /// `closed`, `open`, `reconnecting` or `yielded`.
+        state: String,
+    },
     Overrun {
         at_ms: u64,
         port: String,

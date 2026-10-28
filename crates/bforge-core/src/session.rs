@@ -243,8 +243,15 @@ impl Session {
     }
 
     fn refresh_ports(&mut self) {
+        let at_ms = self.started.elapsed().as_millis() as u64;
+        let mut changes = Vec::new();
         for port in &mut self.ports {
             let stats = port.pipeline.stats();
+            let state = stats.state.as_str().to_string();
+            if port.info.state != state {
+                port.info.state = state.clone();
+                changes.push((port.info.id.clone(), state));
+            }
             port.info.chunks = stats.chunks;
             port.info.bytes = stats.bytes;
             port.info.stalls_ms = stats.stalls_ns as f64 / 1.0e6;
@@ -261,11 +268,15 @@ impl Session {
             if stats.overruns > port.info.overruns {
                 port.info.overruns = stats.overruns;
                 self.bus.publish(UiEvent::Overrun {
-                    at_ms: self.started.elapsed().as_millis() as u64,
+                    at_ms,
                     port: port.info.id.clone(),
                     total: stats.overruns,
                 });
             }
+        }
+        for (port, state) in changes {
+            self.bus
+                .publish(UiEvent::PortStateChanged { at_ms, port, state });
         }
     }
 

@@ -41,6 +41,7 @@ fn main() {
             slab_bytes: 4096,
             queue_chunks: 64,
             consumers: 2,
+            ..Default::default()
         },
         Box::new(MockTransport::stream(stream)),
     );

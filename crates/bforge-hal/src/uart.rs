@@ -122,8 +122,9 @@ impl TransportDriver for UartTransport {
         let port = self.port.as_mut().ok_or(TransportError::NotOpen)?;
         match port.read(out) {
             Ok(len) => Ok(len),
+            // A read timeout is idle time, not a fault.
             Err(error) if error.kind() == std::io::ErrorKind::TimedOut => Ok(0),
-            Err(error) => Err(TransportError::Io(error.to_string())),
+            Err(error) => Err(classify(error)),
         }
     }
 
@@ -163,6 +164,32 @@ impl TransportDriver for UartTransport {
 
     fn state(&self) -> PortState {
         self.state
+    }
+}
+
+/// A read that fails because the device left the bus is a disconnect, not a bug.
+///
+/// Windows reports an unplugged USB serial port as a bad command, a general
+/// failure, a missing file or an access denial, depending on the driver and the
+/// moment. All of those mean the same thing to the pipeline: reopen it.
+fn classify(error: std::io::Error) -> TransportError {
+    use std::io::ErrorKind;
+    let kind = error.kind();
+    let raw = error.raw_os_error();
+    let disconnected = matches!(
+        kind,
+        ErrorKind::NotFound
+            | ErrorKind::PermissionDenied
+            | ErrorKind::BrokenPipe
+            | ErrorKind::ConnectionAborted
+            | ErrorKind::ConnectionReset
+            | ErrorKind::UnexpectedEof
+            | ErrorKind::NotConnected
+    ) || matches!(raw, Some(2 | 5 | 22 | 31 | 1167 | 995));
+    if disconnected {
+        TransportError::Disconnected
+    } else {
+        TransportError::Io(error.to_string())
     }
 }
 

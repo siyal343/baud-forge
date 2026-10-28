@@ -34,6 +34,7 @@ state through one contract (F1.7).
 | S11 dissection | F3.1, F3.2 (subset) | done | a 19-byte firmware frame decodes field by field from its header alone; 180k frames/s; 22 dissect tests |
 | S12 symbolization | F3.5 | done | a fault line resolves 2 of 4 pointers to file:line in 1.2 us each; 17 elf tests |
 | S8 engine half | framing and dissection on one path | done | `bforge tail` frames a real port and decodes a COBS frame through its header; framing settings come from `.bforge.toml` |
+| S6c hotplug | F1.2.5 | done | three unplug runs on the bench: detection 17 to 47 ms, reopen call 1 ms, data resumed in the same session |
 
 S1 notes:
 
