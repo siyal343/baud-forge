@@ -42,6 +42,10 @@ const RECONNECT_ATTEMPTS: u32 = 1_200;
 const STATE_CLOSED: u64 = 0;
 const STATE_OPEN: u64 = 1;
 const STATE_RECONNECTING: u64 = 2;
+const STATE_YIELDED: u64 = 3;
+
+/// How often a yielded port tries to take the handle back.
+const YIELD_RECLAIM_POLL: Duration = Duration::from_millis(50);
 
 /// How one pipeline is built.
 ///
@@ -77,6 +81,8 @@ pub struct PipelineStats {
     pub state: PortState,
     /// How many times the reader reopened the port after a disconnect.
     pub reconnects: u64,
+    /// How many times the reader released the port on request.
+    pub yields: u64,
     /// How long the port was away, from the first reopen attempt to the
     /// successful open. It includes the time a person took to plug the cable back
     /// in, so it measures the outage, not our reaction to it.
@@ -104,10 +110,49 @@ impl PipelineStats {
     }
 }
 
+/// A request to let another program use the port, published by the control plane
+/// and taken by the reader thread.
+#[derive(Debug, Default)]
+pub struct YieldRequest {
+    /// Milliseconds of requested window, counted from the request.
+    window_ms: AtomicU64,
+    pending: AtomicBool,
+}
+
+impl YieldRequest {
+    /// Ask the reader to release the handle for `duration`.
+    pub fn request(&self, duration: Duration) {
+        self.window_ms
+            .store(duration.as_millis() as u64, Ordering::Relaxed);
+        self.pending.store(true, Ordering::Release);
+    }
+
+    /// The reader's side: take a pending request and its window.
+    fn take(&self) -> Option<Duration> {
+        if !self.pending.swap(false, Ordering::Acquire) {
+            return None;
+        }
+        Some(Duration::from_millis(
+            self.window_ms.load(Ordering::Relaxed),
+        ))
+    }
+}
+
+/// Everything the reader thread needs to publish.
+#[derive(Debug, Default)]
+struct ReaderContext {
+    counters: Arc<Counters>,
+    stop: Arc<AtomicBool>,
+    yield_request: Arc<YieldRequest>,
+    port_id: u16,
+    reconnect_attempts: u32,
+}
+
 #[derive(Debug, Default)]
 struct Counters {
     state: AtomicU64,
     reconnects: AtomicU64,
+    yields: AtomicU64,
     last_reconnect_ms: AtomicU64,
     last_open_ms: AtomicU64,
     line_state: AtomicU64,
@@ -124,9 +169,11 @@ impl Counters {
             state: match self.state.load(Ordering::Relaxed) {
                 STATE_OPEN => PortState::Open,
                 STATE_RECONNECTING => PortState::Reconnecting,
+                STATE_YIELDED => PortState::Yielded,
                 _ => PortState::Closed,
             },
             reconnects: self.reconnects.load(Ordering::Relaxed),
+            yields: self.yields.load(Ordering::Relaxed),
             last_reconnect_ms: self.last_reconnect_ms.load(Ordering::Relaxed),
             last_open_ms: self.last_open_ms.load(Ordering::Relaxed),
             line_state: self.line_state.load(Ordering::Relaxed) as u16,
@@ -146,6 +193,7 @@ pub struct Pipeline {
     stop: Arc<AtomicBool>,
     started: Instant,
     thread: Option<JoinHandle<()>>,
+    yield_request: Arc<YieldRequest>,
 }
 
 impl Pipeline {
@@ -165,6 +213,8 @@ impl Pipeline {
         let pool = SlabPool::new(config.queue_chunks * config.consumers, config.slab_bytes);
         let counters = Arc::new(Counters::default());
         let stop = Arc::new(AtomicBool::new(false));
+        let yield_request = Arc::new(YieldRequest::default());
+        let reader_yield = Arc::clone(&yield_request);
         let reader_counters = Arc::clone(&counters);
         let reader_stop = Arc::clone(&stop);
         let port_id = config.port_id;
@@ -177,10 +227,13 @@ impl Pipeline {
                     transport,
                     pool,
                     producers,
-                    reader_counters,
-                    reader_stop,
-                    port_id,
-                    reconnect_attempts,
+                    ReaderContext {
+                        counters: reader_counters,
+                        stop: reader_stop,
+                        yield_request: reader_yield,
+                        port_id,
+                        reconnect_attempts,
+                    },
                 )
             })
             .expect("reader thread");
@@ -191,12 +244,24 @@ impl Pipeline {
             stop,
             started: Instant::now(),
             thread: Some(thread),
+            yield_request,
         }
     }
 
     /// Take the consumer ends. Call this once, before consuming.
     pub fn take_consumers(&mut self) -> Vec<Consumer<Arc<Slab>>> {
         std::mem::take(&mut self.consumers)
+    }
+
+    /// Ask the reader to release the port so another program can use it.
+    pub fn yield_for(&self, duration: Duration) {
+        self.yield_request.request(duration);
+    }
+
+    /// The handle a control plane keeps, so it can yield without touching the
+    /// reader.
+    pub fn yield_handle(&self) -> Arc<YieldRequest> {
+        Arc::clone(&self.yield_request)
     }
 
     pub fn stats(&self) -> PipelineStats {
@@ -231,11 +296,15 @@ fn read_loop(
     mut transport: Box<dyn TransportDriver + Send>,
     mut pool: SlabPool,
     mut producers: Vec<Producer<Arc<Slab>>>,
-    counters: Arc<Counters>,
-    stop: Arc<AtomicBool>,
-    port_id: u16,
-    reconnect_attempts: u32,
+    context: ReaderContext,
 ) {
+    let ReaderContext {
+        counters,
+        stop,
+        yield_request,
+        port_id,
+        reconnect_attempts,
+    } = context;
     if transport.open().is_err() {
         counters.read_errors.fetch_add(1, Ordering::Relaxed);
         return;
@@ -251,6 +320,14 @@ fn read_loop(
     // On stop, a slab that is still waiting for the logger ring is abandoned.
     // Nobody is left to read it, and the wait must not outlive the session.
     'read: while !stop.load(Ordering::Relaxed) {
+        if let Some(window) = yield_request.take() {
+            counters.state.store(STATE_YIELDED, Ordering::Relaxed);
+            counters.yields.fetch_add(1, Ordering::Relaxed);
+            transport.close();
+            yield_port(&mut transport, &counters, &stop, window);
+            continue;
+        }
+
         let mut buffer = pool.take();
         let read = transport.read_slab(&mut buffer);
         let len = match read {
@@ -333,6 +410,40 @@ fn read_loop(
 
     transport.close();
     counters.state.store(STATE_CLOSED, Ordering::Relaxed);
+}
+
+/// Release the port for the whole window, then take it back.
+///
+/// The reader does not poll the port while it is yielded: a poll would race the
+/// flash tool for the same handle, and an open that wins that race is exactly the
+/// failure the yield exists to prevent. The window is therefore the contract — the
+/// flasher owns the port until it ends — and the reader takes the port back
+/// afterwards with the normal reconnect patience.
+fn yield_port(
+    transport: &mut Box<dyn TransportDriver + Send>,
+    counters: &Counters,
+    stop: &AtomicBool,
+    window: Duration,
+) {
+    let deadline = Instant::now() + window;
+    while Instant::now() < deadline {
+        if stop.load(Ordering::Relaxed) {
+            return;
+        }
+        thread::sleep(YIELD_RECLAIM_POLL.min(deadline.saturating_duration_since(Instant::now())));
+    }
+
+    for _ in 0..RECONNECT_ATTEMPTS {
+        if stop.load(Ordering::Relaxed) {
+            return;
+        }
+        if transport.open().is_ok() {
+            counters.state.store(STATE_OPEN, Ordering::Relaxed);
+            return;
+        }
+        thread::sleep(RECONNECT_POLL_FAST);
+    }
+    counters.state.store(STATE_RECONNECTING, Ordering::Relaxed);
 }
 
 /// Try to reopen a port that left the bus. Returns false when the port stays away

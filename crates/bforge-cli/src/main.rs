@@ -32,6 +32,8 @@ Commands:
          [--json]
   vault info <vault>            Report records, bytes, index source, damage
   vault repair <vault>          Truncate a killed session to its last record
+  yield -c <file> --port <id>   Release the port so a flash tool can use it
+         [--for 30s]
 
 `record` runs until the duration ends, or until Enter is pressed when no
 duration is given.
@@ -64,6 +66,7 @@ fn main() -> ExitCode {
         Some("tail") => tail(&args[1..]),
         Some("assert") => assert_vault(&args[1..]),
         Some("vault") => vault(&args[1..]),
+        Some("yield") => yield_port(&args[1..]),
         Some(other) => usage_error(&format!("unknown command `{other}`")),
     }
 }
@@ -755,6 +758,66 @@ fn print_row(row: &bforge_core::tail::TailRow, show_fields: bool) {
                 "             {:<24} +0x{:02x} {:>2}B  {}",
                 field.name, field.offset, field.len, field.value
             );
+        }
+    }
+}
+
+fn yield_port(args: &[String]) -> ExitCode {
+    let mut args = Args::new(args);
+    let config_path = args.value("-c");
+    let port_id = args.value("--port");
+    let seconds = args
+        .value("--for")
+        .as_deref()
+        .and_then(parse_duration)
+        .unwrap_or(Duration::from_secs(30));
+    if let Some(unknown) = args.unknown() {
+        return usage_error(&format!("unknown option `{unknown}`"));
+    }
+    let (Some(config_path), Some(port_id)) = (config_path, port_id) else {
+        return usage_error("yield needs -c <workspace> and --port <id>");
+    };
+
+    let config = match load_config(&config_path) {
+        Ok(config) => config,
+        Err(code) => return code,
+    };
+    let Some(port) = config.ports.iter().find(|port| port.id == port_id) else {
+        eprintln!("error: `{port_id}` is not a port in {config_path}");
+        return ExitCode::FAILURE;
+    };
+    let Some(device) = port.device_path.clone().or_else(|| {
+        bforge_core::session::session_ports_from_config(&config, std::slice::from_ref(&port_id))
+            .ok()
+            .and_then(|mut ports| ports.pop().map(|port| port.device))
+    }) else {
+        eprintln!("error: cannot resolve the device for `{port_id}`");
+        return ExitCode::FAILURE;
+    };
+
+    let Some(address) = bforge_core::control::discover(&device) else {
+        eprintln!(
+            "error: no running session holds {device}; start `bforge record` or `bforge tail` first"
+        );
+        return ExitCode::FAILURE;
+    };
+
+    let request = format!(
+        "{{\"cmd\":\"yield\",\"port\":\"{port_id}\",\"seconds\":{}}}",
+        seconds.as_secs()
+    );
+    match bforge_core::control::request(address, &request) {
+        Ok(reply) => {
+            println!("{reply}");
+            if reply.contains("\"ok\":true") {
+                ExitCode::SUCCESS
+            } else {
+                ExitCode::FAILURE
+            }
+        }
+        Err(error) => {
+            eprintln!("error: cannot reach the session at {address}: {error}");
+            ExitCode::FAILURE
         }
     }
 }

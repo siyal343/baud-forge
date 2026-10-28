@@ -4,13 +4,15 @@
 //! `pump_once` moves whatever is ready from the ports into the vault. That keeps
 //! the recording path free of a second thread and keeps the counters honest.
 
-use crate::pipeline::{Pipeline, PipelineConfig};
+use crate::control::{ControlServer, ControlTarget};
+use crate::pipeline::{Pipeline, PipelineConfig, YieldRequest};
 use crate::ui::{CONTRACT_VERSION, EventBus, PinsView, PortView, SessionView, UiEvent, UiSnapshot};
 use crate::{PortConfig, ProjectConfig};
 use bforge_hal::uart::{UartConfig, UartTransport, available};
 use bforge_hal::{LineConfig, PinStateFlags, TransportDriver};
 use bforge_storage::{LogHeader, LogReader, LogSummary, LogWriter, RawChunk, StorageError};
 use std::path::{Path, PathBuf};
+use std::sync::Arc;
 use std::time::{Duration, Instant, SystemTime, UNIX_EPOCH};
 
 /// How often the pump publishes a stats event.
@@ -81,6 +83,37 @@ pub struct Session {
     bus: EventBus,
     last_stats: Instant,
     last_chunks: u64,
+    control: Option<ControlServer>,
+    yield_requests: Vec<(String, Arc<YieldRequest>)>,
+}
+
+/// What a running session answers on the control socket.
+struct SessionControl {
+    requests: Vec<(String, Arc<YieldRequest>)>,
+    vault: String,
+    started: Instant,
+}
+
+impl ControlTarget for SessionControl {
+    fn yield_port(&self, port: &str, duration: Duration) -> bool {
+        match self.requests.iter().find(|(id, _)| id == port) {
+            Some((_, request)) => {
+                request.request(duration);
+                true
+            }
+            None => false,
+        }
+    }
+
+    fn status(&self) -> String {
+        serde_json::json!({
+            "ok": true,
+            "vault": self.vault,
+            "ports": self.requests.len(),
+            "elapsed_ms": self.started.elapsed().as_millis() as u64,
+        })
+        .to_string()
+    }
 }
 
 impl Session {
@@ -114,6 +147,8 @@ impl Session {
         };
 
         let bus = EventBus::new();
+        let mut yield_requests = Vec::new();
+        let mut devices = Vec::new();
         let mut running = Vec::with_capacity(ports.len());
         for (index, port) in ports.into_iter().enumerate() {
             let mut pipeline = Pipeline::start(
@@ -126,6 +161,10 @@ impl Session {
                 port.transport,
             );
             let logger = pipeline.take_consumers().remove(0);
+            yield_requests.push((port.id.clone(), pipeline.yield_handle()));
+            if !devices.contains(&port.device) {
+                devices.push(port.device.clone());
+            }
             running.push(RunningPort {
                 info: PortView {
                     id: port.id,
@@ -146,6 +185,17 @@ impl Session {
             });
         }
 
+        let control = ControlServer::start(
+            &devices,
+            Arc::new(SessionControl {
+                requests: yield_requests.clone(),
+                vault: vault.clone(),
+                started: Instant::now(),
+            }),
+            Duration::from_secs(10),
+        )
+        .ok();
+
         let session = Self {
             mode: "record",
             ports: running,
@@ -159,6 +209,8 @@ impl Session {
             bus,
             last_stats: Instant::now(),
             last_chunks: 0,
+            control,
+            yield_requests,
         };
         session.bus.publish(UiEvent::Started {
             at_ms: 0,
@@ -335,6 +387,22 @@ impl Session {
 
     pub fn port_count(&self) -> usize {
         self.ports.len()
+    }
+
+    /// Release a port so a flash tool can use it. False when the id is unknown.
+    pub fn yield_port(&self, port: &str, duration: Duration) -> bool {
+        match self.yield_requests.iter().find(|(id, _)| id == port) {
+            Some((_, request)) => {
+                request.request(duration);
+                true
+            }
+            None => false,
+        }
+    }
+
+    /// Where a client can reach this session's control plane, if it has one.
+    pub fn control_address(&self) -> Option<std::net::SocketAddr> {
+        self.control.as_ref().map(ControlServer::address)
     }
 }
 

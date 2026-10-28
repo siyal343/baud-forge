@@ -119,3 +119,26 @@ fn tail_reports_a_port_it_cannot_bind() {
     assert!(stderr.contains("no device matches"), "{stderr}");
     let _ = std::fs::remove_file(path);
 }
+
+#[test]
+fn yield_without_a_workspace_is_refused() {
+    let output = run(&["yield"]);
+    assert_eq!(output.status.code(), Some(1));
+    let stderr = String::from_utf8_lossy(&output.stderr);
+    assert!(stderr.contains("yield needs -c"), "{stderr}");
+}
+
+#[test]
+fn yield_names_a_device_with_no_running_session() {
+    let path = write("yield-none", WORKSPACE);
+    let output = Command::new(binary())
+        .args(["yield", "-c"])
+        .arg(&path)
+        .args(["--port", "missing", "--for", "5s"])
+        .output()
+        .unwrap();
+    assert_eq!(output.status.code(), Some(1), "{output:?}");
+    let stderr = String::from_utf8_lossy(&output.stderr);
+    assert!(stderr.contains("no running session holds"), "{stderr}");
+    let _ = std::fs::remove_file(path);
+}

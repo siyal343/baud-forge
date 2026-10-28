@@ -158,3 +158,96 @@ fn a_healthy_port_never_reports_a_reconnect() {
     assert_eq!(stats.reconnects, 0, "{stats:?}");
     assert_eq!(stats.read_errors, 0, "{stats:?}");
 }
+
+/// A port that another program holds: `open` fails until the holder lets go.
+struct Busy {
+    holder: Arc<std::sync::atomic::AtomicBool>,
+    opens: Arc<AtomicUsize>,
+}
+
+impl TransportDriver for Busy {
+    fn open(&mut self) -> Result<(), TransportError> {
+        if self.holder.load(Ordering::Relaxed) {
+            return Err(TransportError::Io("port is busy".to_string()));
+        }
+        self.opens.fetch_add(1, Ordering::Relaxed);
+        Ok(())
+    }
+
+    fn close(&mut self) {}
+
+    fn read_slab(&mut self, out: &mut [u8]) -> Result<usize, TransportError> {
+        let len = out.len().min(32);
+        out[..len].fill(0x5A);
+        Ok(len)
+    }
+
+    fn write_frame(&mut self, _frame: &[u8]) -> Result<(), TransportError> {
+        Ok(())
+    }
+
+    fn set_pins(&mut self, _pins: PinStateFlags) -> Result<(), TransportError> {
+        Ok(())
+    }
+
+    fn read_pins(&mut self) -> Result<PinStateFlags, TransportError> {
+        Ok(PinStateFlags::default())
+    }
+
+    fn state(&self) -> PortState {
+        PortState::Open
+    }
+}
+
+#[test]
+fn a_yield_releases_the_port_and_takes_it_back_when_the_holder_leaves() {
+    let holder = Arc::new(std::sync::atomic::AtomicBool::new(false));
+    let transport = Busy {
+        holder: Arc::clone(&holder),
+        opens: Arc::new(AtomicUsize::new(0)),
+    };
+    let mut pipeline = Pipeline::start(
+        PipelineConfig {
+            port_id: 1,
+            consumers: 1,
+            ..Default::default()
+        },
+        Box::new(transport),
+    );
+    let mut logger = pipeline.take_consumers().remove(0);
+
+    // Let the reader take one chunk, then hand the port to a "flash tool".
+    let deadline = Instant::now() + Duration::from_secs(2);
+    while logger.pop().is_err() && Instant::now() < deadline {
+        std::thread::sleep(Duration::from_millis(1));
+    }
+    holder.store(true, Ordering::Relaxed);
+    pipeline.yield_for(Duration::from_millis(1_500));
+
+    // The state must show the port is gone while the flasher holds it.
+    let deadline = Instant::now() + Duration::from_secs(2);
+    let mut saw_yielded = false;
+    while Instant::now() < deadline {
+        if pipeline.stats().state == PortState::Yielded {
+            saw_yielded = true;
+            break;
+        }
+        std::thread::sleep(Duration::from_millis(2));
+    }
+    assert!(saw_yielded, "the yield was never reported");
+    assert_eq!(pipeline.stats().yields, 1);
+
+    // The flasher is done: the reader must take the port back by itself.
+    holder.store(false, Ordering::Relaxed);
+    let deadline = Instant::now() + Duration::from_secs(3);
+    let mut back = false;
+    while Instant::now() < deadline {
+        if pipeline.stats().state == PortState::Open && logger.pop().is_ok() {
+            back = true;
+            break;
+        }
+        std::thread::sleep(Duration::from_millis(2));
+    }
+    pipeline.stop();
+    assert!(back, "the reader never reclaimed the port");
+}

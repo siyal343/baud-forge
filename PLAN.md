@@ -35,6 +35,7 @@ state through one contract (F1.7).
 | S12 symbolization | F3.5 | done | a fault line resolves 2 of 4 pointers to file:line in 1.2 us each; 17 elf tests |
 | S8 engine half | framing and dissection on one path | done | `bforge tail` frames a real port and decodes a COBS frame through its header; framing settings come from `.bforge.toml` |
 | S6c hotplug | F1.2.5 | done | three unplug runs on the bench: detection 17 to 47 ms, reopen call 1 ms, data resumed in the same session |
+| S6d yield | F1.2.6, F1.5.6 | done | a second process can open COM8 while the session reports yielded, and the session takes it back when the window ends |
 
 S1 notes:
 
