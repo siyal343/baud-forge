@@ -144,3 +144,83 @@ fn several_problems_arrive_in_document_order() {
         ]
     );
 }
+
+fn framing_doc(framing: &str) -> String {
+    format!(
+        r#"
+[workspace]
+name = "framing"
+version = "1.0"
+
+[[ports]]
+id = "p1"
+device_path = "COM1"
+baud_rate = 115200
+framing = {framing}
+"#
+    )
+}
+
+#[test]
+fn a_header_length_port_needs_its_sync_and_length() {
+    let empty = parse(&framing_doc("{ mode = \"header_length\" }"));
+    assert_eq!(
+        issue_paths(&empty),
+        vec![
+            "ports[0].framing.sync".to_string(),
+            "ports[0].framing.length_offset".to_string(),
+            "ports[0].framing.length_width".to_string(),
+        ]
+    );
+
+    let bad_width = parse(&framing_doc(
+        "{ mode = \"header_length\", sync = \"AA 55\", length_offset = 2, length_width = \"u24\" }",
+    ));
+    assert_eq!(
+        issue_paths(&bad_width),
+        vec!["ports[0].framing.length_width".to_string()]
+    );
+
+    let complete = parse(&framing_doc(
+        "{ mode = \"header_length\", sync = \"AA 55\", length_offset = 2, length_width = \"u16_be\", length_adjust = 4 }",
+    ));
+    assert!(complete.validate().is_empty(), "{:?}", complete.validate());
+}
+
+#[test]
+fn an_idle_gap_port_needs_a_silence() {
+    let missing = parse(&framing_doc("{ mode = \"idle_gap\" }"));
+    assert_eq!(
+        issue_paths(&missing),
+        vec!["ports[0].framing.idle_gap_us".to_string()]
+    );
+
+    let zero = parse(&framing_doc("{ mode = \"idle_gap\", idle_gap_us = 0 }"));
+    assert_eq!(
+        issue_paths(&zero),
+        vec!["ports[0].framing.idle_gap_us".to_string()]
+    );
+
+    let ok = parse(&framing_doc("{ mode = \"idle_gap\", idle_gap_us = 3000 }"));
+    assert!(ok.validate().is_empty(), "{:?}", ok.validate());
+}
+
+#[test]
+fn a_delimiter_must_be_one_byte() {
+    let too_big = parse(&framing_doc("{ mode = \"delimiter\", delimiter = 0x1FF }"));
+    assert_eq!(
+        issue_paths(&too_big),
+        vec!["ports[0].framing.delimiter".to_string()]
+    );
+}
+
+#[test]
+fn a_frame_limit_must_be_sane() {
+    let small = parse(&framing_doc("{ mode = \"cobs\", max_frame = 4 }"));
+    assert_eq!(
+        issue_paths(&small),
+        vec!["ports[0].framing.max_frame".to_string()]
+    );
+    let ok = parse(&framing_doc("{ mode = \"cobs\", max_frame = 4096 }"));
+    assert!(ok.validate().is_empty(), "{:?}", ok.validate());
+}

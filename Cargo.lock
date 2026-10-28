@@ -45,6 +45,7 @@ dependencies = [
 name = "bforge-core"
 version = "0.1.0"
 dependencies = [
+ "bforge-dissect",
  "bforge-framer",
  "bforge-hal",
  "bforge-storage",

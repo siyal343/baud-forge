@@ -11,6 +11,7 @@ pub mod mem;
 pub mod pipeline;
 pub mod session;
 pub mod slab;
+pub mod tail;
 pub mod ui;
 pub mod validate;
 
@@ -63,7 +64,20 @@ pub struct PortConfig {
 pub struct FramingConfig {
     /// `delimiter`, `cobs`, `slip`, `intel_hex`, `header_length` or `idle_gap`.
     pub mode: String,
+    /// Single delimiter byte for `delimiter` mode.
     pub delimiter: Option<u32>,
+    /// Sync word for `header_length`, as spaced hex, for example `AA 55`.
+    pub sync: Option<String>,
+    /// Offset of the length field inside the frame, in bytes.
+    pub length_offset: Option<u8>,
+    /// `u8`, `u16_le`, `u16_be` or `u32_le`.
+    pub length_width: Option<String>,
+    /// Added to the length value to get the whole frame size.
+    pub length_adjust: Option<i32>,
+    /// Silence in microseconds that ends a frame for `idle_gap`.
+    pub idle_gap_us: Option<u32>,
+    /// Largest frame this mode will emit. Defaults to 64 KiB.
+    pub max_frame: Option<usize>,
     /// `crc8`, `crc16_ccitt_false` or `crc32c`.
     pub crc: Option<String>,
 }

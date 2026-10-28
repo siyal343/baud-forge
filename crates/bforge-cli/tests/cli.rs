@@ -96,3 +96,26 @@ fn status_reports_an_unbindable_port() {
     assert!(stderr.contains("no device matches"), "{stderr}");
     let _ = std::fs::remove_file(path);
 }
+
+#[test]
+fn tail_without_a_workspace_is_refused() {
+    let output = run(&["tail"]);
+    assert_eq!(output.status.code(), Some(1));
+    let stderr = String::from_utf8_lossy(&output.stderr);
+    assert!(stderr.contains("tail needs -c"), "{stderr}");
+}
+
+#[test]
+fn tail_reports_a_port_it_cannot_bind() {
+    let path = write("tail-missing", WORKSPACE);
+    let output = Command::new(binary())
+        .args(["tail", "-c"])
+        .arg(&path)
+        .args(["--duration", "200ms"])
+        .output()
+        .unwrap();
+    assert_eq!(output.status.code(), Some(1), "{output:?}");
+    let stderr = String::from_utf8_lossy(&output.stderr);
+    assert!(stderr.contains("no device matches"), "{stderr}");
+    let _ = std::fs::remove_file(path);
+}

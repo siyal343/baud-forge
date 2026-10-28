@@ -91,11 +91,8 @@ impl ProjectConfig {
                         MODE_NAMES.join(", ")
                     ),
                 ));
-            } else if port.framing.mode == "delimiter" && port.framing.delimiter.is_none() {
-                issues.push(ConfigIssue::new(
-                    format!("{at}.framing.delimiter"),
-                    "mode `delimiter` needs a delimiter byte",
-                ));
+            } else {
+                validate_framing_settings(&at, &port.framing, issues);
             }
 
             if let Some(name) = &port.framing.crc
@@ -228,6 +225,87 @@ impl ProjectConfig {
             }
         }
     }
+}
+
+/// Settings a framing mode needs beyond its name.
+fn validate_framing_settings(
+    at: &str,
+    framing: &crate::FramingConfig,
+    issues: &mut Vec<ConfigIssue>,
+) {
+    if let Some(limit) = framing.max_frame
+        && !(8..=1024 * 1024).contains(&limit)
+    {
+        issues.push(ConfigIssue::new(
+            format!("{at}.framing.max_frame"),
+            format!("{limit} is outside 8 to 1048576"),
+        ));
+    }
+
+    match framing.mode.as_str() {
+        "delimiter" => match framing.delimiter {
+            None => issues.push(ConfigIssue::new(
+                format!("{at}.framing.delimiter"),
+                "mode `delimiter` needs a delimiter byte",
+            )),
+            Some(byte) if byte > 255 => issues.push(ConfigIssue::new(
+                format!("{at}.framing.delimiter"),
+                format!("{byte} is not a byte; use 0 to 255"),
+            )),
+            Some(_) => {}
+        },
+        "header_length" => {
+            match framing.sync.as_deref().map(parse_hex) {
+                Some(Some(bytes)) if (1..=8).contains(&bytes.len()) => {}
+                _ => issues.push(ConfigIssue::new(
+                    format!("{at}.framing.sync"),
+                    "mode `header_length` needs a sync word of 1 to 8 bytes, for example `AA 55`",
+                )),
+            }
+            if framing.length_offset.is_none() {
+                issues.push(ConfigIssue::new(
+                    format!("{at}.framing.length_offset"),
+                    "mode `header_length` needs the offset of the length field",
+                ));
+            }
+            match framing.length_width.as_deref() {
+                Some("u8" | "u16_le" | "u16_be" | "u32_le") => {}
+                Some(other) => issues.push(ConfigIssue::new(
+                    format!("{at}.framing.length_width"),
+                    format!("`{other}` is not a length width; use u8, u16_le, u16_be or u32_le"),
+                )),
+                None => issues.push(ConfigIssue::new(
+                    format!("{at}.framing.length_width"),
+                    "mode `header_length` needs the width of the length field",
+                )),
+            }
+        }
+        "idle_gap" => match framing.idle_gap_us {
+            Some(0) | None => issues.push(ConfigIssue::new(
+                format!("{at}.framing.idle_gap_us"),
+                "mode `idle_gap` needs a silence of at least 1 us",
+            )),
+            Some(_) => {}
+        },
+        _ => {}
+    }
+}
+
+/// Parse `AA 55` or `AA5501` into bytes.
+pub fn parse_hex(text: &str) -> Option<Vec<u8>> {
+    let cleaned: String = text.split_whitespace().collect::<Vec<_>>().join("");
+    let cleaned = cleaned.trim_start_matches("0x");
+    if cleaned.is_empty() || !cleaned.len().is_multiple_of(2) {
+        return None;
+    }
+    let (pairs, _) = cleaned.as_bytes().as_chunks::<2>();
+    let mut out = Vec::with_capacity(pairs.len());
+    for [high, low] in pairs {
+        let high = (*high as char).to_digit(16)?;
+        let low = (*low as char).to_digit(16)?;
+        out.push((high as u8) << 4 | low as u8);
+    }
+    Some(out)
 }
 
 fn is_valid_tuple(tuple: &str) -> bool {

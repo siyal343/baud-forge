@@ -33,6 +33,7 @@ state through one contract (F1.7).
 | S6b vault and CLI | F1.3.5, F1.3.7, F1.5.5, F1.7.4 | done | index sidecar opens without scanning; repair cut a 33-byte tail to 56 records; assert passed 3 of 3 on a live recording; 5 contract tests |
 | S11 dissection | F3.1, F3.2 (subset) | done | a 19-byte firmware frame decodes field by field from its header alone; 180k frames/s; 22 dissect tests |
 | S12 symbolization | F3.5 | done | a fault line resolves 2 of 4 pointers to file:line in 1.2 us each; 17 elf tests |
+| S8 engine half | framing and dissection on one path | done | `bforge tail` frames a real port and decodes a COBS frame through its header; framing settings come from `.bforge.toml` |
 
 S1 notes:
 
@@ -169,13 +170,27 @@ S12 notes:
 - The image is our own debug binary: the board's sketch `.elf` is not on this
   machine (D-46).
 
-CI now builds the app: every green run uploads a `bforge` binary for that
-platform as an artifact, and `.github/workflows/release.yml` builds all six
-targets on a tag and publishes them as a GitHub release.
+S8 notes:
 
-Next action: S8's engine half. Framing and dissection both exist and are not
-wired to the pipeline; a `bforge tail` that frames, decodes and prints rows would
-put them on a path the GUI can consume, without needing the GUI to exist.
+- `bforge tail` is the read path the window will consume: pipeline, framing
+  machine, optional C-header dissector, rows with byte offsets. `--json` emits the
+  row shape, so the GUI can be written against a real producer.
+- The framing table now carries what the machines need: sync word, length offset,
+  width and adjustment, idle gap, and a frame limit. D-17 is closed.
+- The hardware demo first produced zero frames because the delimiter was `0x0A`
+  and the sketch ends lines with `0x0D`. The tool reported an empty stream instead
+  of inventing frames, which is what the configuration check is for.
+- Frames inherit the timestamp of the read that completed them, so a burst in one
+  slab shows a flat delta. Per-byte timing is D-47.
+- D-15 stays open in its real form: `record` still writes raw chunks, so `assert`
+  matches raw bytes rather than decoded fields.
+
+CI also builds the app now: every green run uploads a release `bforge` binary per
+platform, and a `v*` tag publishes all six through the release workflow.
+
+Next action: the rest of Track A needs the board in someone's hands (pins at
+1 kHz, hotplug, yield). The next verifiable step is the record path gaining framed
+rows, which closes D-15 and lets `assert` check fields instead of bytes.
 
 ## What the setup did
 

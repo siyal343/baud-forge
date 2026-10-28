@@ -26,6 +26,8 @@ Commands:
          or: -c <file> --port <id>
   status -c <file>              Print the UI state contract as JSON
          [--duration 1s] [--watch]
+  tail -c <file>                Frame and decode a live port
+         [--port <id>]... [--duration 5s] [--fields] [--json]
   assert <vault> -r <rules>     Check a vault against a TOML rule file
          [--json]
   vault info <vault>            Report records, bytes, index source, damage
@@ -59,6 +61,7 @@ fn main() -> ExitCode {
         Some("record") => record(&args[1..]),
         Some("replay") => replay(&args[1..]),
         Some("status") => status(&args[1..]),
+        Some("tail") => tail(&args[1..]),
         Some("assert") => assert_vault(&args[1..]),
         Some("vault") => vault(&args[1..]),
         Some(other) => usage_error(&format!("unknown command `{other}`")),
@@ -631,6 +634,127 @@ fn vault_repair(args: &mut Args) -> ExitCode {
         Err(error) => {
             eprintln!("error: {path}: {error}");
             ExitCode::FAILURE
+        }
+    }
+}
+
+fn tail(args: &[String]) -> ExitCode {
+    let mut args = Args::new(args);
+    let config_path = args.value("-c");
+    let only = args.values("--port");
+    let duration = args
+        .value("--duration")
+        .as_deref()
+        .and_then(parse_duration)
+        .unwrap_or(Duration::from_secs(5));
+    let show_fields = args.flag("--fields");
+    let json = args.flag("--json");
+    if let Some(unknown) = args.unknown() {
+        return usage_error(&format!("unknown option `{unknown}`"));
+    }
+    let Some(config_path) = config_path else {
+        return usage_error("tail needs -c <workspace>");
+    };
+
+    let config = match load_config(&config_path) {
+        Ok(config) => config,
+        Err(code) => return code,
+    };
+    let ports = match session_ports_from_config(&config, &only) {
+        Ok(ports) => ports,
+        Err(error) => {
+            eprintln!("error: {error}");
+            return ExitCode::FAILURE;
+        }
+    };
+
+    let mut configs = std::collections::HashMap::new();
+    for port in &config.ports {
+        if !only.is_empty() && !only.contains(&port.id) {
+            continue;
+        }
+        match bforge_core::tail::tail_config(port) {
+            Ok(tail) => {
+                configs.insert(port.id.clone(), tail);
+            }
+            Err(error) => {
+                eprintln!("error: port `{}`: {error}", port.id);
+                return ExitCode::FAILURE;
+            }
+        }
+    }
+
+    let mut tail = match bforge_core::tail::Tail::start(ports, configs) {
+        Ok(tail) => tail,
+        Err(error) => {
+            eprintln!("error: {error}");
+            return ExitCode::FAILURE;
+        }
+    };
+
+    if !json {
+        eprintln!(
+            "tailing {} port(s) for {:.1} s, press Enter to stop",
+            tail.port_count(),
+            duration.as_secs_f64()
+        );
+    }
+
+    let stop = stop_signal(Some(duration));
+    let mut frames = 0usize;
+    loop {
+        let rows = tail.pump();
+        if rows.is_empty() {
+            std::thread::sleep(Duration::from_millis(2));
+        }
+        for row in rows {
+            frames += 1;
+            if json {
+                println!("{}", serde_json::to_string(&row).unwrap_or_default());
+            } else {
+                print_row(&row, show_fields);
+            }
+        }
+        if stop() {
+            break;
+        }
+    }
+    let elapsed = tail.elapsed();
+    tail.stop();
+    if !json {
+        eprintln!(
+            "{frames} frame(s) in {:.1} s ({:.1} frames/s)",
+            elapsed.as_secs_f64(),
+            frames as f64 / elapsed.as_secs_f64().max(0.001)
+        );
+    }
+    ExitCode::SUCCESS
+}
+
+fn print_row(row: &bforge_core::tail::TailRow, show_fields: bool) {
+    let body = if row.text.is_empty() {
+        row.hex.clone()
+    } else {
+        row.text.replace('\n', " ")
+    };
+    println!(
+        "{:>10.3}s +{:>7.0}us {:<10} {:>5}B {:<20} {}",
+        row.timestamp_us as f64 / 1e6,
+        row.delta_us,
+        row.port,
+        row.len,
+        row.protocol.clone().unwrap_or_default(),
+        body
+    );
+    if let Some(error) = &row.decode_error {
+        println!("             decode error: {error}");
+    }
+    if show_fields {
+        for field in &row.fields {
+            println!(
+                "             {:<24} +0x{:02x} {:>2}B  {}",
+                field.name, field.offset, field.len, field.value
+            );
         }
     }
 }
