@@ -203,7 +203,9 @@ and the plot stack instead of clipping.
 ## Build
 
 The engine builds with any Rust toolchain. The desktop app needs MSVC, which is
-covered separately in [`docs/GUI-SETUP.md`](docs/GUI-SETUP.md).
+covered separately in [`docs/GUI-SETUP.md`](docs/GUI-SETUP.md). A Linux machine can
+run the long soaks and build the desktop app without it; see
+[`docs/VPS-LAB.md`](docs/VPS-LAB.md).
 
 Clone the repository first:
 

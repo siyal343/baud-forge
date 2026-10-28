@@ -24,7 +24,7 @@ The plan lives in [IMPLEMENTATION.md](IMPLEMENTATION.md), progress in
 | D-02 | `ui/` frontend | Same as D-01. The design is fixed by `specs/UI-UX-Guide.md`. | D-01 | As above. |
 | D-03 | Windows ARM64 and macOS Intel installers | No Tauri build on this machine. CI cross-builds the CLI only. | D-01 plus a release job | Release artefacts for three of six targets do not exist. |
 | D-04 | S6b commit `736b1d9` is local, not on origin | Git Credential Manager wants an interactive terminal and there is no SSH key or token in the environment. | `gh auth login`, or `git push` from a normal terminal | The work is safe locally. A lost disk loses one commit. |
-| D-05 | Nightly workflow has not been dispatched | Needs GitHub auth to dispatch, or wait for 03:00 UTC. | Same as D-04 | The soak numbers in `specs/0007` come from a 60-second local run, not the nightly. |
+| D-05 | Long soaks have not run yet | `specs/0007` measured 60 seconds locally and 512 MiB of vault. A 4 vCPU Linux box is provisioned (`docs/VPS-LAB.md`, `deploy/lab-setup.sh`) for an hour-long run and a 4 GiB read, which is what the numbers need. | Running `deploy/lab-setup.sh` on the VPS, then the soak, then recording the conditions and results in `specs/0007` | The ingestion and memory claims stay short-run until then. |
 
 ## 2. Blocked by hardware or by a person
 
