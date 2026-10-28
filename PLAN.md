@@ -40,6 +40,7 @@ state through one contract (F1.7).
 | S8b assert fields | D-15 | done | a 6 s recording from the board decodes to 122 frames and passes 5 field, protocol and count checks |
 | S9 sockets | F1.2.7 (TCP, UDP, config) | done | simulator over loopback: tail decodes, record stores 60 frames, assert passes 3 of 3, no hardware |
 | S10 native packs | F3.4 (CCSDS/PUS, CSP, Modbus; MAVLink deferred) | done | 12 pack tests on hand-built fixtures; a CCSDS packet in a vault decodes and passes assert rules with no schema file |
+| S11 serve | F1.7.2 (contract over HTTP, events over SSE) | done | 300 s session served: snapshot every 200 ms, 40 snapshot and 32 ui frames in 8 s, 74 032 chunks; page captured in Edge |
 
 S1 notes:
 
@@ -204,10 +205,20 @@ S10 notes:
   fields with a name, not silent passes.
 - MAVLink is deferred: it needs a dialect XML, not a header layout.
 
-Next action: the GUI, unblocked by `bforge serve`. Serve the F1.7 snapshot over
-loopback HTTP and the events over server-sent events, run the SolidJS frontend in
-Edge with `npm run dev`, and let CI build the Tauri shell for a packaged app. That
-puts the largest remaining item back on a machine that can iterate on it.
+S11 notes:
+
+- The server is 300 lines of standard library. Four routes and one event stream did
+  not justify a framework (ADR-001).
+- The snapshot is the source of truth and the events are a hint: a client that falls
+  behind loses frames, never the pump. A full queue costs that client one frame.
+- The page is a placeholder on purpose. It proves the contract reaches a screen with
+  live numbers; it does not pretend to be the six-band workbench (D-60).
+- Serving is read-only, loopback only, with no authentication (D-59).
+
+Next action: the SolidJS frontend. `serve` is the only interface it needs, so the
+work can be done in Edge with hot reload, and the Tauri shell wraps the same files
+afterwards. The engine has published the contract since S4; this is the first phase
+where a change to a panel can be seen without a desktop build.
 
 ## What the setup did
 

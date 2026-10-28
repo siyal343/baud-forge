@@ -11,7 +11,7 @@ errors, delays and truncation into a live link.
 
 Binary name: `bforge`.
 
-## Status: scaffold only
+## Status: engine complete, GUI in progress
 
 This repository holds the project skeleton. It defines the crate topology, the
 data types and the configuration schema from the
@@ -23,7 +23,12 @@ What works today:
 - The Cargo workspace builds, with the nine crates from the architecture.
 - `.bforge.toml` parses into typed structs.
 - `bforge help` and `bforge version` run.
-- The telemetry core inherited from porti-rs stays available as `legacy`.
+- Record, replay, tail, assert, yield and vault repair work on serial ports and
+  sockets, with six framing modes, a C header dissector and three native packs.
+- `bforge serve` publishes the UI contract over loopback HTTP, so the workbench can
+  run in a browser while the desktop shell is built.
+
+![The served page](docs/screenshots/serve-page.png)
 
 ## Platforms
 

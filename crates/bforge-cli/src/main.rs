@@ -26,6 +26,8 @@ Commands:
          or: -c <file> --port <id>
   status -c <file>              Print the UI state contract as JSON
          [--duration 1s] [--watch]
+  serve -c <file>               Serve the UI contract over loopback HTTP
+         [--addr 127.0.0.1:7717] [--vault <file>] [--duration 1h]
   tail -c <file>                Frame and decode a live port
          [--port <id>]... [--duration 5s] [--fields] [--json]
   assert <vault> -r <rules>     Check a vault against a TOML rule file
@@ -63,6 +65,7 @@ fn main() -> ExitCode {
         Some("record") => record(&args[1..]),
         Some("replay") => replay(&args[1..]),
         Some("status") => status(&args[1..]),
+        Some("serve") => serve(&args[1..]),
         Some("tail") => tail(&args[1..]),
         Some("assert") => assert_vault(&args[1..]),
         Some("vault") => vault(&args[1..]),
@@ -434,6 +437,79 @@ fn replay(args: &[String]) -> ExitCode {
                 report.payload_bytes,
                 report.elapsed.as_secs_f64(),
                 report.max_lag_ms
+            );
+            ExitCode::SUCCESS
+        }
+        Err(error) => {
+            eprintln!("error: {error}");
+            ExitCode::FAILURE
+        }
+    }
+}
+
+fn serve(args: &[String]) -> ExitCode {
+    let mut args = Args::new(args);
+    let config_path = args.value("-c");
+    let address = args
+        .value("--addr")
+        .unwrap_or_else(|| "127.0.0.1:7717".to_string());
+    let vault = args.value("--vault").map(std::path::PathBuf::from);
+    let duration = args
+        .value("--duration")
+        .as_deref()
+        .and_then(parse_duration)
+        .unwrap_or(Duration::from_secs(3600));
+    if let Some(unknown) = args.unknown() {
+        return usage_error(&format!("unknown option `{unknown}`"));
+    }
+    let Some(config_path) = config_path else {
+        return usage_error("serve needs -c <workspace>");
+    };
+    let address = match address.parse() {
+        Ok(address) => address,
+        Err(_) => return usage_error(&format!("`{address}` is not an address")),
+    };
+    let config = match load_config(&config_path) {
+        Ok(config) => config,
+        Err(code) => return code,
+    };
+    let ports = match session_ports_from_config(&config, &[]) {
+        Ok(ports) => ports,
+        Err(error) => {
+            eprintln!("error: {error}");
+            return ExitCode::FAILURE;
+        }
+    };
+    let server = match bforge_core::serve::Server::bind(address) {
+        Ok(server) => server,
+        Err(error) => {
+            eprintln!("error: {error}");
+            return ExitCode::FAILURE;
+        }
+    };
+    let local = match server.local_addr() {
+        Ok(local) => local,
+        Err(error) => {
+            eprintln!("error: {error}");
+            return ExitCode::FAILURE;
+        }
+    };
+    let session = match Session::start(ports, vault.as_deref(), config.workspace.elf_path.clone()) {
+        Ok(session) => session,
+        Err(error) => {
+            eprintln!("error: {error}");
+            return ExitCode::FAILURE;
+        }
+    };
+    println!("serving http://{local}");
+    println!("  page      http://{local}/");
+    println!("  snapshot  http://{local}/api/snapshot");
+    println!("  events    http://{local}/api/events");
+    match server.run(session, Some(duration)) {
+        Ok(stats) => {
+            println!(
+                "served {} requests, {} chunks, up to {} event clients",
+                stats.requests, stats.chunks, stats.clients_max
             );
             ExitCode::SUCCESS
         }

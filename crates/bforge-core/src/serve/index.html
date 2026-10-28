@@ -1,0 +1,97 @@
+<!doctype html>
+<html lang="en">
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>BaudForge</title>
+<style>
+  :root { color-scheme: dark; --bg:#0e1116; --panel:#161b23; --line:#252c38; --text:#d7dee9; --dim:#7d8798; --ok:#3fb950; --warn:#d29922; --bad:#f85149; --accent:#4aa3ff; }
+  * { box-sizing: border-box; }
+  body { margin:0; background:var(--bg); color:var(--text); font:13px/1.5 ui-monospace, SFMono-Regular, Menlo, Consolas, monospace; }
+  header { display:flex; align-items:baseline; gap:14px; padding:14px 18px; border-bottom:1px solid var(--line); }
+  h1 { font-size:15px; margin:0; letter-spacing:.08em; text-transform:uppercase; }
+  .badge { padding:1px 8px; border:1px solid var(--line); border-radius:999px; color:var(--dim); font-size:11px; }
+  .badge.live { color:var(--ok); border-color:var(--ok); }
+  .badge.down { color:var(--bad); border-color:var(--bad); }
+  main { padding:18px; display:grid; gap:18px; }
+  section { background:var(--panel); border:1px solid var(--line); border-radius:8px; }
+  h2 { font-size:11px; letter-spacing:.14em; text-transform:uppercase; color:var(--dim); margin:0; padding:10px 14px; border-bottom:1px solid var(--line); font-weight:600; }
+  .row { display:flex; flex-wrap:wrap; gap:26px; padding:14px; }
+  .stat { display:grid; gap:2px; }
+  .stat span { color:var(--dim); font-size:11px; }
+  .stat b { font-size:15px; font-weight:600; font-variant-numeric:tabular-nums; }
+  table { width:100%; border-collapse:collapse; }
+  th, td { text-align:left; padding:8px 14px; border-top:1px solid var(--line); font-variant-numeric:tabular-nums; }
+  th { color:var(--dim); font-weight:500; font-size:11px; text-transform:uppercase; letter-spacing:.1em; border-top:0; }
+  td.state.open { color:var(--ok); } td.state.reconnecting, td.state.yielded { color:var(--warn); } td.state.closed { color:var(--bad); }
+  ol { margin:0; padding:10px 14px 12px 30px; color:var(--dim); max-height:150px; overflow:auto; }
+  code { color:var(--accent); }
+</style>
+<header>
+  <h1>BaudForge</h1>
+  <span class="badge" id="contract">contract ?</span>
+  <span class="badge" id="link">connecting</span>
+  <span class="badge" id="addr"></span>
+</header>
+<main>
+  <section>
+    <h2>Session</h2>
+    <div class="row">
+      <div class="stat"><span>mode</span><b id="mode">-</b></div>
+      <div class="stat"><span>elapsed</span><b id="elapsed">-</b></div>
+      <div class="stat"><span>chunks</span><b id="chunks">-</b></div>
+      <div class="stat"><span>payload</span><b id="payload">-</b></div>
+      <div class="stat"><span>vault</span><b id="file">-</b></div>
+    </div>
+  </section>
+  <section>
+    <h2>Ports</h2>
+    <table>
+      <thead><tr><th>id</th><th>device</th><th>baud</th><th>framing</th><th>state</th><th>chunks</th><th>bytes</th><th>overruns</th><th>stall ms</th></tr></thead>
+      <tbody id="ports"><tr><td colspan="9">waiting for the first snapshot</td></tr></tbody>
+    </table>
+  </section>
+  <section>
+    <h2>Events</h2>
+    <ol id="events"></ol>
+  </section>
+</main>
+<script>
+const $ = (id) => document.getElementById(id);
+const bytes = (n) => n < 1000 ? n + ' B' : n < 1e6 ? (n / 1e3).toFixed(1) + ' kB' : (n / 1e6).toFixed(1) + ' MB';
+const secs = (ms) => (ms / 1000).toFixed(1) + ' s';
+$('addr').textContent = location.host;
+
+function render(snapshot) {
+  $('contract').textContent = 'contract ' + snapshot.contract;
+  $('mode').textContent = snapshot.session.mode;
+  $('elapsed').textContent = secs(snapshot.session.elapsed_ms);
+  $('chunks').textContent = snapshot.session.chunks;
+  $('payload').textContent = bytes(snapshot.session.payload_bytes);
+  $('file').textContent = snapshot.session.vault || 'not recording';
+  const body = $('ports');
+  if (!snapshot.ports.length) { body.innerHTML = '<tr><td colspan="9">no ports configured</td></tr>'; return; }
+  body.innerHTML = snapshot.ports.map((port) => `<tr>
+      <td>${port.id}</td><td>${port.device || '-'}</td><td>${port.baud_rate || '-'}</td>
+      <td>${port.framing}</td><td class="state ${port.state}">${port.state}</td>
+      <td>${port.chunks}</td><td>${bytes(port.bytes)}</td>
+      <td>${port.overruns}</td><td>${port.stalls_ms.toFixed(1)}</td></tr>`).join('');
+}
+
+function note(text) {
+  const item = document.createElement('li');
+  item.textContent = new Date().toLocaleTimeString() + '  ' + text;
+  const list = $('events');
+  list.prepend(item);
+  while (list.children.length > 40) list.lastChild.remove();
+}
+
+const source = new EventSource('/api/events');
+source.addEventListener('open', () => { $('link').textContent = 'live'; $('link').className = 'badge live'; });
+source.addEventListener('error', () => { $('link').textContent = 'reconnecting'; $('link').className = 'badge down'; });
+source.addEventListener('snapshot', (event) => render(JSON.parse(event.data)));
+source.addEventListener('ui', (event) => {
+  const data = JSON.parse(event.data);
+  note(Object.entries(data).filter(([key]) => key !== 'at_ms').map(([key, value]) => key + '=' + value).join(' '));
+});
+</script>
+</html>
