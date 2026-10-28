@@ -48,6 +48,14 @@ export interface FieldRow {
   offset: number
   len: number
   value: string
+  value_num: number | null
+}
+
+/** New samples of one numeric field (spec 0020). */
+export interface SeriesUpdate {
+  port: string
+  field: string
+  values: number[]
 }
 
 export interface TailRow {

@@ -6,6 +6,7 @@
 
 use crate::control::{ControlServer, ControlTarget};
 use crate::pipeline::{Pipeline, PipelineConfig, YieldRequest};
+use crate::series::{SeriesSet, SeriesUpdate};
 use crate::tail::{Stream, TailError, TailRow, tail_config};
 use crate::ui::{CONTRACT_VERSION, EventBus, PinsView, PortView, SessionView, UiEvent, UiSnapshot};
 use crate::{PortConfig, ProjectConfig};
@@ -79,6 +80,11 @@ struct RunningPort {
 /// reading must not grow the process.
 const FRAME_QUEUE: usize = 4_096;
 
+/// Chunks one pump call may move from one port. A source that outruns the pump
+/// would otherwise keep `pump_once` inside its drain loop, and the snapshot, the
+/// events and the vault position would stop being published.
+const PUMP_BUDGET: usize = 1_024;
+
 /// A recording session.
 pub struct Session {
     mode: &'static str,
@@ -99,6 +105,7 @@ pub struct Session {
     streams: Vec<Option<Stream>>,
     frames: std::collections::VecDeque<TailRow>,
     frames_dropped: u64,
+    series: SeriesSet,
 }
 
 /// What a running session answers on the control socket.
@@ -228,6 +235,7 @@ impl Session {
             streams: Vec::new(),
             frames: std::collections::VecDeque::new(),
             frames_dropped: 0,
+            series: SeriesSet::new(),
         };
         session.bus.publish(UiEvent::Started {
             at_ms: 0,
@@ -270,11 +278,26 @@ impl Session {
         self.frames_dropped
     }
 
+    /// Take the numeric samples added since the last call.
+    pub fn take_series(&mut self) -> Vec<SeriesUpdate> {
+        self.series.take()
+    }
+
+    /// The series the decoder has seen, for a client that asks what it can plot.
+    pub fn series_keys(&self) -> Vec<(String, String)> {
+        self.series.keys()
+    }
+
     /// Move ready chunks into the vault. Returns how many moved.
     pub fn pump_once(&mut self) -> Result<usize, SessionError> {
         let mut moved = 0;
         for index in 0..self.ports.len() {
-            while let Ok(slab) = self.ports[index].logger.pop() {
+            let mut taken = 0;
+            while taken < PUMP_BUDGET {
+                let Ok(slab) = self.ports[index].logger.pop() else {
+                    break;
+                };
+                taken += 1;
                 let meta = slab.meta;
                 if let Some(writer) = self.writer.as_mut() {
                     let chunk = RawChunk {
@@ -290,6 +313,7 @@ impl Session {
                 }
                 if let Some(Some(stream)) = self.streams.get_mut(index) {
                     for row in stream.feed(meta.timestamp_ns, slab.bytes()) {
+                        self.series.sample(&row);
                         if self.frames.len() >= FRAME_QUEUE {
                             self.frames.pop_front();
                             self.frames_dropped += 1;

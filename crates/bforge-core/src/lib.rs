@@ -10,6 +10,7 @@ pub mod assert;
 pub mod control;
 pub mod mem;
 pub mod pipeline;
+pub mod series;
 pub mod serve;
 pub mod session;
 pub mod slab;

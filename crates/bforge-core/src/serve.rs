@@ -14,7 +14,7 @@ use crate::ui::UiEvent;
 use std::io::{BufRead, BufReader, Write};
 use std::net::{SocketAddr, TcpListener, TcpStream};
 use std::sync::atomic::{AtomicBool, AtomicU64, Ordering};
-use std::sync::mpsc::{RecvTimeoutError, TrySendError, sync_channel};
+use std::sync::mpsc::{TrySendError, sync_channel};
 use std::sync::{Arc, Mutex};
 use std::time::{Duration, Instant};
 
@@ -24,8 +24,11 @@ const INDEX: &str = include_str!("serve/index.html");
 /// How long the pump waits before it re-publishes the snapshot.
 const SNAPSHOT_INTERVAL: Duration = Duration::from_millis(200);
 
-/// Frames a client may fall behind before a frame is dropped for it.
+/// Control frames a client may fall behind before one is dropped for it.
 const CLIENT_BACKLOG: usize = 256;
+
+/// How long an event stream waits before it writes a keep-alive comment.
+const EVENT_TICK: Duration = Duration::from_millis(500);
 
 /// What one serve session did.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -64,13 +67,23 @@ impl From<SessionError> for ServeError {
     }
 }
 
-/// State shared with the connection threads.
+/// One connected client. Control frames (snapshot, ui, series) and the frame batch
+/// travel separately: a slow client must lose frames, never the snapshot that
+/// corrects them.
+#[derive(Debug)]
+struct Client {
+    control: std::sync::mpsc::SyncSender<String>,
+    /// The newest frame batch this client has not read yet. A new batch replaces
+    /// an unread one, so memory stays at one batch per client.
+    frames: Mutex<Option<String>>,
+}
+
 #[derive(Debug, Default)]
 struct Shared {
     /// The newest snapshot as JSON. The snapshot is the source of truth; a client
     /// that misses an event is corrected by the next one of these.
     snapshot: Mutex<String>,
-    clients: Mutex<Vec<std::sync::mpsc::SyncSender<String>>>,
+    clients: Mutex<Vec<Arc<Client>>>,
     requests: AtomicU64,
     clients_max: AtomicU64,
 }
@@ -81,15 +94,26 @@ impl Shared {
         self.broadcast(&sse("snapshot", &json));
     }
 
-    /// Hand one frame to every connected client. A client that is full misses this
-    /// frame and keeps its place; a client that is gone is removed.
+    /// Hand a control frame to every connected client. A client that is full misses
+    /// this frame and keeps its place; a client that is gone is removed.
     fn broadcast(&self, frame: &str) {
         let mut clients = self.clients.lock().unwrap();
         let count = clients.len() as u64;
         self.clients_max.fetch_max(count, Ordering::Relaxed);
-        clients.retain(|client| match client.try_send(frame.to_string()) {
+        clients.retain(|client| match client.control.try_send(frame.to_string()) {
             Ok(()) | Err(TrySendError::Full(_)) => true,
             Err(TrySendError::Disconnected(_)) => false,
+        });
+    }
+
+    /// Hand a frame batch to every client, replacing a batch it has not read.
+    fn broadcast_frames(&self, frame: &str) {
+        let mut clients = self.clients.lock().unwrap();
+        let count = clients.len() as u64;
+        self.clients_max.fetch_max(count, Ordering::Relaxed);
+        clients.retain(|client| {
+            *client.frames.lock().unwrap() = Some(frame.to_string());
+            true
         });
     }
 }
@@ -149,7 +173,7 @@ impl Server {
             session.pump_once()?;
             let frames = session.take_frames();
             if !frames.is_empty() {
-                shared.broadcast(&sse("frames", &frames_json(&frames)));
+                shared.broadcast_frames(&sse("frames", &frames_json(&frames)));
             }
             while let Ok(event) = events.try_recv() {
                 shared.broadcast(&sse("ui", &event_json(&event)));
@@ -157,6 +181,11 @@ impl Server {
             if published.elapsed() >= SNAPSHOT_INTERVAL {
                 let json = serde_json::to_string(&session.snapshot()).unwrap_or_default();
                 shared.set_snapshot(json);
+                let series = session.take_series();
+                if !series.is_empty() {
+                    let json = serde_json::to_string(&series).unwrap_or_default();
+                    shared.broadcast(&sse("series", &json));
+                }
                 published = Instant::now();
             }
             if stop.load(Ordering::Relaxed) {
@@ -302,21 +331,37 @@ fn stream_events(mut stream: TcpStream, shared: Arc<Shared>, stop: Arc<AtomicBoo
     let _ = stream.flush();
 
     let (sender, receiver) = sync_channel(CLIENT_BACKLOG);
-    shared.clients.lock().unwrap().push(sender);
+    let client = Arc::new(Client {
+        control: sender,
+        frames: Mutex::new(None),
+    });
+    shared.clients.lock().unwrap().push(Arc::clone(&client));
+
     while !stop.load(Ordering::Relaxed) {
-        match receiver.recv_timeout(Duration::from_secs(5)) {
-            Ok(frame) => {
-                if stream.write_all(frame.as_bytes()).is_err() || stream.flush().is_err() {
-                    break;
-                }
+        let mut wrote = false;
+        while let Ok(frame) = receiver.try_recv() {
+            if stream.write_all(frame.as_bytes()).is_err() {
+                return;
             }
-            Err(RecvTimeoutError::Timeout) => {
-                // A comment keeps the connection warm and notices a closed client.
-                if stream.write_all(b": keep-alive\n\n").is_err() {
-                    break;
-                }
+            wrote = true;
+        }
+        let batch = client.frames.lock().unwrap().take();
+        if let Some(batch) = batch {
+            if stream.write_all(batch.as_bytes()).is_err() {
+                return;
             }
-            Err(RecvTimeoutError::Disconnected) => break,
+            wrote = true;
+        }
+        if wrote {
+            if stream.flush().is_err() {
+                return;
+            }
+            continue;
+        }
+        // Nothing to send: wait, then keep the connection warm.
+        std::thread::sleep(EVENT_TICK);
+        if stream.write_all(b": keep-alive\n\n").is_err() {
+            return;
         }
     }
 }

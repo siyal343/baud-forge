@@ -2,10 +2,13 @@
 // events are a hint, and the frames are the stream the viewport draws.
 
 import { createSignal, onCleanup } from 'solid-js'
-import type { TailRow, UiEvent, UiSnapshot } from './types'
+import type { SeriesUpdate, TailRow, UiEvent, UiSnapshot } from './types'
 
 /** Frames kept in the viewport. The engine caps its own queue at 4096. */
 const FRAME_WINDOW = 500
+
+/** Samples kept per series, matching the engine's ring. */
+const SERIES_SAMPLES = 600
 
 export type Link = 'connecting' | 'live' | 'down'
 
@@ -15,6 +18,7 @@ export function createFeed() {
   const [events, setEvents] = createSignal<{ at: number; text: string }[]>([])
   const [link, setLink] = createSignal<Link>('connecting')
   const [received, setReceived] = createSignal(0)
+  const [series, setSeries] = createSignal<Record<string, number[]>>({})
 
   const source = new EventSource('/api/events')
 
@@ -46,6 +50,20 @@ export function createFeed() {
     })
   })
 
+  source.addEventListener('series', (message) => {
+    const updates = JSON.parse((message as MessageEvent<string>).data) as SeriesUpdate[]
+    setLink('live')
+    setSeries((current) => {
+      const next = { ...current }
+      for (const update of updates) {
+        const key = `${update.port}.${update.field}`
+        const ring = (next[key] ?? []).concat(update.values)
+        next[key] = ring.length > SERIES_SAMPLES ? ring.slice(ring.length - SERIES_SAMPLES) : ring
+      }
+      return next
+    })
+  })
+
   source.addEventListener('ui', (message) => {
     const event = JSON.parse((message as MessageEvent<string>).data) as UiEvent
     const { event: name, at_ms, ...rest } = event
@@ -57,5 +75,5 @@ export function createFeed() {
 
   onCleanup(() => source.close())
 
-  return { snapshot, frames, events, link, received }
+  return { snapshot, frames, events, link, received, series }
 }

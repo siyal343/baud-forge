@@ -4,19 +4,52 @@
 
 use bforge_core::serve::Server;
 use bforge_core::session::{Session, session_ports_from_config};
+use bforge_framer::cobs_encode;
 use std::io::{Read, Write};
 use std::net::{TcpListener, TcpStream};
 use std::time::{Duration, Instant};
 
-/// A device on loopback that writes one line every few milliseconds.
+/// The 19-byte frame the fixture header describes, plus its CRC-32C.
+fn imu_frame(sequence: u64) -> Vec<u8> {
+    let mut frame = Vec::new();
+    frame.extend_from_slice(&0xAA55u16.to_le_bytes());
+    frame.push(3);
+    frame.push((sequence & 0x07) as u8 | (((sequence >> 3) & 0x1F) as u8) << 3);
+    frame.extend_from_slice(&(sequence as u32 * 1_000).to_le_bytes());
+    frame.extend_from_slice(&(7_400u16 + (sequence % 800) as u16).to_be_bytes());
+    frame.extend_from_slice(&(0.001f32 * (sequence % 1000) as f32).to_le_bytes());
+    frame.extend_from_slice(&[1, 2, 3, 4]);
+    frame.push(1);
+    let crc = crc32c(&frame);
+    frame.extend_from_slice(&crc.to_le_bytes());
+    frame
+}
+
+fn crc32c(bytes: &[u8]) -> u32 {
+    let mut crc = 0xFFFF_FFFFu32;
+    for byte in bytes {
+        crc ^= u32::from(*byte);
+        for _ in 0..8 {
+            crc = if crc & 1 == 1 {
+                (crc >> 1) ^ 0x82F6_3B78
+            } else {
+                crc >> 1
+            };
+        }
+    }
+    !crc
+}
+
+/// A device on loopback that writes COBS frames with numeric fields.
 fn device() -> String {
     let listener = TcpListener::bind("127.0.0.1:0").unwrap();
     let address = listener.local_addr().unwrap().to_string();
     std::thread::spawn(move || {
         let (mut stream, _) = listener.accept().unwrap();
-        for index in 0..500u32 {
-            let line = format!("imu {index} 0.25\r\n");
-            if stream.write_all(line.as_bytes()).is_err() {
+        for index in 0..500u64 {
+            let mut payload = cobs_encode(&imu_frame(index));
+            payload.push(0);
+            if stream.write_all(&payload).is_err() {
                 return;
             }
             std::thread::sleep(Duration::from_millis(4));
@@ -27,6 +60,11 @@ fn device() -> String {
 }
 
 fn workspace(address: &str) -> bforge_core::ProjectConfig {
+    let header = std::path::Path::new(env!("CARGO_MANIFEST_DIR"))
+        .join("../bforge-dissect/tests/fixtures/imu_packet.h")
+        .display()
+        .to_string()
+        .replace('\\', "/");
     let text = format!(
         r#"
 [workspace]
@@ -38,7 +76,8 @@ id = "sim"
 transport = "tcp-client"
 address = "{address}"
 baud_rate = 115200
-framing = {{ mode = "delimiter", delimiter = 10 }}
+framing = {{ mode = "cobs" }}
+dissector = {{ type = "c_header", file = "{header}", root_struct = "ImuPacket" }}
 "#
     );
     toml::from_str(&text).expect("workspace parses")
@@ -128,7 +167,10 @@ fn an_event_source_receives_the_snapshot_without_asking() {
         // Read until a snapshot and a frame arrive, then stop asking.
         let mut seen = String::new();
         let mut buffer = [0u8; 8192];
-        while !(seen.contains("\"contract\":1") && seen.contains("event: frames")) {
+        while !(seen.contains("\"contract\":1")
+            && seen.contains("event: frames")
+            && seen.contains("event: series"))
+        {
             match stream.read(&mut buffer) {
                 Ok(0) => break,
                 Ok(read) => seen.push_str(&String::from_utf8_lossy(&buffer[..read])),
@@ -144,6 +186,12 @@ fn an_event_source_receives_the_snapshot_without_asking() {
         assert!(seen.contains("event: frames"), "frames reach the client");
         assert!(seen.contains("\"port\":\"sim\""), "a frame names its port");
         assert!(seen.contains("\"fields\":"), "a frame carries its fields");
+        assert!(
+            seen.contains("event: series"),
+            "a numeric field becomes a series"
+        );
+        assert!(seen.contains("\"field\":"), "a series names its field");
+        assert!(seen.contains("\"values\":"), "a series carries samples");
     });
 
     let stats = server

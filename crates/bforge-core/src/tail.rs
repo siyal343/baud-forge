@@ -86,6 +86,8 @@ pub struct FieldRow {
     pub offset: u32,
     pub len: u32,
     pub value: String,
+    /// The value as a number, when the field is numeric. A plot reads this.
+    pub value_num: Option<f64>,
 }
 
 /// One frame as the viewport would show it.
@@ -461,6 +463,7 @@ fn flatten(fields: &[DecodedField], prefix: &str) -> Vec<FieldRow> {
                 name,
                 offset: field.byte_offset,
                 len: field.byte_len,
+                value_num: field.value_num,
                 value: field.value.clone(),
             });
         } else {

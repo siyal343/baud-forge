@@ -30,10 +30,61 @@ function HexDump(props: { row: TailRow; field: FieldRow | null }) {
   )
 }
 
+
+/** A line plot of one series. Scales to its own min and max, like a scope. */
+function Plot(props: { values: number[] }) {
+  const box = { width: 1000, height: 100 }
+  const shape = createMemo(() => {
+    const values = props.values
+    if (values.length < 2) return ''
+    const low = Math.min(...values)
+    const high = Math.max(...values)
+    const span = high - low || 1
+    return values
+      .map((value, index) => {
+        const x = (index / (values.length - 1)) * box.width
+        const y = box.height - ((value - low) / span) * box.height
+        return `${index === 0 ? 'M' : 'L'}${x.toFixed(2)},${y.toFixed(2)}`
+      })
+      .join(' ')
+  })
+  const readout = createMemo(() => {
+    const values = props.values
+    if (values.length === 0) return { last: 0, low: 0, high: 0 }
+    return {
+      last: values[values.length - 1],
+      low: Math.min(...values),
+      high: Math.max(...values),
+    }
+  })
+  const number = (value: number) =>
+    Math.abs(value) >= 1000 || (Math.abs(value) < 0.01 && value !== 0)
+      ? value.toExponential(3)
+      : value.toFixed(3)
+
+  return (
+    <div class="plot">
+      <svg viewBox={`0 0 ${box.width} ${box.height}`} preserveAspectRatio="none" role="img" aria-label="series plot">
+        <line x1="0" y1={box.height / 2} x2={box.width} y2={box.height / 2} class="grid" />
+        <path d={shape()} class="trace" />
+      </svg>
+      <div class="plot-readout">
+        <span>last <b>{number(readout().last)}</b></span>
+        <span>min <b>{number(readout().low)}</b></span>
+        <span>max <b>{number(readout().high)}</b></span>
+        <span>{props.values.length} samples</span>
+      </div>
+    </div>
+  )
+}
+
 export default function App() {
   const feed = createFeed()
   const [selected, setSelected] = createSignal<TailRow | null>(null)
   const [hovered, setHovered] = createSignal<FieldRow | null>(null)
+  const [plotKey, setPlotKey] = createSignal<string | null>(null)
+  const plotKeys = createMemo(() => Object.keys(feed.series()).sort())
+  const activePlot = createMemo(() => plotKey() ?? plotKeys()[0] ?? null)
 
   const session = () => feed.snapshot()?.session
   const ports = () => feed.snapshot()?.ports ?? []
@@ -92,7 +143,8 @@ export default function App() {
         </ol>
       </aside>
 
-      <main class="stream">
+      <div class="stage">
+        <main class="stream">
         <div class="stream-head">
           <h2>Stream</h2>
           <span class="hint">{shown().length} of {feed.received()} frames</span>
@@ -126,7 +178,26 @@ export default function App() {
             </For>
           </tbody>
         </table>
-      </main>
+        </main>
+
+        <section class="plot-band">
+          <div class="stream-head">
+            <h2>Telemetry</h2>
+            <Show when={plotKeys().length > 0} fallback={<span class="hint">No numeric fields yet.</span>}>
+              <select value={activePlot() ?? ''} onChange={(event) => setPlotKey(event.currentTarget.value)}>
+                <For each={plotKeys()}>{(key) => <option value={key}>{key}</option>}</For>
+              </select>
+            </Show>
+          </div>
+          <Show when={activePlot()}>
+            {(key) => (
+              <Show when={feed.series()[key()]}>
+                {(values) => <Plot values={values()} />}
+              </Show>
+            )}
+          </Show>
+        </section>
+      </div>
 
       <section class="inspector">
         <h2>Inspector</h2>
