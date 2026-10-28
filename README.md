@@ -96,7 +96,7 @@ port  ->  reader thread  ->  64 KB slab  ->  SPMC fan-out
 | `crates/bforge-hal` | `bforge-hal` | `TransportDriver`, UART line settings, USB tuple match, pin flags |
 | `crates/bforge-storage` | `bforge-storage` | `.bflog` header, `RawChunk`, sparse index, export formats |
 | `crates/bforge-framer` | `bforge-framer` | Delimiter, COBS, SLIP, sync-word and idle-gap rules, checksums |
-| `crates/bforge-dissect` | `bforge-dissect` | Schema sources, `DissectorIr`, decoded field tree, native packs |
+| `crates/bforge-dissect` | `bforge-dissect` | C header parser, `DissectorIr`, decoded field tree, CCSDS with PUS, CSP and Modbus packs |
 | `crates/bforge-elf` | `bforge-elf` | `Symbolizer`, DWARF lookup, defmt and pw_tokenizer decoding |
 | `crates/bforge-script` | `bforge-script` | Fault profile, MITM bridge mode, Lua hook contract |
 | `crates/bforge-core` | `bforge-core` | `.bforge.toml` schema, coordinator, control plane |

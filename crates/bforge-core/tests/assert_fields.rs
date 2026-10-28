@@ -40,6 +40,29 @@ fn imu_frame(version: u8, millivolts: u16, gyro: f32) -> Vec<u8> {
     frame
 }
 
+/// A vault holding raw payloads exactly as given.
+fn build_raw_vault(path: &std::path::Path, payloads: &[Vec<u8>]) -> LogReader {
+    let mut writer = LogWriter::create(path, LogHeader::default()).unwrap();
+    for (index, payload) in payloads.iter().enumerate() {
+        writer
+            .append(
+                &RawChunk {
+                    seq_id: index as u64,
+                    timestamp_ns: index as u64 * 10_000_000,
+                    port_id: 0,
+                    direction: Direction::Rx,
+                    line_state: PinStateFlags::default(),
+                    payload_offset: 0,
+                    payload_len: payload.len() as u32,
+                },
+                payload,
+            )
+            .unwrap();
+    }
+    writer.seal().unwrap();
+    LogReader::open(path).unwrap()
+}
+
 /// A vault holding three COBS frames, written the way a recorder writes one.
 fn build_vault(path: &std::path::Path, frames: &[Vec<u8>]) -> LogReader {
     let mut writer = LogWriter::create(path, LogHeader::default()).unwrap();
@@ -228,4 +251,128 @@ fn a_field_rule_needs_something_to_compare() {
     let problems = validate_rules(&rules);
     assert_eq!(problems.len(), 1);
     assert!(problems[0].contains("equals, min or max"), "{problems:?}");
+}
+
+fn native_workspace(name: &str) -> bforge_core::ProjectConfig {
+    let text = format!(
+        r#"
+[workspace]
+name = "native"
+version = "1.0"
+
+[[ports]]
+id = "link"
+device_path = "COM1"
+baud_rate = 115200
+framing = {{ mode = "delimiter", delimiter = 0x0A }}
+dissector = {{ type = "native", name = "{name}" }}
+"#
+    );
+    let config = bforge_core::parse(&text).unwrap();
+    assert!(config.validate().is_empty(), "{:?}", config.validate());
+    config
+}
+
+/// A CCSDS telemetry packet: APID 0x123, sequence 7, PUS service 3/25.
+fn ccsds_packet() -> Vec<u8> {
+    let mut frame = Vec::new();
+    let word: u16 = (1 << 11) | 0x0123;
+    frame.extend_from_slice(&word.to_be_bytes());
+    frame.extend_from_slice(&((0b11u16 << 14) | 7).to_be_bytes());
+    frame.extend_from_slice(&4u16.to_be_bytes());
+    frame.push(0x10);
+    frame.push(3);
+    frame.push(25);
+    frame.extend_from_slice(&[0xBE, 0xEF]);
+    frame
+}
+
+#[test]
+fn a_native_pack_decodes_a_vault_without_a_schema_file() {
+    let vault = temp("ccsds", "bflog");
+    let config = native_workspace("ccsds_tm");
+    // Line framing, and a raw vault: the pack must see the packet unencoded.
+    let mut payload = ccsds_packet();
+    payload.push(0x0A);
+    let mut reader = build_raw_vault(&vault, &[payload]);
+
+    let rows = decode_vault(&mut reader, &config.ports[0]).unwrap();
+    assert_eq!(rows.len(), 1, "{rows:#?}");
+    assert_eq!(rows[0].protocol.as_deref(), Some("CCSDS_TM"));
+    let value = |name: &str| {
+        rows[0]
+            .fields
+            .iter()
+            .find(|field| field.name == name)
+            .unwrap_or_else(|| panic!("no field {name}"))
+            .value
+            .clone()
+    };
+    assert_eq!(value("apid"), "291");
+    assert_eq!(value("sequence_count"), "7");
+    assert_eq!(value("service_type"), "3");
+    assert_eq!(value("service_subtype"), "25");
+
+    let rules = parse_rules(
+        r#"
+        [[checks]]
+        name = "apid"
+        kind = "field"
+        value = "apid"
+        equals = "291"
+
+        [[checks]]
+        name = "pack"
+        kind = "protocol"
+        value = "CCSDS_TM"
+        "#,
+    )
+    .unwrap();
+    let report = evaluate(&vault.display().to_string(), &mut reader, &rules, &rows).unwrap();
+    assert!(report.passed(), "{report:#?}");
+
+    let _ = std::fs::remove_file(vault);
+}
+
+#[test]
+fn a_native_pack_without_a_name_is_refused() {
+    let text = r#"
+[workspace]
+name = "native-missing"
+version = "1.0"
+
+[[ports]]
+id = "link"
+device_path = "COM1"
+baud_rate = 115200
+framing = { mode = "cobs" }
+dissector = { type = "native" }
+"#;
+    let config = bforge_core::parse(text).unwrap();
+    let paths: Vec<String> = config
+        .validate()
+        .into_iter()
+        .map(|issue| issue.path)
+        .collect();
+    assert_eq!(paths, vec!["ports[0].dissector.name".to_string()]);
+}
+
+#[test]
+fn an_unknown_pack_name_is_refused_with_the_list() {
+    let text = r#"
+[workspace]
+name = "native-unknown"
+version = "1.0"
+
+[[ports]]
+id = "link"
+device_path = "COM1"
+baud_rate = 115200
+framing = { mode = "cobs" }
+dissector = { type = "native", name = "mavlink" }
+"#;
+    let config = bforge_core::parse(text).unwrap();
+    let issues = config.validate();
+    assert_eq!(issues.len(), 1);
+    assert!(issues[0].message.contains("ccsds_tm"), "{:?}", issues[0]);
 }

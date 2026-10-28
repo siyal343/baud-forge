@@ -39,6 +39,7 @@ state through one contract (F1.7).
 | Test firmware | `firmware/bforge_test` | done | esptool flashed 298 880 bytes while the session reported yielded; the new firmware decodes through its header; 0.69 MB/s measured over USB |
 | S8b assert fields | D-15 | done | a 6 s recording from the board decodes to 122 frames and passes 5 field, protocol and count checks |
 | S9 sockets | F1.2.7 (TCP, UDP, config) | done | simulator over loopback: tail decodes, record stores 60 frames, assert passes 3 of 3, no hardware |
+| S10 native packs | F3.4 (CCSDS/PUS, CSP, Modbus; MAVLink deferred) | done | 12 pack tests on hand-built fixtures; a CCSDS packet in a vault decodes and passes assert rules with no schema file |
 
 S1 notes:
 
@@ -193,11 +194,20 @@ S8 notes:
 CI also builds the app now: every green run uploads a release `bforge` binary per
 platform, and a `v*` tag publishes all six through the release workflow.
 
-Next action: with sockets in the config, CI can exercise the whole chain, so the
-next step is the one that makes the product useful to a team: the native protocol
-packs (CCSDS and ECSS PUS, CSP, Modbus RTU), each with a hand-built fixture. The
-GUI still waits for a machine with MSVC, and the 12 Mbaud number still waits for a
-UART bridge.
+S10 notes:
+
+- Each pack decodes the fields a person asks first and reports the rest as a byte
+  count. A guessed layout prints confident wrong numbers, so the gaps are entries
+  in DEFERRED (D-56 to D-58) instead of guesses.
+- Every pack reports absolute offsets, so the hex pane can still point at bytes.
+- A pack never hides a fault: a length mismatch, a bad CRC and a bad byte count are
+  fields with a name, not silent passes.
+- MAVLink is deferred: it needs a dialect XML, not a header layout.
+
+Next action: the GUI, unblocked by `bforge serve`. Serve the F1.7 snapshot over
+loopback HTTP and the events over server-sent events, run the SolidJS frontend in
+Edge with `npm run dev`, and let CI build the Tauri shell for a packaged app. That
+puts the largest remaining item back on a machine that can iterate on it.
 
 ## What the setup did
 

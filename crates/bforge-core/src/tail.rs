@@ -9,6 +9,7 @@ use crate::PortConfig;
 use crate::pipeline::{Pipeline, PipelineConfig};
 use crate::session::SessionPort;
 use crate::slab::{ChunkMeta, Slab};
+use bforge_dissect::packs::Pack;
 use bforge_dissect::{DecodedField, DissectorIr, cheader, exec};
 use bforge_framer::{ByteMachine, HeaderLength, IdleGap, LengthWidth, machine_for};
 use std::collections::HashMap;
@@ -18,18 +19,42 @@ use std::time::{Duration, Instant};
 /// Default frame limit, matching [`bforge_framer::DEFAULT_MAX_FRAME`].
 const DEFAULT_MAX_FRAME: usize = 64 * 1024;
 
+/// A compiled schema or a native pack, and the tag a row shows.
+#[derive(Debug, Clone)]
+pub enum Decoder {
+    /// A schema compiled from a header, tagged for example `C_STRUCT:ImuPacket`.
+    Ir { ir: Box<DissectorIr>, tag: String },
+    /// A published protocol, decoded by the pack.
+    Pack(Pack),
+}
+
+impl Decoder {
+    pub fn tag(&self) -> &str {
+        match self {
+            Self::Ir { tag, .. } => tag,
+            Self::Pack(pack) => pack.tag(),
+        }
+    }
+
+    fn decode(&self, frame: &[u8]) -> Result<Vec<DecodedField>, exec::ExecError> {
+        match self {
+            Self::Ir { ir, .. } => exec::execute(ir, frame),
+            Self::Pack(pack) => pack.decode(frame),
+        }
+    }
+}
+
 /// How a port is framed and, when it has one, decoded.
 pub struct TailConfig {
     pub machine: Box<dyn ByteMachine>,
-    /// Compiled schema and the tag to show, for example `C_STRUCT:ImuPacket`.
-    pub dissector: Option<(DissectorIr, String)>,
+    pub dissector: Option<Decoder>,
 }
 
 impl std::fmt::Debug for TailConfig {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         f.debug_struct("TailConfig")
             .field("pending", &self.machine.pending())
-            .field("dissector", &self.dissector.as_ref().map(|(_, tag)| tag))
+            .field("dissector", &self.dissector.as_ref().map(Decoder::tag))
             .finish()
     }
 }
@@ -86,7 +111,7 @@ struct Port {
     pipeline: Pipeline,
     logger: rtrb::Consumer<Arc<Slab>>,
     machine: Box<dyn ByteMachine>,
-    dissector: Option<(DissectorIr, String)>,
+    dissector: Option<Decoder>,
     last_ns: Option<u64>,
 }
 
@@ -196,7 +221,7 @@ fn build_row(
     port: &str,
     timestamp_ns: u64,
     previous_ns: Option<u64>,
-    dissector: Option<&(DissectorIr, String)>,
+    dissector: Option<&Decoder>,
     frame: Vec<u8>,
 ) -> TailRow {
     let delta_us = match previous_ns {
@@ -216,9 +241,9 @@ fn build_row(
         decode_error: None,
     };
 
-    if let Some((ir, tag)) = dissector {
-        row.protocol = Some(tag.clone());
-        match exec::execute(ir, &frame) {
+    if let Some(decoder) = dissector {
+        row.protocol = Some(decoder.tag().to_string());
+        match decoder.decode(&frame) {
             Ok(fields) => row.fields = flatten(&fields, ""),
             Err(error) => row.decode_error = Some(error.to_string()),
         }
@@ -356,6 +381,19 @@ pub fn tail_config(port: &PortConfig) -> Result<TailConfig, TailError> {
 
     let dissector = match &port.dissector {
         None => None,
+        Some(specification) if specification.kind == "native" => {
+            let name = specification
+                .name
+                .as_deref()
+                .ok_or_else(|| TailError::Settings("native dissector needs a name".into()))?;
+            let pack = Pack::from_name(name).ok_or_else(|| {
+                TailError::Settings(format!(
+                    "`{name}` is not a pack; use {}",
+                    bforge_dissect::packs::PACK_NAMES.join(", ")
+                ))
+            })?;
+            Some(Decoder::Pack(pack))
+        }
         Some(specification) if specification.kind == "c_header" => {
             let file = specification
                 .file
@@ -371,7 +409,10 @@ pub fn tail_config(port: &PortConfig) -> Result<TailConfig, TailError> {
                 .map_err(|error| TailError::Settings(format!("{file}: {error}")))?;
             let ir = cheader::compile(&header, root, file)
                 .map_err(|error| TailError::Settings(format!("{file}: {error}")))?;
-            Some((ir, format!("C_STRUCT:{root}")))
+            Some(Decoder::Ir {
+                ir: Box::new(ir),
+                tag: format!("C_STRUCT:{root}"),
+            })
         }
         Some(specification) => {
             return Err(TailError::Settings(format!(

@@ -8,6 +8,7 @@
 
 pub mod cheader;
 pub mod exec;
+pub mod packs;
 
 use bforge_storage::RawChunk;
 use serde::{Deserialize, Serialize};

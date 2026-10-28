@@ -95,6 +95,47 @@ impl ProjectConfig {
                 validate_framing_settings(&at, &port.framing, issues);
             }
 
+            if let Some(dissector) = &port.dissector {
+                let at_dissector = format!("{at}.dissector");
+                match dissector.kind.as_str() {
+                    "c_header" => {
+                        if dissector.file.is_none() {
+                            issues.push(ConfigIssue::new(
+                                format!("{at_dissector}.file"),
+                                "a c_header dissector needs the header file",
+                            ));
+                        }
+                        if dissector.root_struct.is_none() {
+                            issues.push(ConfigIssue::new(
+                                format!("{at_dissector}.root_struct"),
+                                "a c_header dissector needs root_struct",
+                            ));
+                        }
+                    }
+                    "native" => match dissector.name.as_deref() {
+                        Some(name) if bforge_dissect::packs::Pack::from_name(name).is_some() => {}
+                        Some(name) => issues.push(ConfigIssue::new(
+                            format!("{at_dissector}.name"),
+                            format!(
+                                "`{name}` is not a pack; use {}",
+                                bforge_dissect::packs::PACK_NAMES.join(", ")
+                            ),
+                        )),
+                        None => issues.push(ConfigIssue::new(
+                            format!("{at_dissector}.name"),
+                            format!(
+                                "a native dissector needs a name; use {}",
+                                bforge_dissect::packs::PACK_NAMES.join(", ")
+                            ),
+                        )),
+                    },
+                    other => issues.push(ConfigIssue::new(
+                        format!("{at_dissector}.type"),
+                        format!("`{other}` is not a dissector; use c_header or native"),
+                    )),
+                }
+            }
+
             if let Some(name) = &port.framing.crc
                 && Checksum::from_name(name).is_none()
             {
