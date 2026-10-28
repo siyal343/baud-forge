@@ -29,7 +29,7 @@ Commands:
   tail -c <file>                Frame and decode a live port
          [--port <id>]... [--duration 5s] [--fields] [--json]
   assert <vault> -r <rules>     Check a vault against a TOML rule file
-         [--json]
+         [-c <workspace> --port <id>] [--json]
   vault info <vault>            Report records, bytes, index source, damage
   vault repair <vault>          Truncate a killed session to its last record
   yield -c <file> --port <id>   Release the port so a flash tool can use it
@@ -509,6 +509,8 @@ fn assert_vault(args: &[String]) -> ExitCode {
     let mut args = Args::new(args);
     let vault = args.positional();
     let rules_path = args.value("-r");
+    let config_path = args.value("-c");
+    let port_id = args.value("--port");
     let json = args.flag("--json");
     if let Some(unknown) = args.unknown() {
         return usage_error(&format!("unknown option `{unknown}`"));
@@ -547,7 +549,34 @@ fn assert_vault(args: &[String]) -> ExitCode {
             return ExitCode::FAILURE;
         }
     };
-    let report = match bforge_core::assert::evaluate(&vault, &mut reader, &rules) {
+    // Decode the vault with the workspace schema when one is given. The vault
+    // itself stays raw: framing is applied here, at the question.
+    let rows = match config_path {
+        None => Vec::new(),
+        Some(path) => {
+            let config = match load_config(&path) {
+                Ok(config) => config,
+                Err(code) => return code,
+            };
+            let port = match port_id.as_deref() {
+                Some(id) => config.ports.iter().find(|port| port.id == id),
+                None => config.ports.first(),
+            };
+            let Some(port) = port else {
+                eprintln!("error: {path} has no port to decode with");
+                return ExitCode::FAILURE;
+            };
+            match bforge_core::tail::decode_vault(&mut reader, port) {
+                Ok(rows) => rows,
+                Err(error) => {
+                    eprintln!("error: cannot decode {vault}: {error}");
+                    return ExitCode::FAILURE;
+                }
+            }
+        }
+    };
+
+    let report = match bforge_core::assert::evaluate(&vault, &mut reader, &rules, &rows) {
         Ok(report) => report,
         Err(error) => {
             eprintln!("error: {vault}: {error}");
@@ -559,8 +588,10 @@ fn assert_vault(args: &[String]) -> ExitCode {
         println!("{}", serde_json::to_string_pretty(&report).unwrap());
     } else {
         println!(
-            "{vault}: {} chunks, {} bytes",
-            report.chunks, report.payload_bytes
+            "{vault}: {} chunks, {} bytes, {} decoded frame(s)",
+            report.chunks,
+            report.payload_bytes,
+            rows.len()
         );
         for check in &report.checks {
             println!(

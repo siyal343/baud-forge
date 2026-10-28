@@ -49,7 +49,6 @@ The plan lives in [IMPLEMENTATION.md](IMPLEMENTATION.md), progress in
 | D-13 | `memmap2` for the vault (G2 alternative) | Constant memory already comes from seek plus a bounded window, measured at 21.5 MiB peak for a 512 MiB file. | A measurement that shows seek cost dominating | None today. |
 | D-53 | The record header costs 12 percent of the file at 0.69 MB/s | 28 912 chunks carried 6.9 MB, so the average chunk was 240 bytes and each carries a 32-byte header. Coalescing short reads would cut the file by a tenth. At 12 Mbaud a read returns a full slab and the cost disappears, so this is a low-rate problem. | The idle-coalescing decision, which belongs with F1.4.5 and the framing consumer | A slow port produces a vault a fifth larger than the data, and more records to index. |
 | D-14 | Sequential cursor API for the reader | The reader scans at 25 MiB/s because it seeks twice per record. A window is fast enough; a full 100 GB scan would take about 68 minutes. | F2.3, where the viewport scrolls and needs a forward cursor | Large soaks stay impractical. Full-scan `bforge assert` on 100 GB would be slow. |
-| D-15 | Framing wired into the **record** path | `bforge tail` now frames and decodes, but `record` still writes raw chunks and `assert` reads raw payload. The two paths merge when a recording carries frame rows. | The record path gaining a framing consumer, which is a file-format decision | `assert` can match only raw bytes, not decoded fields. |
 | D-16 | Idle-gap framing needs its clock from the caller | `ByteMachine::tick` exists and is tested, but nothing in the read path calls it with a chunk timestamp. | D-15 | A port configured for `idle_gap` produces nothing until then. |
 | D-18 | Dissector UI, real tree, field-to-hex highlight | Phase 3, after the GUI. | D-01 | None; the engine side is what S11 builds. |
 | D-19 | Telemetry series in the contract | Contract v1 has no time-series field; plots need one. | Phase 2, with the DVR | The GUI cannot plot from the contract yet. |
@@ -61,7 +60,8 @@ The plan lives in [IMPLEMENTATION.md](IMPLEMENTATION.md), progress in
 | ID | Item | Why | What it would take | Risk |
 | --- | --- | --- | --- | --- |
 | D-22 | `bforge assert` scans the vault once per check | One pass per needle is simple and measured fine at 100 MB. At 100 GB it is the wrong shape. | An index-backed text search beside the dissector work | Ten checks on a 100 GB vault read it ten times. |
-| D-23 | Assert has no regex or timing checks | A regex engine is a dependency for a matcher nobody asked for. Timing assertions need a definition of "late". | A decision, then the Lua runtime in F4.4 | Some expectations cannot be written yet. |
+| D-23 | Assert has no regex or timing checks | A regex engine is a dependency for a matcher nobody asked for. Timing assertions need a definition of "late". Field and protocol checks exist now, so the pressure is lower. | A decision, then the Lua runtime in F4.4 | Some expectations cannot be written yet. |
+| D-54 | Nothing frames while recording | The vault stays raw on purpose, and `assert` decodes at question time (`specs/0015`). A live recording therefore cannot warn about a bad frame while it happens. | The framing consumer in the record path, which is the other half of D-15 | A user sees frame errors only after the session, by running `tail` or `assert`. |
 | D-24 | Checksums are bitwise, not table-driven | Measured 156 MB/s through framing and CRC together, far above the 12 Mbaud target. | A benchmark that shows the engine as a bottleneck | CPU burn on a soak; no correctness risk. |
 | D-25 | COBS decode allocates one `Vec` per frame | Simple and correct; 3.2 million frames/s measured. | The zero-copy refactor that borrows from the slab | Allocator churn at extreme frame rates. |
 | D-26 | `bforge record` stops on Enter, not on Ctrl-C | No signal handler. A killed recorder leaves a partial record. | F1.3.7 second half: a signal handler that seals | A Ctrl-C leaves a vault that needs `bforge vault repair`. |
@@ -109,3 +109,4 @@ The plan lives in [IMPLEMENTATION.md](IMPLEMENTATION.md), progress in
 | — | Hotplug and reconnect on Windows (D-08, F1.2.5) | `specs/0012` |
 | — | Port yield over a local control socket (F1.2.6, F1.5.6) | `specs/0013` |
 | — | Flash while the port is yielded (D-09) | `specs/0014`, `firmware/bforge_test` |
+| — | Assert on decoded fields (D-15, useful half) | `specs/0015` |

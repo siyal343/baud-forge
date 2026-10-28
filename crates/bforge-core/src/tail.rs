@@ -179,33 +179,122 @@ impl Tail {
 
 impl Port {
     fn row(&mut self, meta: &ChunkMeta, frame: Vec<u8>) -> TailRow {
-        let delta_us = match self.last_ns {
-            Some(previous) => meta.timestamp_ns.saturating_sub(previous) / 1_000,
-            None => 0,
-        };
+        let row = build_row(
+            &self.id,
+            meta.timestamp_ns,
+            self.last_ns,
+            self.dissector.as_ref(),
+            frame,
+        );
         self.last_ns = Some(meta.timestamp_ns);
-
-        let mut row = TailRow {
-            port: self.id.clone(),
-            timestamp_us: meta.timestamp_ns / 1_000,
-            delta_us,
-            len: frame.len(),
-            hex: hex_preview(&frame),
-            text: text_preview(&frame),
-            protocol: None,
-            fields: Vec::new(),
-            decode_error: None,
-        };
-
-        if let Some((ir, tag)) = &self.dissector {
-            row.protocol = Some(tag.clone());
-            match exec::execute(ir, &frame) {
-                Ok(fields) => row.fields = flatten(&fields, ""),
-                Err(error) => row.decode_error = Some(error.to_string()),
-            }
-        }
         row
     }
+}
+
+/// One row, shared by the live tail and the vault decoder.
+fn build_row(
+    port: &str,
+    timestamp_ns: u64,
+    previous_ns: Option<u64>,
+    dissector: Option<&(DissectorIr, String)>,
+    frame: Vec<u8>,
+) -> TailRow {
+    let delta_us = match previous_ns {
+        Some(previous) => timestamp_ns.saturating_sub(previous) / 1_000,
+        None => 0,
+    };
+
+    let mut row = TailRow {
+        port: port.to_string(),
+        timestamp_us: timestamp_ns / 1_000,
+        delta_us,
+        len: frame.len(),
+        hex: hex_preview(&frame),
+        text: text_preview(&frame),
+        protocol: None,
+        fields: Vec::new(),
+        decode_error: None,
+    };
+
+    if let Some((ir, tag)) = dissector {
+        row.protocol = Some(tag.clone());
+        match exec::execute(ir, &frame) {
+            Ok(fields) => row.fields = flatten(&fields, ""),
+            Err(error) => row.decode_error = Some(error.to_string()),
+        }
+    }
+    row
+}
+
+/// Why a vault could not be decoded.
+#[derive(Debug)]
+pub enum DecodeError {
+    Settings(TailError),
+    Storage(bforge_storage::StorageError),
+}
+
+impl std::fmt::Display for DecodeError {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            Self::Settings(error) => write!(f, "{error}"),
+            Self::Storage(error) => write!(f, "{error}"),
+        }
+    }
+}
+
+impl std::error::Error for DecodeError {}
+
+impl From<TailError> for DecodeError {
+    fn from(error: TailError) -> Self {
+        Self::Settings(error)
+    }
+}
+
+impl From<bforge_storage::StorageError> for DecodeError {
+    fn from(error: bforge_storage::StorageError) -> Self {
+        Self::Storage(error)
+    }
+}
+
+/// Decode a recorded vault with the framing and dissector of one port.
+///
+/// The vault keeps raw bytes only, on purpose: the recording is evidence, and a
+/// later schema must be able to re-read it. Framing therefore happens here, when
+/// someone asks a question about the session.
+pub fn decode_vault(
+    reader: &mut bforge_storage::LogReader,
+    port: &PortConfig,
+) -> Result<Vec<TailRow>, DecodeError> {
+    let config = tail_config(port)?;
+    let mut machine = config.machine;
+    let dissector = config.dissector;
+    let mut rows = Vec::new();
+    let mut previous_ns: Option<u64> = None;
+    let mut frame_index = 0u64;
+
+    while frame_index < reader.chunks() {
+        let window = reader.window(frame_index, 256)?;
+        if window.is_empty() {
+            break;
+        }
+        for record in &window {
+            let mut frames = Vec::new();
+            machine.tick(record.chunk.timestamp_ns, &mut frames);
+            machine.feed(&record.payload, &mut frames);
+            for frame in frames {
+                rows.push(build_row(
+                    &port.id,
+                    record.chunk.timestamp_ns,
+                    previous_ns,
+                    dissector.as_ref(),
+                    frame,
+                ));
+                previous_ns = Some(record.chunk.timestamp_ns);
+            }
+        }
+        frame_index += window.len() as u64;
+    }
+    Ok(rows)
 }
 
 /// Build the framing machine and dissector a configured port asks for.

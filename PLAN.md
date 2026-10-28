@@ -37,6 +37,7 @@ state through one contract (F1.7).
 | S6c hotplug | F1.2.5 | done | three unplug runs on the bench: detection 17 to 47 ms, reopen call 1 ms, data resumed in the same session |
 | S6d yield | F1.2.6, F1.5.6 | done | a second process can open COM8 while the session reports yielded, and the session takes it back when the window ends |
 | Test firmware | `firmware/bforge_test` | done | esptool flashed 298 880 bytes while the session reported yielded; the new firmware decodes through its header; 0.69 MB/s measured over USB |
+| S8b assert fields | D-15 | done | a 6 s recording from the board decodes to 122 frames and passes 5 field, protocol and count checks |
 
 S1 notes:
 

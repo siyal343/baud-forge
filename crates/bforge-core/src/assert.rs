@@ -5,6 +5,7 @@
 //! session holds an expected number of records. A fourth matcher would need a
 //! parser or a dependency; scripting arrives with the Lua runtime in F4.4.
 
+use crate::tail::{FieldRow, TailRow};
 use bforge_storage::{LogReader, StorageError};
 use serde::{Deserialize, Serialize};
 
@@ -19,17 +20,21 @@ pub struct AssertRules {
 #[derive(Debug, Clone, PartialEq, Deserialize)]
 pub struct Check {
     pub name: String,
-    /// `contains`, `contains_hex`, `chunks` or `bytes`.
+    /// `contains`, `contains_hex`, `chunks`, `bytes`, `protocol` or `field`.
     pub kind: String,
-    /// Text for `contains`, spaced hex for `contains_hex`.
+    /// Text for `contains`, spaced hex for `contains_hex`, the tag for
+    /// `protocol`, the field name for `field`.
     #[serde(default)]
     pub value: Option<String>,
-    /// Lower bound for `chunks` and `bytes`.
+    /// Lower bound for `chunks`, `bytes` and a numeric `field`.
     #[serde(default)]
     pub min: Option<u64>,
-    /// Upper bound for `chunks` and `bytes`.
+    /// Upper bound for `chunks`, `bytes` and a numeric `field`.
     #[serde(default)]
     pub max: Option<u64>,
+    /// Exact text a `field` must hold.
+    #[serde(default)]
+    pub equals: Option<String>,
 }
 
 /// The outcome of one check.
@@ -89,6 +94,21 @@ pub fn validate_rules(rules: &AssertRules) -> Vec<String> {
                     "{at}.value: `contains_hex` needs spaced hex bytes, for example `AA 55`"
                 )),
             },
+            "protocol" => {
+                if check.value.as_deref().is_none_or(str::is_empty) {
+                    problems.push(format!(
+                        "{at}.value: `protocol` needs the tag to expect, for example `C_STRUCT:ImuPacket`"
+                    ));
+                }
+            }
+            "field" => {
+                if check.value.as_deref().is_none_or(str::is_empty) {
+                    problems.push(format!("{at}.value: `field` needs the field name"));
+                }
+                if check.equals.is_none() && check.min.is_none() && check.max.is_none() {
+                    problems.push(format!("{at}: `field` needs equals, min or max"));
+                }
+            }
             "chunks" | "bytes" => {
                 if check.min.is_none() && check.max.is_none() {
                     problems.push(format!("{at}: `{}` needs min or max", check.kind));
@@ -100,7 +120,7 @@ pub fn validate_rules(rules: &AssertRules) -> Vec<String> {
                 }
             }
             other => problems.push(format!(
-                "{at}.kind: `{other}` is not a check; use contains, contains_hex, chunks or bytes"
+                "{at}.kind: `{other}` is not a check; use contains, contains_hex, chunks, bytes, protocol or field"
             )),
         }
     }
@@ -108,10 +128,15 @@ pub fn validate_rules(rules: &AssertRules) -> Vec<String> {
 }
 
 /// Run every check against a session.
+///
+/// `rows` are the decoded frames, when the caller decoded the vault with the
+/// workspace schema. Byte and count checks work without them; `protocol` and
+/// `field` need them and say so when they are missing.
 pub fn evaluate(
     vault: &str,
     reader: &mut LogReader,
     rules: &AssertRules,
+    rows: &[TailRow],
 ) -> Result<AssertReport, StorageError> {
     let total = reader.chunks();
     let mut matchers: Vec<Matcher> = rules
@@ -155,6 +180,8 @@ pub fn evaluate(
             }
             "chunks" => compare(check, total),
             "bytes" => compare(check, reader.payload_bytes()),
+            "protocol" => check_protocol(check, rows),
+            "field" => check_field(check, rows),
             _ => (false, format!("unknown kind `{}`", check.kind)),
         };
         checks.push(CheckResult {
@@ -178,6 +205,84 @@ fn describe_found(matcher: &Matcher) -> String {
         Some(offset) => format!("`{}` found, first byte near offset {offset}", matcher.label),
         None => format!("`{}` found", matcher.label),
     }
+}
+
+fn check_protocol(check: &Check, rows: &[TailRow]) -> (bool, String) {
+    if rows.is_empty() {
+        return (
+            false,
+            "no decoded frames; pass the workspace to `assert` with -c".to_string(),
+        );
+    }
+    let expected = check.value.as_deref().unwrap_or_default();
+    let matching = rows
+        .iter()
+        .filter(|row| row.protocol.as_deref() == Some(expected))
+        .count();
+    if matching == rows.len() {
+        (true, format!("all {} frame(s) are {expected}", rows.len()))
+    } else {
+        (
+            false,
+            format!("{matching} of {} frame(s) are {expected}", rows.len()),
+        )
+    }
+}
+
+fn check_field(check: &Check, rows: &[TailRow]) -> (bool, String) {
+    if rows.is_empty() {
+        return (
+            false,
+            "no decoded frames; pass the workspace to `assert` with -c".to_string(),
+        );
+    }
+    let name = check.value.as_deref().unwrap_or_default();
+    let values: Vec<&FieldRow> = rows
+        .iter()
+        .flat_map(|row| row.fields.iter())
+        .filter(|field| field.name == name || field.name.ends_with(&format!(".{name}")))
+        .collect();
+
+    if values.is_empty() {
+        return (false, format!("no frame holds a field `{name}`"));
+    }
+
+    if let Some(expected) = &check.equals {
+        let matches = values
+            .iter()
+            .filter(|field| &field.value == expected)
+            .count();
+        return (
+            matches == values.len(),
+            format!(
+                "{matches} of {} `{name}` value(s) equal `{expected}`",
+                values.len()
+            ),
+        );
+    }
+
+    let mut lowest = f64::INFINITY;
+    let mut highest = f64::NEG_INFINITY;
+    let mut numeric = 0usize;
+    for field in &values {
+        if let Ok(number) = field.value.parse::<f64>() {
+            lowest = lowest.min(number);
+            highest = highest.max(number);
+            numeric += 1;
+        }
+    }
+    if numeric == 0 {
+        return (
+            false,
+            format!("`{name}` is not numeric in any frame; use equals"),
+        );
+    }
+    let above = check.min.is_none_or(|min| lowest >= min as f64);
+    let below = check.max.is_none_or(|max| highest <= max as f64);
+    (
+        above && below,
+        format!("`{name}` ranges over {lowest} to {highest} across {numeric} value(s)"),
+    )
 }
 
 fn compare(check: &Check, value: u64) -> (bool, String) {
