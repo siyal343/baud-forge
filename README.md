@@ -202,6 +202,9 @@ and the plot stack instead of clipping.
 
 ## Build
 
+The engine builds with any Rust toolchain. The desktop app needs MSVC, which is
+covered separately in [`docs/GUI-SETUP.md`](docs/GUI-SETUP.md).
+
 Clone the repository first:
 
 ```sh
