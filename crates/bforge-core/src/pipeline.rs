@@ -389,9 +389,12 @@ fn read_loop(
                                 break 'read;
                             }
                             // The logger must not lose a byte: wait for a slot.
+                            // Sleep rather than spin. A hot spin burned a core and,
+                            // on macOS, could starve the thread that drains the ring
+                            // or sets `stop`; the wait is already the slow path.
                             item = returned;
                             let wait_started = Instant::now();
-                            thread::yield_now();
+                            thread::sleep(IDLE_SLEEP);
                             counters.stalls_ns.fetch_add(
                                 wait_started.elapsed().as_nanos() as u64,
                                 Ordering::Relaxed,

@@ -177,6 +177,10 @@ impl TransportDriver for Busy {
     fn close(&mut self) {}
 
     fn read_slab(&mut self, out: &mut [u8]) -> Result<usize, TransportError> {
+        // A real port delivers at a finite rate. Returning instantly filled the
+        // logger ring and left the reader spinning for a free slot, which made the
+        // yield test depend on the scheduler instead of on the yield.
+        std::thread::sleep(Duration::from_millis(1));
         let len = out.len().min(32);
         out[..len].fill(0x5A);
         Ok(len)

@@ -32,6 +32,9 @@ jobs:
 
   test:
     name: test (${{ matrix.name }})
+    # A hung test used to block this job for as long as the runner allowed.
+    # Twelve minutes is several times the slowest observed run.
+    timeout-minutes: 12
     runs-on: ${{ matrix.os }}
     strategy:
       fail-fast: false
