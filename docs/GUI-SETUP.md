@@ -1,8 +1,19 @@
 # GUI setup on this machine
 
 What the desktop app needs, how to install it, and how to check that it worked.
-Written for the machine this project is developed on: Windows, no Visual Studio, a
-GNU Rust toolchain, Node 22 already present.
+
+Written for this machine, measured on 28 October 2026:
+
+| Item | State |
+| --- | --- |
+| Windows | 10 Pro, version 22H2, build 19045.6466 |
+| Visual Studio Build Tools | **absent** — the only download needed |
+| WebView2 runtime | **present**, 156.0.4314.50, in `C:\Program Files (x86)\Microsoft\EdgeWebView` |
+| Rust | stable GNU toolchain; MSVC one absent |
+| Node / npm | 22.23.2 / 10.9.8 |
+
+Windows 10 22H2 is fully supported: WebView2 needs version 1803 or later, and Tauri
+v2 targets Windows 10 and later.
 
 ## Why anything is needed
 
@@ -30,7 +41,8 @@ In the installer, tick exactly one workload:
 Under *Installation details*, keep the defaults, which include:
 
 - MSVC v143 build tools (x64/x86)
-- Windows 11 SDK
+- Windows 11 SDK (it installs and builds fine on Windows 10; it targets Windows 10
+  as well. If you prefer the older one, swap it for *Windows 10 SDK (10.0.19041)*)
 - C++ CMake tools for Windows (not required, harmless)
 
 Do not install the full IDE. The Build Tools download is about 2.5 GB and uses
@@ -46,16 +58,19 @@ Check it:
 That must print a path ending in `BuildTools`. If it prints nothing, the C++
 workload did not install.
 
-## 2. WebView2 runtime
+## 2. WebView2 runtime — already installed, nothing to do
 
-Windows 11 ships it. Check:
+Windows 10 does not ship WebView2 with the operating system the way Windows 11
+does, but the Edge update channel installs it, and this machine has it. Verify:
 
 ```powershell
 Get-ItemProperty 'HKLM:\SOFTWARE\WOW6432Node\Microsoft\EdgeUpdate\Clients\{F3017226-FE2A-4295-8BDF-00C3A9A7E4C5}' -ErrorAction SilentlyContinue | Select-Object pv
+Test-Path 'C:\Program Files (x86)\Microsoft\EdgeWebView\Application'
 ```
 
-A version means it is there. If not, install the *Evergreen Bootstrapper* from
-<https://developer.microsoft.com/microsoft-edge/webview2/>.
+Both must answer: a version number, and `True`. On a machine without it, install
+the *Evergreen Bootstrapper* from
+<https://developer.microsoft.com/microsoft-edge/webview2/> — about 2 MB.
 
 ## 3. The MSVC Rust toolchain
 
