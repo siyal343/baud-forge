@@ -93,3 +93,16 @@ jobs:
           targets: x86_64-apple-darwin
       - name: Build
         run: cargo build --workspace --locked --target x86_64-apple-darwin
+      - name: Build the app
+        run: cargo build --release --locked -p bforge-cli --target x86_64-apple-darwin
+      - name: Stage the app binary
+        shell: bash
+        run: |
+          mkdir -p dist
+          cp target/x86_64-apple-darwin/release/bforge dist/bforge-macos-x86_64
+      - name: Upload the app binary
+        uses: actions/upload-artifact@v4
+        with:
+          name: bforge-macos-x86_64
+          path: dist/*
+          retention-days: 7
