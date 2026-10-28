@@ -494,13 +494,18 @@ fn serve(args: &[String]) -> ExitCode {
             return ExitCode::FAILURE;
         }
     };
-    let session = match Session::start(ports, vault.as_deref(), config.workspace.elf_path.clone()) {
-        Ok(session) => session,
-        Err(error) => {
-            eprintln!("error: {error}");
-            return ExitCode::FAILURE;
-        }
-    };
+    let mut session =
+        match Session::start(ports, vault.as_deref(), config.workspace.elf_path.clone()) {
+            Ok(session) => session,
+            Err(error) => {
+                eprintln!("error: {error}");
+                return ExitCode::FAILURE;
+            }
+        };
+    if let Err(error) = session.enable_decode(&config.ports) {
+        eprintln!("error: {error}");
+        return ExitCode::FAILURE;
+    }
     println!("serving http://{local}");
     println!("  page      http://{local}/");
     println!("  snapshot  http://{local}/api/snapshot");

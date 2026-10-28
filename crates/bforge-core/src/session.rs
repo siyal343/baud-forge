@@ -6,6 +6,7 @@
 
 use crate::control::{ControlServer, ControlTarget};
 use crate::pipeline::{Pipeline, PipelineConfig, YieldRequest};
+use crate::tail::{Stream, TailError, TailRow, tail_config};
 use crate::ui::{CONTRACT_VERSION, EventBus, PinsView, PortView, SessionView, UiEvent, UiSnapshot};
 use crate::{PortConfig, ProjectConfig};
 use bforge_hal::tcp::{TcpConfig, TcpTransport};
@@ -74,6 +75,10 @@ struct RunningPort {
     logger: rtrb::Consumer<std::sync::Arc<crate::slab::Slab>>,
 }
 
+/// Frames kept for the UI before the oldest is dropped. A browser that stops
+/// reading must not grow the process.
+const FRAME_QUEUE: usize = 4_096;
+
 /// A recording session.
 pub struct Session {
     mode: &'static str,
@@ -90,6 +95,10 @@ pub struct Session {
     last_chunks: u64,
     control: Option<ControlServer>,
     yield_requests: Vec<(String, Arc<YieldRequest>)>,
+    /// One entry per port, in port order. Empty until `enable_decode` is called.
+    streams: Vec<Option<Stream>>,
+    frames: std::collections::VecDeque<TailRow>,
+    frames_dropped: u64,
 }
 
 /// What a running session answers on the control socket.
@@ -216,6 +225,9 @@ impl Session {
             last_chunks: 0,
             control,
             yield_requests,
+            streams: Vec::new(),
+            frames: std::collections::VecDeque::new(),
+            frames_dropped: 0,
         };
         session.bus.publish(UiEvent::Started {
             at_ms: 0,
@@ -230,11 +242,39 @@ impl Session {
         self.bus.subscribe()
     }
 
+    /// Frame and decode the bytes as they pass, for a UI that shows frames.
+    ///
+    /// The vault stays raw: this is a second view of the same chunks, not a change
+    /// to what is recorded. A port without a config is left undecoded.
+    pub fn enable_decode(&mut self, configs: &[PortConfig]) -> Result<(), TailError> {
+        let mut streams = Vec::with_capacity(self.ports.len());
+        for port in &self.ports {
+            match configs.iter().find(|config| config.id == port.info.id) {
+                Some(config) => {
+                    streams.push(Some(Stream::new(&port.info.id, tail_config(config)?)))
+                }
+                None => streams.push(None),
+            }
+        }
+        self.streams = streams;
+        Ok(())
+    }
+
+    /// Take the frames completed since the last call, oldest first.
+    pub fn take_frames(&mut self) -> Vec<TailRow> {
+        self.frames.drain(..).collect()
+    }
+
+    /// Frames thrown away because the reader did not keep up.
+    pub fn frames_dropped(&self) -> u64 {
+        self.frames_dropped
+    }
+
     /// Move ready chunks into the vault. Returns how many moved.
     pub fn pump_once(&mut self) -> Result<usize, SessionError> {
         let mut moved = 0;
-        for port in &mut self.ports {
-            while let Ok(slab) = port.logger.pop() {
+        for index in 0..self.ports.len() {
+            while let Ok(slab) = self.ports[index].logger.pop() {
                 let meta = slab.meta;
                 if let Some(writer) = self.writer.as_mut() {
                     let chunk = RawChunk {
@@ -247,6 +287,15 @@ impl Session {
                         payload_len: meta.len,
                     };
                     writer.append(&chunk, slab.bytes())?;
+                }
+                if let Some(Some(stream)) = self.streams.get_mut(index) {
+                    for row in stream.feed(meta.timestamp_ns, slab.bytes()) {
+                        if self.frames.len() >= FRAME_QUEUE {
+                            self.frames.pop_front();
+                            self.frames_dropped += 1;
+                        }
+                        self.frames.push_back(row);
+                    }
                 }
                 self.chunks += 1;
                 self.payload_bytes += u64::from(meta.len);

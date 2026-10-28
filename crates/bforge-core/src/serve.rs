@@ -147,6 +147,10 @@ impl Server {
         let mut published = Instant::now();
         loop {
             session.pump_once()?;
+            let frames = session.take_frames();
+            if !frames.is_empty() {
+                shared.broadcast(&sse("frames", &frames_json(&frames)));
+            }
             while let Ok(event) = events.try_recv() {
                 shared.broadcast(&sse("ui", &event_json(&event)));
             }
@@ -195,6 +199,11 @@ fn accept_loop(listener: TcpListener, shared: Arc<Shared>, stop: Arc<AtomicBool>
 
 fn event_json(event: &UiEvent) -> String {
     serde_json::to_string(event).unwrap_or_default()
+}
+
+/// Frames travel as a JSON array, so one event carries one pump's worth.
+fn frames_json(frames: &[crate::tail::TailRow]) -> String {
+    serde_json::to_string(frames).unwrap_or_else(|_| "[]".to_string())
 }
 
 fn sse(event: &str, data: &str) -> String {

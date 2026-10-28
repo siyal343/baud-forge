@@ -28,7 +28,12 @@ What works today:
 - `bforge serve` publishes the UI contract over loopback HTTP, so the workbench can
   run in a browser while the desktop shell is built.
 
-![The served page](docs/screenshots/serve-page.png)
+![The workbench](docs/screenshots/workbench.png)
+
+The workbench runs in two steps: `bforge serve -c <workspace>` in the repository
+root, then `cd ui && npm run dev`. The frontend reads the engine's contract over
+loopback HTTP, so a panel can change with hot reload while the engine keeps the
+port. Details in [`ui/README.md`](ui/README.md).
 
 ## Platforms
 

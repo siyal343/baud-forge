@@ -8,7 +8,7 @@
 use crate::PortConfig;
 use crate::pipeline::{Pipeline, PipelineConfig};
 use crate::session::SessionPort;
-use crate::slab::{ChunkMeta, Slab};
+use crate::slab::Slab;
 use bforge_dissect::packs::Pack;
 use bforge_dissect::{DecodedField, DissectorIr, cheader, exec};
 use bforge_framer::{ByteMachine, HeaderLength, IdleGap, LengthWidth, machine_for};
@@ -107,12 +107,60 @@ pub struct TailRow {
 }
 
 struct Port {
-    id: String,
     pipeline: Pipeline,
     logger: rtrb::Consumer<Arc<Slab>>,
+    stream: Stream,
+}
+
+/// One port's framing machine and dissector, fed by bytes the caller owns.
+///
+/// `Tail` feeds it from its own pipeline. `serve` feeds it from the slabs the
+/// session already moves into the vault, so the browser and the disk see the same
+/// bytes without a second port reader.
+pub struct Stream {
+    port: String,
     machine: Box<dyn ByteMachine>,
     dissector: Option<Decoder>,
     last_ns: Option<u64>,
+}
+
+impl Stream {
+    pub fn new(port: impl Into<String>, config: TailConfig) -> Self {
+        Self {
+            port: port.into(),
+            machine: config.machine,
+            dissector: config.dissector,
+            last_ns: None,
+        }
+    }
+
+    pub fn port(&self) -> &str {
+        &self.port
+    }
+
+    /// Feed bytes that arrived at `timestamp_ns` and return the frames they finish.
+    pub fn feed(&mut self, timestamp_ns: u64, bytes: &[u8]) -> Vec<TailRow> {
+        let mut frames = Vec::new();
+        // The clock is the chunk timestamp: an idle-gap machine needs it before
+        // the bytes that follow the silence.
+        self.machine.tick(timestamp_ns, &mut frames);
+        self.machine.feed(bytes, &mut frames);
+        let last_ns = self.last_ns;
+        frames
+            .into_iter()
+            .map(|frame| {
+                let row = build_row(
+                    &self.port,
+                    timestamp_ns,
+                    last_ns,
+                    self.dissector.as_ref(),
+                    frame,
+                );
+                self.last_ns = Some(timestamp_ns);
+                row
+            })
+            .collect()
+    }
 }
 
 /// Running tail over one or more ports.
@@ -154,12 +202,9 @@ impl Tail {
             );
             let logger = pipeline.take_consumers().remove(0);
             running.push(Port {
-                id: port.id,
                 pipeline,
                 logger,
-                machine: config.machine,
-                dissector: config.dissector,
-                last_ns: None,
+                stream: Stream::new(port.id, config),
             });
         }
         Ok(Self {
@@ -181,15 +226,7 @@ impl Tail {
         let mut rows = Vec::new();
         for port in &mut self.ports {
             while let Ok(slab) = port.logger.pop() {
-                let meta = slab.meta;
-                // The clock is the chunk timestamp: an idle-gap machine needs it
-                // before the bytes that follow the silence.
-                let mut frames = Vec::new();
-                port.machine.tick(meta.timestamp_ns, &mut frames);
-                port.machine.feed(slab.bytes(), &mut frames);
-                for frame in frames {
-                    rows.push(port.row(&meta, frame));
-                }
+                rows.extend(port.stream.feed(slab.meta.timestamp_ns, slab.bytes()));
             }
         }
         rows
@@ -199,20 +236,6 @@ impl Tail {
         for port in self.ports.drain(..) {
             port.pipeline.stop();
         }
-    }
-}
-
-impl Port {
-    fn row(&mut self, meta: &ChunkMeta, frame: Vec<u8>) -> TailRow {
-        let row = build_row(
-            &self.id,
-            meta.timestamp_ns,
-            self.last_ns,
-            self.dissector.as_ref(),
-            frame,
-        );
-        self.last_ns = Some(meta.timestamp_ns);
-        row
     }
 }
 

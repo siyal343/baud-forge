@@ -67,7 +67,8 @@ fn the_contract_is_served_over_http_and_events_stream() {
     let device = device();
     let config = workspace(&device);
     let ports = session_ports_from_config(&config, &[]).expect("ports");
-    let session = Session::start(ports, None, None).expect("session");
+    let mut session = Session::start(ports, None, None).expect("session");
+    session.enable_decode(&config.ports).expect("decode");
 
     let server = Server::bind("127.0.0.1:0".parse().unwrap()).expect("bind");
     let address = server.local_addr().unwrap().to_string();
@@ -109,7 +110,8 @@ fn an_event_source_receives_the_snapshot_without_asking() {
     let device = device();
     let config = workspace(&device);
     let ports = session_ports_from_config(&config, &[]).expect("ports");
-    let session = Session::start(ports, None, None).expect("session");
+    let mut session = Session::start(ports, None, None).expect("session");
+    session.enable_decode(&config.ports).expect("decode");
 
     let server = Server::bind("127.0.0.1:0".parse().unwrap()).expect("bind");
     let address = server.local_addr().unwrap().to_string();
@@ -123,22 +125,25 @@ fn an_event_source_receives_the_snapshot_without_asking() {
         let request = "GET /api/events HTTP/1.1\r\nHost: test\r\nAccept: text/event-stream\r\n\r\n";
         stream.write_all(request.as_bytes()).unwrap();
 
-        // Read until the first snapshot frame arrives, then stop asking.
+        // Read until a snapshot and a frame arrive, then stop asking.
         let mut seen = String::new();
-        let mut buffer = [0u8; 4096];
-        while !seen.contains("\"contract\":1") {
+        let mut buffer = [0u8; 8192];
+        while !(seen.contains("\"contract\":1") && seen.contains("event: frames")) {
             match stream.read(&mut buffer) {
                 Ok(0) => break,
                 Ok(read) => seen.push_str(&String::from_utf8_lossy(&buffer[..read])),
                 Err(_) => break,
             }
-            if seen.len() > 64 * 1024 {
+            if seen.len() > 256 * 1024 {
                 break;
             }
         }
         assert!(seen.contains("text/event-stream"), "{seen}");
         assert!(seen.contains("event: snapshot"), "{seen}");
         assert!(seen.contains("\"id\":\"sim\""), "the port row travels too");
+        assert!(seen.contains("event: frames"), "frames reach the client");
+        assert!(seen.contains("\"port\":\"sim\""), "a frame names its port");
+        assert!(seen.contains("\"fields\":"), "a frame carries its fields");
     });
 
     let stats = server
