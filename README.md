@@ -103,6 +103,7 @@ port  ->  reader thread  ->  64 KB slab  ->  SPMC fan-out
 | `crates/bforge-cli` | `bforge-cli` | Binary `bforge` for CI and HIL runners |
 | `crates/bforge-gui` | `bforge-gui` | Tauri v2 host for the `ui/` frontend |
 | `src/legacy/` | `baud-forge` | Telemetry core from porti-rs: frame, group, dataset, alarm band, ring buffer, running statistics |
+| `firmware/bforge_test` | — | ESP32-C3 test instrument: four streaming modes, fault commands, sequence counters |
 | `specs/` | — | [ADR and SRS](specs/ADR%20%26%20SRS.md) |
 
 The frontend directory `ui/` (SolidJS, TypeScript, WebGPU) arrives in
