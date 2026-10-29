@@ -347,6 +347,26 @@ pub fn decode_vault(
     Ok(rows)
 }
 
+/// Decode one window of a vault, for a scrubber.
+///
+/// The machine starts at the window, not at the beginning, so a frame that
+/// straddles the first record is lost: the scrubber is a view of the stream, and
+/// resynchronising costs one frame per seek.
+pub fn decode_window(
+    reader: &mut bforge_storage::LogReader,
+    port: &PortConfig,
+    at: u64,
+    count: usize,
+) -> Result<Vec<TailRow>, DecodeError> {
+    let config = tail_config(port)?;
+    let mut stream = Stream::new(&port.id, config);
+    let mut rows = Vec::new();
+    for record in reader.window(at, count)? {
+        rows.extend(stream.feed(record.chunk.timestamp_ns, &record.payload));
+    }
+    Ok(rows)
+}
+
 /// Build the framing machine and dissector a configured port asks for.
 pub fn tail_config(port: &PortConfig) -> Result<TailConfig, TailError> {
     let framing = &port.framing;

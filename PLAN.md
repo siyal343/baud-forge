@@ -40,6 +40,7 @@ state through one contract (F1.7).
 | S8b assert fields | D-15 | done | a 6 s recording from the board decodes to 122 frames and passes 5 field, protocol and count checks |
 | S9 sockets | F1.2.7 (TCP, UDP, config) | done | simulator over loopback: tail decodes, record stores 60 frames, assert passes 3 of 3, no hardware |
 | S10 native packs | F3.4 (CCSDS/PUS, CSP, Modbus; MAVLink deferred) | done | 12 pack tests on hand-built fixtures; a CCSDS packet in a vault decodes and passes assert rules with no schema file |
+| S16 scrubber | F1.7.5 (vault window in the contract, slider in the workbench) | done | 517 frames from record 200 of 108 704, plotted from the window; found and fixed a vault that could not be read while recording |
 | S15 fault injector | FR-FLT-01 (bit flips, drops, truncation, CRC corruption) | done | device received 2 bytes with exactly one bit flipped each; `off` restores clean sends; 6 unit tests |
 | S14 send path | F2.1.1 (write from the UI, checksum on the wire) | done | 3 sent, then 7 sent with CRC-32C, 404 for an unknown port, 400 for odd hex; the device received 10 bytes in order |
 | S13 telemetry | F1.7.4 (numeric series, plot band) | done | 98 880 chunks over 209 s, `sim.channel` plotted with 600 samples; found and fixed a pump starvation at 8 kHz |
@@ -277,9 +278,22 @@ S15 notes:
 - Jitter and latency are still missing (D-66), as are the MITM bridge and scripted
   faults (D-67).
 
-Next action: the scrubber, the last band. It needs the vault read path in the
-contract: a seek to a time or a record, a bounded window of frames around it, and
-the same plot band reading from the window instead of the live stream. `serve` is the only interface it needs, so the
+S16 notes:
+
+- The window answers the same `TailRow` shape as the live stream, so one component
+  draws both and the plot can read either.
+- A fault found by building it: `LogWriter` buffered its first 64 KiB, so no other
+  process could read a vault until it was sealed. The writer flushes the header at
+  creation and the session flushes after each pump that moved chunks. A reader test
+  now covers a vault that is still being written.
+- A seek loses the frame that straddles the first record, and resynchronises at the
+  next delimiter. Recorded, with the reason.
+- Seeks are by record ordinal, not wall-clock time (D-68).
+
+Next action: the ELF crash path on the wire. `bforge-elf` already resolves an address
+to a function and a source line; what is missing is the badge in the stream: a frame
+carrying a panic address decoded, symbolized and drawn next to the row, with the
+source popover. `serve` is the only interface it needs, so the
 work can be done in Edge with hot reload, and the Tauri shell wraps the same files
 afterwards. The engine has published the contract since S4; this is the first phase
 where a change to a panel can be seen without a desktop build.

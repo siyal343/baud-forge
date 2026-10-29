@@ -50,6 +50,9 @@ impl LogWriter {
             .open(&path)?;
         let mut file = BufWriter::with_capacity(64 * 1024, file);
         file.write_all(&header.encode())?;
+        // The header must be on disk at once: another process may open the vault
+        // while it is still being written, and a 0-byte file is not a vault.
+        file.flush()?;
         Ok(Self {
             path,
             file,
@@ -87,6 +90,12 @@ impl LogWriter {
             self.flush_and_sync()?;
         }
         Ok(record_offset)
+    }
+
+    /// Push what is buffered to the operating system, so a reader in another
+    /// process sees the records that are already appended.
+    pub fn flush(&mut self) -> std::io::Result<()> {
+        self.file.flush()
     }
 
     /// Bytes written so far, header included.

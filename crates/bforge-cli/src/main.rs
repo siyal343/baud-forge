@@ -480,7 +480,7 @@ fn serve(args: &[String]) -> ExitCode {
             return ExitCode::FAILURE;
         }
     };
-    let server = match bforge_core::serve::Server::bind(address) {
+    let mut server = match bforge_core::serve::Server::bind(address) {
         Ok(server) => server,
         Err(error) => {
             eprintln!("error: {error}");
@@ -505,6 +505,13 @@ fn serve(args: &[String]) -> ExitCode {
     if let Err(error) = session.enable_decode(&config.ports) {
         eprintln!("error: {error}");
         return ExitCode::FAILURE;
+    }
+    if let Some(vault) = vault.clone() {
+        let source = bforge_core::serve::VaultSource {
+            path: vault,
+            ports: config.ports.clone(),
+        };
+        server = server.with_vault(source);
     }
     println!("serving http://{local}");
     println!("  page      http://{local}/");

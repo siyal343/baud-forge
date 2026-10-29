@@ -94,6 +94,13 @@ struct FaultJob {
     reply: std::sync::mpsc::SyncSender<Result<(), String>>,
 }
 
+/// The vault a scrubber reads, and the schemas that decode it.
+#[derive(Debug, Clone)]
+pub struct VaultSource {
+    pub path: std::path::PathBuf,
+    pub ports: Vec<crate::PortConfig>,
+}
+
 #[derive(Debug, Default)]
 struct Shared {
     /// The newest snapshot as JSON. The snapshot is the source of truth; a client
@@ -106,6 +113,8 @@ struct Shared {
     send: Mutex<Option<std::sync::mpsc::Sender<SendJob>>>,
     /// Same for arming a fault profile.
     fault: Mutex<Option<std::sync::mpsc::Sender<FaultJob>>>,
+    /// Set by `with_vault`, before the server runs.
+    vault: Mutex<Option<VaultSource>>,
 }
 
 impl Shared {
@@ -165,6 +174,12 @@ impl Server {
     /// A flag another thread can set to end the serve loop.
     pub fn stop_handle(&self) -> Arc<AtomicBool> {
         Arc::clone(&self.stop)
+    }
+
+    /// Let the scrubber read a vault. Without this, `/api/vault` answers 404.
+    pub fn with_vault(self, source: VaultSource) -> Self {
+        *self.shared.vault.lock().unwrap() = Some(source);
+        self
     }
 
     /// Pump the session and answer requests until `duration` elapses or the stop
@@ -320,6 +335,14 @@ fn handle(mut stream: TcpStream, shared: Arc<Shared>, stop: Arc<AtomicBool>) {
     if method == "POST" && path == "/api/send" {
         let body = read_body(&mut reader, content_length);
         send(&mut stream, &shared, &body);
+        return;
+    }
+    if method == "GET" && path == "/api/vault" {
+        vault_info(&mut stream, &shared, target);
+        return;
+    }
+    if method == "GET" && path == "/api/vault/frames" {
+        vault_frames(&mut stream, &shared, target);
         return;
     }
     if method == "POST" && path == "/api/fault" {
@@ -709,6 +732,95 @@ fn fault(stream: &mut TcpStream, shared: &Arc<Shared>, body: &[u8]) {
             );
         }
     }
+}
+
+/// `key=value` pairs from a request target, decoded the little that is needed.
+fn query(target: &str) -> std::collections::HashMap<String, String> {
+    let mut map = std::collections::HashMap::new();
+    if let Some((_, query)) = target.split_once('?') {
+        for pair in query.split('&') {
+            if let Some((key, value)) = pair.split_once('=') {
+                map.insert(key.to_string(), value.replace("%20", " "));
+            }
+        }
+    }
+    map
+}
+
+/// Size and shape of the vault, so a scrubber knows its own range.
+fn vault_info(stream: &mut TcpStream, shared: &Arc<Shared>, _target: &str) {
+    let source = shared.vault.lock().unwrap().clone();
+    let Some(source) = source else {
+        return respond(
+            stream,
+            "404 Not Found",
+            "application/json",
+            b"{\"error\":\"no vault\"}",
+        );
+    };
+    let reader = match bforge_storage::LogReader::open(&source.path) {
+        Ok(reader) => reader,
+        Err(error) => {
+            let body = format!("{{\"error\":\"{error}\"}}");
+            return respond(stream, "409 Conflict", "application/json", body.as_bytes());
+        }
+    };
+    let body = format!(
+        "{{\"path\":{},\"records\":{},\"bytes\":{},\"damaged_tail\":{}}}",
+        serde_json::json!(source.path.display().to_string()),
+        reader.chunks(),
+        reader.payload_bytes(),
+        reader.damaged_tail()
+    );
+    respond(stream, "200 OK", "application/json", body.as_bytes());
+}
+
+/// Frames decoded from a record window: the scrubber's view of the past.
+fn vault_frames(stream: &mut TcpStream, shared: &Arc<Shared>, target: &str) {
+    let source = shared.vault.lock().unwrap().clone();
+    let Some(source) = source else {
+        return respond(
+            stream,
+            "404 Not Found",
+            "application/json",
+            b"{\"error\":\"no vault\"}",
+        );
+    };
+    let query = query(target);
+    let at: u64 = query
+        .get("at")
+        .and_then(|value| value.parse().ok())
+        .unwrap_or(0);
+    let count: usize = query
+        .get("count")
+        .and_then(|value| value.parse().ok())
+        .unwrap_or(200)
+        .min(2_000);
+
+    let mut reader = match bforge_storage::LogReader::open(&source.path) {
+        Ok(reader) => reader,
+        Err(error) => {
+            let body = format!("{{\"error\":\"{error}\"}}");
+            return respond(stream, "409 Conflict", "application/json", body.as_bytes());
+        }
+    };
+    let records = reader.chunks();
+    let mut rows = Vec::new();
+    for port in &source.ports {
+        match crate::tail::decode_window(&mut reader, port, at, count) {
+            Ok(decoded) => rows.extend(decoded),
+            Err(error) => {
+                let body = format!("{{\"error\":\"{error}\"}}");
+                return respond(stream, "409 Conflict", "application/json", body.as_bytes());
+            }
+        }
+    }
+    rows.sort_by_key(|row| row.timestamp_us);
+    let body = format!(
+        "{{\"at\":{at},\"count\":{count},\"records\":{records},\"rows\":{}}}",
+        serde_json::to_string(&rows).unwrap_or_else(|_| "[]".to_string())
+    );
+    respond(stream, "200 OK", "application/json", body.as_bytes());
 }
 
 fn respond(stream: &mut TcpStream, status: &str, content_type: &str, body: &[u8]) {

@@ -403,6 +403,13 @@ impl Session {
                 moved += 1;
             }
         }
+        // A scrubber reads the vault from another thread, so what is appended must
+        // reach the operating system now, not when the 64 KiB buffer fills.
+        if moved > 0
+            && let Some(writer) = self.writer.as_mut()
+        {
+            writer.flush()?;
+        }
         self.refresh_ports();
         self.publish_stats_if_due();
         Ok(moved)

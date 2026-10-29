@@ -316,3 +316,30 @@ fn repairing_a_healthy_vault_changes_nothing() {
     let _ = std::fs::remove_file(&path);
     let _ = std::fs::remove_file(bforge_storage::index_path(&path));
 }
+
+/// A vault that is still being written must be readable: the scrubber reads the
+/// file while the recorder appends to it.
+#[test]
+fn a_reader_opens_a_vault_that_is_not_sealed() {
+    let path = temp_path("live");
+    let mut writer = LogWriter::create(&path, header()).unwrap();
+    writer.append(&chunk(0, 16), &payload(0, 16)).unwrap();
+    writer.append(&chunk(1, 16), &payload(1, 16)).unwrap();
+    // No seal: the file is still open, which is the live case. A flush is what the
+    // session does on every pump so a scrubber sees the records.
+    writer.flush().unwrap();
+
+    let mut reader = LogReader::open(&path).expect("a live vault opens");
+    assert_eq!(reader.chunks(), 2, "the writer's records are visible");
+    let window = reader.window(0, 10).unwrap();
+    assert_eq!(window.len(), 2);
+
+    // Appending more is visible to a fresh reader.
+    writer.append(&chunk(2, 16), &payload(2, 16)).unwrap();
+    writer.flush().unwrap();
+    let reader = LogReader::open(&path).expect("it still opens");
+    assert_eq!(reader.chunks(), 3);
+
+    let _ = std::fs::remove_file(&path);
+    let _ = std::fs::remove_file(bforge_storage::index_path(&path));
+}

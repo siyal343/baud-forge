@@ -70,11 +70,19 @@ curl -X POST -d '{"port":"sim","kind":"bit_flip","flip_rate":1.0,"seed":7}' \
   http://127.0.0.1:7717/api/fault
 ```
 
+## Looking back
+
+With `bforge serve --vault session.bflog`, the slider above the plot reads a decoded
+window from the vault (spec 0023). `live` returns to the stream, and `?at=<record>` in
+the address opens the workbench at that position, which makes a finding shareable as a
+link.
+
 ## What is missing
 
-Five of the six bands in `specs/UI-UX-Guide.md`: plots, command forge, full
-inspector, time scrubber and fault injector. No Tauri shell yet. See D-61 and D-62
-in `DEFERRED.md`.
+The six bands exist in some form: ribbon, ports, stream, plot, forge with faults,
+inspector and footer, plus the scrubber. What is thinner than the guide: the inspector
+is a flat field list (D-69), the plot is SVG with one series (D-63), there is no Tauri
+shell (D-62), and the scrubber seeks by record, not time (D-68).
 
 ## Style rules
 

@@ -1,4 +1,4 @@
-import { For, Show, createMemo, createSignal } from 'solid-js'
+import { For, Show, createMemo, createSignal, onMount } from 'solid-js'
 import { createFeed } from './lib/feed'
 import type { FieldRow, TailRow } from './lib/types'
 import './index.css'
@@ -90,6 +90,11 @@ export default function App() {
   const [faultKind, setFaultKind] = createSignal('off')
   const [faultValue, setFaultValue] = createSignal('1.0')
   const [faultLine, setFaultLine] = createSignal<string | null>(null)
+  // Scrubbing: null means live. A number is a record ordinal in the vault.
+  const [at, setAt] = createSignal<number | null>(null)
+  const [windowRows, setWindowRows] = createSignal<TailRow[]>([])
+  const [records, setRecords] = createSignal(0)
+  const [scrubNote, setScrubNote] = createSignal<string | null>(null)
   const bytesOf = (text: string) =>
     text.replace(/0x/gi, '').replace(/[\s:,]/g, '').length / 2
   const plotKeys = createMemo(() => Object.keys(feed.series()).sort())
@@ -97,8 +102,50 @@ export default function App() {
 
   const session = () => feed.snapshot()?.session
   const ports = () => feed.snapshot()?.ports ?? []
-  const shown = createMemo(() => feed.frames().slice(-120).reverse())
-  const detail = () => selected() ?? feed.frames().at(-1) ?? null
+  const rows = createMemo(() => (at() === null ? feed.frames() : windowRows()))
+  const shown = createMemo(() => rows().slice(-120).reverse())
+  const plotValues = createMemo(() => {
+    const key = activePlot()
+    if (key === null) return []
+    if (at() === null) return feed.series()[key] ?? []
+    const [port, ...rest] = key.split('.')
+    const field = rest.join('.')
+    return windowRows()
+      .map((row) => (row.port === port ? row.fields.find((leaf) => leaf.name === field)?.value_num : null))
+      .filter((value): value is number => value !== null && value !== undefined)
+  })
+
+  async function loadWindow(record: number) {
+    setAt(record)
+    try {
+      const response = await fetch(`/api/vault/frames?at=${record}&count=400`)
+      if (!response.ok) {
+        setScrubNote(`${response.status} ${await response.text()}`)
+        return
+      }
+      const body = (await response.json()) as { rows: TailRow[]; records: number; at: number }
+      setRecords(body.records)
+      setWindowRows(body.rows)
+      setScrubNote(`${body.rows.length} frames from record ${body.at}`)
+    } catch (error) {
+      setScrubNote(String(error))
+    }
+  }
+
+  onMount(async () => {
+    const shared = new URLSearchParams(location.search).get('at')
+    try {
+      const response = await fetch('/api/vault')
+      if (response.ok) {
+        const body = (await response.json()) as { records: number }
+        setRecords(body.records)
+        if (shared !== null) await loadWindow(Number(shared))
+      }
+    } catch {
+      // A session without a vault simply has nothing to scrub.
+    }
+  })
+  const detail = () => selected() ?? rows().at(-1) ?? null
   const openPorts = () => ports().filter((port) => port.state === 'open').length
 
   async function armFault(event: SubmitEvent) {
@@ -251,12 +298,22 @@ export default function App() {
               </select>
             </Show>
           </div>
-          <Show when={activePlot()}>
-            {(key) => (
-              <Show when={feed.series()[key()]}>
-                {(values) => <Plot values={values()} />}
-              </Show>
-            )}
+          <div class="scrubber">
+            <input
+              type="range"
+              min="0"
+              max={Math.max(records() - 1, 0)}
+              value={at() ?? Math.max(records() - 1, 0)}
+              onInput={(event) => loadWindow(Number(event.currentTarget.value))}
+              aria-label="vault position"
+            />
+            <button type="button" onClick={() => { setAt(null); setWindowRows([]) }} classList={{ active: at() === null }}>
+              live
+            </button>
+            <span class="hint">{at() === null ? `record ${records()}` : scrubNote() ?? `record ${at()}`}</span>
+          </div>
+          <Show when={plotValues().length > 1}>
+            <Plot values={plotValues()} />
           </Show>
         </section>
       </div>

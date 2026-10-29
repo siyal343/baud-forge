@@ -26,7 +26,8 @@ What works today:
 - Record, replay, tail, assert, yield and vault repair work on serial ports and
   sockets, with six framing modes, a C header dissector and three native packs.
 - `bforge serve` publishes the UI contract over loopback HTTP, so the workbench can
-  run in a browser while the desktop shell is built.
+  run in a browser while the desktop shell is built. The workbench draws the live
+  stream, plots a field, sends bytes, arms a fault profile and scrubs the vault.
 
 ![The workbench](docs/screenshots/workbench.png)
 

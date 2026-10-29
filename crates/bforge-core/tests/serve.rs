@@ -372,3 +372,60 @@ fn an_armed_fault_changes_the_bytes_the_device_receives() {
     client.join().expect("client");
     assert!(stats.requests >= 4, "{stats:?}");
 }
+
+#[test]
+fn a_scrubber_reads_a_frame_window_from_the_vault() {
+    let device = device();
+    let config = workspace(&device);
+    let ports = session_ports_from_config(&config, &[]).expect("ports");
+    let vault = std::env::temp_dir().join(format!("bforge-serve-{}.bflog", std::process::id()));
+    let _ = std::fs::remove_file(&vault);
+    let _ = std::fs::remove_file(bforge_storage::index_path(&vault));
+
+    let mut session =
+        Session::start(ports, Some(&vault), None).expect("session records to the vault");
+    session.enable_decode(&config.ports).expect("decode");
+
+    let server = Server::bind("127.0.0.1:0".parse().unwrap())
+        .expect("bind")
+        .with_vault(bforge_core::serve::VaultSource {
+            path: vault.clone(),
+            ports: config.ports.clone(),
+        });
+    let address = server.local_addr().unwrap().to_string();
+
+    let client = std::thread::spawn(move || {
+        std::thread::sleep(Duration::from_millis(700));
+
+        let (status, body) = get(&address, "/api/vault");
+        assert!(status.contains("200"), "{status} {body}");
+        assert!(body.contains("\"records\":"), "{body}");
+        assert!(body.contains("\"bytes\":"), "{body}");
+
+        let (status, body) = get(&address, "/api/vault/frames?at=0&count=50");
+        assert!(status.contains("200"), "{status} {body}");
+        assert!(body.contains("\"rows\":["), "{body}");
+        assert!(
+            body.contains("\"port\":\"sim\""),
+            "rows carry their port: {body}"
+        );
+        assert!(
+            body.contains("C_STRUCT:ImuPacket"),
+            "rows are decoded: {body}"
+        );
+
+        // A window past the end is empty, not an error.
+        let (status, body) = get(&address, "/api/vault/frames?at=9999999&count=10");
+        assert!(status.contains("200"), "{status} {body}");
+        assert!(body.contains("\"rows\":[]"), "{body}");
+
+        let _ = std::fs::remove_file(&vault);
+        let _ = std::fs::remove_file(bforge_storage::index_path(&vault));
+    });
+
+    let stats = server
+        .run(session, Some(Duration::from_secs(2)))
+        .expect("serve");
+    client.join().expect("client");
+    assert!(stats.requests >= 3, "{stats:?}");
+}
