@@ -167,6 +167,7 @@ tbody tr { border-bottom: 1px solid rgba(35, 43, 54, .5); cursor: default; }
 tbody tr:hover { background: var(--panel-2); }
 tbody tr.chosen { background: #1b2532; box-shadow: inset 2px 0 0 var(--tx); }
 tbody tr.faulty td:last-child { color: var(--fault); }
+.tx { color: var(--tx); }
 .hexcell { color: var(--dim); max-width: 380px; overflow: hidden; text-overflow: ellipsis; }
 
 .hex {

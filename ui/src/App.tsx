@@ -287,6 +287,7 @@ export default function App() {
               <th>t</th>
               <th>Δt µs</th>
               <th>port</th>
+              <th>dir</th>
               <th>len</th>
               <th>hex</th>
               <th>protocol</th>
@@ -303,6 +304,7 @@ export default function App() {
                   <td>{clock(row.timestamp_us)}</td>
                   <td>{row.delta_us}</td>
                   <td>{row.port}</td>
+                  <td classList={{ tx: row.direction !== 'Rx' }}>{row.direction.toLowerCase()}</td>
                   <td>{row.len}</td>
                   <td class="hexcell">{row.hex}</td>
                   <td>{row.protocol ?? (row.text ? 'text' : '-')}</td>

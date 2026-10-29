@@ -40,6 +40,7 @@ state through one contract (F1.7).
 | S8b assert fields | D-15 | done | a 6 s recording from the board decodes to 122 frames and passes 5 field, protocol and count checks |
 | S9 sockets | F1.2.7 (TCP, UDP, config) | done | simulator over loopback: tail decodes, record stores 60 frames, assert passes 3 of 3, no hardware |
 | S10 native packs | F3.4 (CCSDS/PUS, CSP, Modbus; MAVLink deferred) | done | 12 pack tests on hand-built fixtures; a CCSDS packet in a vault decodes and passes assert rules with no schema file |
+| S21 direction | F1.7.6 (direction on every frame row) | done | a bridged pair's vault holds Rx and Tx, and a decoded window marks the forwarded frames as Tx |
 | S20 GUI recording | FR-UI-02 (the window keeps a vault) | done | 2308 records in a vault started by the window; the scrubber decoded a window from it; a port that was not up yet now retries instead of closing |
 | S19 desktop shell | FR-UI-01 (a window around the workbench) | done | `MainWindowTitle "BaudForge"`, engine on `127.0.0.1:54348`, API and assets served; found and fixed a `Send` bound on the framing trait object |
 | S18 bridge | FR-MITM-01 (tap and inline bridge between two ports) | done | bytes travel both ways between two loopback devices; a passive tap forwards nothing; validation refuses a missing port |
@@ -341,10 +342,16 @@ S20 notes:
 - The vault path is printed at startup and `--vault` overrides it (D-78 keeps the
   picker open).
 
-Next action: the receive-side gap that matters most for a rig: `serve` and the window
-only record what arrives. A tap on two RX ports is one timeline (spec 0025), but the
-direction column is still one per port (D-72), so a bridge reads as two streams
-instead of one bus. That is the next honest improvement. `serve` is the only interface it needs, so the
+S21 notes:
+
+- The direction comes from the record, not from a guess: the vault already knew, the
+  row simply dropped it.
+- A live session stays receive-only, which is honest about what the reader can see
+  (D-79). A forwarded byte is visible in a vault window as `Tx`.
+- The workbench colours `tx` in the transmit colour the guide reserves for it.
+
+Next action: a paired-bus view, the second half of D-72: choose a bridge and see both
+ports in one sequence, with the direction on each row and one plot over the pair. `serve` is the only interface it needs, so the
 work can be done in Edge with hot reload, and the Tauri shell wraps the same files
 afterwards. The engine has published the contract since S4; this is the first phase
 where a change to a panel can be seen without a desktop build.

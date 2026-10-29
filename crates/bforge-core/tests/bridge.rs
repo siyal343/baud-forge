@@ -188,3 +188,55 @@ b = "eps"
         "{issues:?}"
     );
 }
+
+#[test]
+fn the_vault_records_both_directions_of_a_bridged_pair() {
+    let (left, _left_in) = device("obc");
+    let (right, _right_in) = device("eps");
+    let config = workspace(&left, &right, true);
+    let vault = std::env::temp_dir().join(format!("bforge-bridge-{}.bflog", std::process::id()));
+    let _ = std::fs::remove_file(&vault);
+    let _ = std::fs::remove_file(bforge_storage::index_path(&vault));
+
+    let ports = session_ports_from_config(&config, &[]).expect("ports");
+    let mut session = Session::start(ports, Some(&vault), None).expect("session");
+    session.enable_bridges(&config.bridges).expect("bridges");
+
+    let deadline = Instant::now() + Duration::from_secs(2);
+    while Instant::now() < deadline {
+        session.pump_once().expect("pump");
+        std::thread::sleep(Duration::from_millis(2));
+    }
+    session.seal().expect("seal");
+
+    // The forwarded copies are in the vault as transmit, which is what makes a
+    // bridged session auditable.
+    let mut reader = bforge_storage::LogReader::open(&vault).expect("vault opens");
+    let records = reader.window(0, 10_000).expect("window");
+    let tx = records
+        .iter()
+        .filter(|record| record.chunk.direction == bforge_hal::Direction::Tx)
+        .count();
+    let rx = records
+        .iter()
+        .filter(|record| record.chunk.direction == bforge_hal::Direction::Rx)
+        .count();
+    assert!(tx > 0, "forwarded bytes are recorded as transmit");
+    assert!(rx > 0, "arriving bytes are recorded as receive");
+
+    // And a decoded window says which way each frame went.
+    let port = config
+        .ports
+        .iter()
+        .find(|port| port.id == "eps")
+        .expect("eps");
+    let rows = bforge_core::tail::decode_window(&mut reader, port, 0, 10_000).expect("decode");
+    assert!(
+        rows.iter()
+            .any(|row| row.direction == bforge_hal::Direction::Tx),
+        "a forwarded frame decodes as transmit"
+    );
+
+    let _ = std::fs::remove_file(&vault);
+    let _ = std::fs::remove_file(bforge_storage::index_path(&vault));
+}

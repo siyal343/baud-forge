@@ -12,6 +12,7 @@ use crate::slab::Slab;
 use bforge_dissect::packs::Pack;
 use bforge_dissect::{DecodedField, DissectorIr, cheader, exec};
 use bforge_framer::{ByteMachine, HeaderLength, IdleGap, LengthWidth, machine_for};
+use bforge_hal::Direction;
 use std::collections::HashMap;
 use std::sync::Arc;
 use std::time::{Duration, Instant};
@@ -94,6 +95,9 @@ pub struct FieldRow {
 #[derive(Debug, Clone, PartialEq, serde::Serialize)]
 pub struct TailRow {
     pub port: String,
+    /// Which way the bytes travelled. A live session sees receive only; a bridge
+    /// writes the other direction and the vault records both.
+    pub direction: Direction,
     pub timestamp_us: u64,
     /// Time since the previous frame on this port.
     pub delta_us: u64,
@@ -166,6 +170,7 @@ impl Stream {
             .map(|frame| {
                 let row = build_row(
                     &self.port,
+                    Direction::Rx,
                     timestamp_ns,
                     last_ns,
                     self.dissector.as_ref(),
@@ -257,6 +262,7 @@ impl Tail {
 /// One row, shared by the live tail and the vault decoder.
 fn build_row(
     port: &str,
+    direction: Direction,
     timestamp_ns: u64,
     previous_ns: Option<u64>,
     dissector: Option<&Decoder>,
@@ -269,6 +275,7 @@ fn build_row(
 
     let mut row = TailRow {
         port: port.to_string(),
+        direction,
         timestamp_us: timestamp_ns / 1_000,
         delta_us,
         len: frame.len(),
@@ -348,6 +355,7 @@ pub fn decode_vault(
             for frame in frames {
                 rows.push(build_row(
                     &port.id,
+                    record.chunk.direction,
                     record.chunk.timestamp_ns,
                     previous_ns,
                     dissector.as_ref(),
@@ -376,7 +384,10 @@ pub fn decode_window(
     let mut stream = Stream::new(&port.id, config);
     let mut rows = Vec::new();
     for record in reader.window(at, count)? {
-        rows.extend(stream.feed(record.chunk.timestamp_ns, &record.payload));
+        for mut row in stream.feed(record.chunk.timestamp_ns, &record.payload) {
+            row.direction = record.chunk.direction;
+            rows.push(row);
+        }
     }
     Ok(rows)
 }

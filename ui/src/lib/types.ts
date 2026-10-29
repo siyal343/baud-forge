@@ -77,6 +77,8 @@ export interface SymbolHit {
 
 export interface TailRow {
   port: string
+  /** 'Rx', 'Tx', 'MitmAToB', 'MitmBToA' or 'InjectedFault' (bforge-hal Direction). */
+  direction: string
   timestamp_us: number
   delta_us: number
   len: number

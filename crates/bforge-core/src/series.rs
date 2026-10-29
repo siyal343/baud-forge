@@ -111,6 +111,7 @@ mod tests {
     fn row(port: &str, value: Option<f64>, name: &str) -> TailRow {
         TailRow {
             port: port.to_string(),
+            direction: bforge_hal::Direction::Rx,
             timestamp_us: 0,
             delta_us: 0,
             len: 4,
