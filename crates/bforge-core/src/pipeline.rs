@@ -153,7 +153,13 @@ struct ReaderContext {
 /// One queued write and where to report the result.
 pub struct WriteRequest {
     pub bytes: Vec<u8>,
-    pub reply: std::sync::mpsc::Sender<Result<usize, String>>,
+    /// Some when the caller waits for the result, as a person's send does.
+    pub reply: Option<std::sync::mpsc::Sender<Result<usize, String>>>,
+    /// Some when the caller only wants to know how much has landed, as a bridge
+    /// does: no thread waits, and the counters stay honest.
+    pub settled: Option<Arc<AtomicU64>>,
+    /// Bytes a transport refused, so a wedged port is visible without a caller.
+    pub failed: Option<Arc<AtomicU64>>,
 }
 
 #[derive(Debug, Default)]
@@ -278,11 +284,34 @@ impl Pipeline {
     pub fn write(&self, bytes: Vec<u8>, wait: Duration) -> Result<usize, String> {
         let (reply, answer) = std::sync::mpsc::channel();
         self.writes
-            .send(WriteRequest { bytes, reply })
+            .send(WriteRequest {
+                bytes,
+                reply: Some(reply),
+                settled: None,
+                failed: None,
+            })
             .map_err(|_| "the reader has stopped".to_string())?;
         answer
             .recv_timeout(wait)
             .map_err(|_| "the reader did not answer in time".to_string())?
+    }
+
+    /// Queue bytes without waiting. The reader writes them when it can, so a
+    /// forwarding bridge never holds the pump hostage to one port.
+    pub fn post(
+        &self,
+        bytes: Vec<u8>,
+        settled: Arc<AtomicU64>,
+        failed: Arc<AtomicU64>,
+    ) -> Result<(), String> {
+        self.writes
+            .send(WriteRequest {
+                bytes,
+                reply: None,
+                settled: Some(settled),
+                failed: Some(failed),
+            })
+            .map_err(|_| "the reader has stopped".to_string())
     }
 
     /// The handle a control plane keeps, so it can yield without touching the
@@ -363,11 +392,26 @@ fn read_loop(
     // Nobody is left to read it, and the wait must not outlive the session.
     'read: while !stop.load(Ordering::Relaxed) {
         while let Ok(request) = writes.try_recv() {
-            let result = transport
-                .write_frame(&request.bytes)
-                .map(|()| request.bytes.len())
-                .map_err(|error| error.to_string());
-            let _ = request.reply.send(result);
+            let written = request.bytes.len();
+            match transport.write_frame(&request.bytes) {
+                Ok(()) => {
+                    if let Some(settled) = &request.settled {
+                        settled.fetch_add(written as u64, Ordering::Relaxed);
+                    }
+                    if let Some(reply) = request.reply {
+                        let _ = reply.send(Ok(written));
+                    }
+                }
+                Err(error) => {
+                    counters.read_errors.fetch_add(1, Ordering::Relaxed);
+                    if let Some(failed) = &request.failed {
+                        failed.fetch_add(written as u64, Ordering::Relaxed);
+                    }
+                    if let Some(reply) = request.reply {
+                        let _ = reply.send(Err(error.to_string()));
+                    }
+                }
+            }
         }
         if let Some(window) = yield_request.take() {
             counters.state.store(STATE_YIELDED, Ordering::Relaxed);

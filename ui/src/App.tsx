@@ -257,7 +257,11 @@ export default function App() {
           {(bridge) => (
             <span class="chip bridge" classList={{ forward: bridge.forward }}>
               {bridge.forward ? 'bridge' : 'tap'} {bridge.a}↔{bridge.b}
-              <Show when={bridge.forward}> {bridge.forwarded} B</Show>
+              <Show when={bridge.forward}>
+                {' '}
+                {bridge.forwarded} B
+                <Show when={bridge.dropped > 0}> · dropped {bridge.dropped} B</Show>
+              </Show>
             </span>
           )}
         </For>

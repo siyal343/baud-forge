@@ -40,6 +40,7 @@ state through one contract (F1.7).
 | S8b assert fields | D-15 | done | a 6 s recording from the board decodes to 122 frames and passes 5 field, protocol and count checks |
 | S9 sockets | F1.2.7 (TCP, UDP, config) | done | simulator over loopback: tail decodes, record stores 60 frames, assert passes 3 of 3, no hardware |
 | S10 native packs | F3.4 (CCSDS/PUS, CSP, Modbus; MAVLink deferred) | done | 12 pack tests on hand-built fixtures; a CCSDS packet in a vault decodes and passes assert rules with no schema file |
+| S23 bridge queue | D-72 (a wedged destination cannot stop the pump) | done | five posts returned in <150 ms against a port that sleeps 300 ms per write; 233 tests in 19 s |
 | S22 paired bus | FR-MITM-01 (one timeline for a bridged pair) | done | two simulators on one bus, frames merged by chunk time, one plot over the pair; found a memo-ordering fault before it shipped |
 | S21 direction | F1.7.6 (direction on every frame row) | done | a bridged pair's vault holds Rx and Tx, and a decoded window marks the forwarded frames as Tx |
 | S20 GUI recording | FR-UI-02 (the window keeps a vault) | done | 2308 records in a vault started by the window; the scrubber decoded a window from it; a port that was not up yet now retries instead of closing |
@@ -362,8 +363,17 @@ S22 notes:
 - No screenshot for this slice. Headless Edge stopped producing output in this session,
   and the spec says so rather than implying a picture exists.
 
-Next action: the per-direction queue (the remaining half of D-72), so a destination that
-stops accepting stops costing the pump 100 ms per write. `serve` is the only interface it needs, so the
+S23 notes:
+
+- The pump now posts; only a person's send waits for an answer, because a forge must be
+  able to say how many bytes left.
+- Counters are per port: posted, settled, refused. The sidebar's read-error count rises
+  when a transport refuses, so a wedged port is visible without a special view.
+- 1 MiB may wait for a port; beyond that the bridge drops and says so.
+- Delivery after a reconnect is not guaranteed, and `failed` counts it (D-80).
+
+Next action: live transmit rows (D-79), so a bridge's writes appear in the stream as they
+happen instead of only in a scrubbed window. `serve` is the only interface it needs, so the
 work can be done in Edge with hot reload, and the Tauri shell wraps the same files
 afterwards. The engine has published the contract since S4; this is the first phase
 where a change to a panel can be seen without a desktop build.

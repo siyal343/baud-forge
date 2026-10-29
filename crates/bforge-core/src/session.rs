@@ -119,6 +119,8 @@ pub struct Session {
     image: Option<bforge_elf::ElfImage>,
     /// Port pairs joined by the engine.
     bridges: Vec<Bridge>,
+    /// One set of counters per port, shared with its reader thread.
+    outboxes: Vec<Outbox>,
     frames: std::collections::VecDeque<TailRow>,
     frames_dropped: u64,
     series: SeriesSet,
@@ -129,6 +131,17 @@ struct Bridge {
     view: BridgeView,
     a: usize,
     b: usize,
+}
+
+/// How much forwarded traffic may wait for one port before the bridge drops it.
+const FORWARD_LIMIT: u64 = 1 << 20;
+
+/// A port's transmit bookkeeping: what was posted, what landed, what was refused.
+#[derive(Debug, Default)]
+struct Outbox {
+    posted: Arc<std::sync::atomic::AtomicU64>,
+    settled: Arc<std::sync::atomic::AtomicU64>,
+    failed: Arc<std::sync::atomic::AtomicU64>,
 }
 
 /// What a running session answers on the control socket.
@@ -176,6 +189,7 @@ impl Session {
             .duration_since(UNIX_EPOCH)
             .map(|elapsed| elapsed.as_nanos() as u64)
             .unwrap_or(0);
+        let port_count = ports.len();
         let header = LogHeader {
             session_id: u128::from(started_epoch_ns) << 64 | u128::from(std::process::id()),
             start_epoch_ns: started_epoch_ns,
@@ -259,6 +273,9 @@ impl Session {
             faults: std::sync::Mutex::new(std::collections::HashMap::new()),
             image: None,
             bridges: Vec::new(),
+            outboxes: std::iter::repeat_with(Outbox::default)
+                .take(port_count)
+                .collect(),
             frames: std::collections::VecDeque::new(),
             frames_dropped: 0,
             series: SeriesSet::new(),
@@ -295,6 +312,7 @@ impl Session {
                     b: bridge.b.clone(),
                     forward: bridge.forward,
                     forwarded: 0,
+                    dropped: 0,
                 },
                 a,
                 b,
@@ -831,7 +849,11 @@ fn symbolize_for(image: &bforge_elf::ElfImage, row: &TailRow) -> Vec<crate::tail
 }
 
 impl Session {
-    /// Write what one side received to the other side, and record the copy.
+    /// Post what one side received to the other side, and record the copy.
+    ///
+    /// Nothing waits here: the reader writes on its own thread, and how much has
+    /// landed is kept in per-port counters. A port that stops accepting therefore
+    /// costs a queue, not the pump.
     fn forward(&mut self, crossed: &mut [Vec<u8>]) -> Result<(), SessionError> {
         if self.bridges.is_empty() {
             return Ok(());
@@ -844,24 +866,38 @@ impl Session {
                     continue;
                 }
                 let bytes = std::mem::take(&mut crossed[from]);
-                let written = match self.ports[to]
+                let outbox = &self.outboxes[to];
+                let posted = outbox.posted.load(std::sync::atomic::Ordering::Relaxed);
+                let settled = outbox.settled.load(std::sync::atomic::Ordering::Relaxed);
+                let failed = outbox.failed.load(std::sync::atomic::Ordering::Relaxed);
+                let waiting = posted.saturating_sub(settled).saturating_sub(failed);
+                if waiting + bytes.len() as u64 > FORWARD_LIMIT {
+                    self.bridges[bridge_index].view.dropped += bytes.len() as u64;
+                    continue;
+                }
+                let len = bytes.len() as u64;
+                self.ports[to]
                     .pipeline
-                    .write(bytes.clone(), Duration::from_millis(100))
-                {
-                    Ok(written) => written,
-                    Err(error) => {
-                        self.bridges[bridge_index].view.forwarded += 0;
-                        return Err(SessionError::Write(format!(
-                            "bridge `{}` could not write to `{}`: {error}",
+                    .post(
+                        bytes.clone(),
+                        Arc::clone(&outbox.settled),
+                        Arc::clone(&outbox.failed),
+                    )
+                    .map_err(|error| {
+                        SessionError::Write(format!(
+                            "bridge `{}` could not reach `{}`: {error}",
                             self.bridges[bridge_index].view.id, self.ports[to].info.id
-                        )));
-                    }
-                };
-                self.bridges[bridge_index].view.forwarded += written as u64;
-                // The vault records what left the engine, so a bridge is auditable.
+                        ))
+                    })?;
+                outbox
+                    .posted
+                    .fetch_add(len, std::sync::atomic::Ordering::Relaxed);
+                self.bridges[bridge_index].view.forwarded += len;
+                // The vault records what the engine was told to send, so a bridged
+                // session is auditable; `failed` says how much a transport refused.
                 if let Some(writer) = self.writer.as_mut() {
                     let chunk = RawChunk {
-                        seq_id: self.chunks + written as u64,
+                        seq_id: self.chunks,
                         timestamp_ns: now_ns,
                         port_id: to as u16,
                         direction: Direction::Tx,
@@ -872,7 +908,7 @@ impl Session {
                     writer.append(&chunk, &bytes)?;
                     writer.flush()?;
                     self.chunks += 1;
-                    self.payload_bytes += bytes.len() as u64;
+                    self.payload_bytes += len;
                 }
             }
         }

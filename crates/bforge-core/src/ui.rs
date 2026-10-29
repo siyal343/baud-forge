@@ -34,6 +34,8 @@ pub struct BridgeView {
     pub forward: bool,
     /// Bytes forwarded so far, both directions.
     pub forwarded: u64,
+    /// Bytes the bridge refused because the destination was too far behind.
+    pub dropped: u64,
 }
 
 /// Session-level state: the mode strip, the vault line and the footer.

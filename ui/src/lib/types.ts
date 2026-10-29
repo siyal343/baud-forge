@@ -43,6 +43,8 @@ export interface BridgeView {
   b: string
   forward: boolean
   forwarded: number
+  /** Bytes the bridge refused because the destination fell too far behind. */
+  dropped: number
 }
 
 export interface UiSnapshot {

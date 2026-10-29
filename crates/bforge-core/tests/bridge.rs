@@ -240,3 +240,77 @@ fn the_vault_records_both_directions_of_a_bridged_pair() {
     let _ = std::fs::remove_file(&vault);
     let _ = std::fs::remove_file(bforge_storage::index_path(&vault));
 }
+
+/// A transport whose writes block, to prove the bridge no longer waits for one.
+struct SlowWriter {
+    delay: Duration,
+    written: Arc<Mutex<Vec<u8>>>,
+}
+
+impl bforge_hal::TransportDriver for SlowWriter {
+    fn open(&mut self) -> Result<(), bforge_hal::TransportError> {
+        Ok(())
+    }
+    fn close(&mut self) {}
+    fn read_slab(&mut self, _out: &mut [u8]) -> Result<usize, bforge_hal::TransportError> {
+        std::thread::sleep(Duration::from_millis(20));
+        Ok(0)
+    }
+    fn write_frame(&mut self, frame: &[u8]) -> Result<(), bforge_hal::TransportError> {
+        std::thread::sleep(self.delay);
+        self.written.lock().unwrap().extend_from_slice(frame);
+        Ok(())
+    }
+    fn set_pins(
+        &mut self,
+        _pins: bforge_hal::PinStateFlags,
+    ) -> Result<(), bforge_hal::TransportError> {
+        Ok(())
+    }
+    fn read_pins(&mut self) -> Result<bforge_hal::PinStateFlags, bforge_hal::TransportError> {
+        Ok(bforge_hal::PinStateFlags::default())
+    }
+    fn state(&self) -> bforge_hal::PortState {
+        bforge_hal::PortState::Open
+    }
+}
+
+#[test]
+fn posting_to_a_slow_port_does_not_block_the_caller() {
+    use bforge_core::pipeline::{Pipeline, PipelineConfig};
+    use std::sync::atomic::{AtomicU64, Ordering};
+
+    let written = Arc::new(Mutex::new(Vec::new()));
+    let pipeline = Pipeline::start(
+        PipelineConfig {
+            port_id: 1,
+            consumers: 1,
+            ..Default::default()
+        },
+        Box::new(SlowWriter {
+            delay: Duration::from_millis(300),
+            written: Arc::clone(&written),
+        }),
+    );
+
+    let settled = Arc::new(AtomicU64::new(0));
+    let failed = Arc::new(AtomicU64::new(0));
+    let started = Instant::now();
+    for _ in 0..5 {
+        pipeline
+            .post(vec![1, 2, 3, 4], Arc::clone(&settled), Arc::clone(&failed))
+            .expect("queued");
+    }
+    let posting = started.elapsed();
+    assert!(
+        posting < Duration::from_millis(150),
+        "five posts took {posting:?} while the port sleeps 300 ms per write"
+    );
+
+    // The bytes do land, eventually, on the reader's thread.
+    std::thread::sleep(Duration::from_millis(1700));
+    let landed = written.lock().unwrap().len();
+    pipeline.stop();
+    assert!(landed >= 8, "only {landed} bytes reached the port");
+    assert!(settled.load(Ordering::Relaxed) >= 8);
+}
