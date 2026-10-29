@@ -70,6 +70,19 @@ curl -X POST -d '{"port":"sim","kind":"bit_flip","flip_rate":1.0,"seed":7}' \
   http://127.0.0.1:7717/api/fault
 ```
 
+## Bridges
+
+A workspace may join two ports (spec 0025). The ribbon shows `tap obc↔eps` for a
+passive pair or `bridge obc↔eps 12 kB` when bytes are being forwarded:
+
+```toml
+[[bridges]]
+id = "link"
+a = "obc"
+b = "eps"
+forward = true
+```
+
 ## Crash badges
 
 When the workspace names `elf_path`, addresses in decoded frames resolve to a function

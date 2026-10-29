@@ -57,6 +57,7 @@ impl ProjectConfig {
         }
 
         self.validate_ports(&mut issues);
+        self.validate_bridges(&mut issues);
         self.validate_commands(&mut issues);
         self.validate_alerts(&mut issues);
         issues
@@ -181,6 +182,45 @@ impl ProjectConfig {
                 issues.push(ConfigIssue::new(
                     format!("{at}.match_vid_pid"),
                     format!("`{tuple}` is not `vvvv:pppp` in hexadecimal"),
+                ));
+            }
+        }
+    }
+
+    fn validate_bridges(&self, issues: &mut Vec<ConfigIssue>) {
+        for (index, bridge) in self.bridges.iter().enumerate() {
+            let at = format!("bridges[{index}]");
+            if bridge.id.trim().is_empty() {
+                issues.push(ConfigIssue::new(format!("{at}.id"), "must not be empty"));
+            } else if self.bridges[..index]
+                .iter()
+                .any(|other| other.id == bridge.id)
+            {
+                issues.push(ConfigIssue::new(format!("{at}.id"), "is used twice"));
+            }
+            for (side, id) in [("a", &bridge.a), ("b", &bridge.b)] {
+                if !self.ports.iter().any(|port| &port.id == id) {
+                    issues.push(ConfigIssue::new(
+                        format!("{at}.{side}"),
+                        format!("`{id}` is not a port in this workspace"),
+                    ));
+                }
+            }
+            if bridge.a == bridge.b {
+                issues.push(ConfigIssue::new(
+                    format!("{at}.b"),
+                    "a bridge needs two different ports",
+                ));
+            }
+            let ports = [&bridge.a, &bridge.b];
+            let earlier = &self.bridges[..index];
+            if earlier
+                .iter()
+                .any(|other| ports.iter().any(|id| id == &&other.a || id == &&other.b))
+            {
+                issues.push(ConfigIssue::new(
+                    format!("{at}.a"),
+                    "a port may be in only one bridge",
                 ));
             }
         }

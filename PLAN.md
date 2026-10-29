@@ -40,6 +40,7 @@ state through one contract (F1.7).
 | S8b assert fields | D-15 | done | a 6 s recording from the board decodes to 122 frames and passes 5 field, protocol and count checks |
 | S9 sockets | F1.2.7 (TCP, UDP, config) | done | simulator over loopback: tail decodes, record stores 60 frames, assert passes 3 of 3, no hardware |
 | S10 native packs | F3.4 (CCSDS/PUS, CSP, Modbus; MAVLink deferred) | done | 12 pack tests on hand-built fixtures; a CCSDS packet in a vault decodes and passes assert rules with no schema file |
+| S18 bridge | FR-MITM-01 (tap and inline bridge between two ports) | done | bytes travel both ways between two loopback devices; a passive tap forwards nothing; validation refuses a missing port |
 | S17 symbol badges | F2.2.1 (addresses in frames resolved and drawn) | done | `pc 0x140001480 -> std/src/env.rs:228` from a real image, over the live contract; 4 unit tests |
 | S16 scrubber | F1.7.5 (vault window in the contract, slider in the workbench) | done | 517 frames from record 200 of 108 704, plotted from the window; found and fixed a vault that could not be read while recording |
 | S15 fault injector | FR-FLT-01 (bit flips, drops, truncation, CRC corruption) | done | device received 2 bytes with exactly one bit flipped each; `off` restores clean sends; 6 unit tests |
@@ -303,9 +304,20 @@ S17 notes:
   location and the name stays in the tooltip.
 - Text crash lines are not parsed (D-71) and no source text is fetched (D-70).
 
-Next action: the receive-side MITM bridge (FR-MITM-01): two ports in one pipeline, a
-forwarding rule per direction, and the fault profile available on both. That is the
-last large item of Phase 2 before packaging. `serve` is the only interface it needs, so the
+S18 notes:
+
+- The bridge is a forwarder in the session, so it works for `record` and `serve`
+  alike, and the fault profiles already apply to the destination port.
+- The vault records the forwarded copy with `direction = Tx` on the receiving port.
+  Without that a bridged session could not answer "what did the engine put on the
+  wire?".
+- The write has a 100 ms budget and a failure ends with an error instead of a silent
+  drop: a wedged destination is visible, not absorbed. A queue per direction is D-72.
+- Validation covers the three ways a bridge can be wrong.
+
+Next action: packaging. The engine, the contract and the workbench are in place; what
+is missing is the desktop shell (D-62), which the machine can now build: the Tauri
+host crate, the icons and the installer, with CI publishing artefacts per target. `serve` is the only interface it needs, so the
 work can be done in Edge with hot reload, and the Tauri shell wraps the same files
 afterwards. The engine has published the contract since S4; this is the first phase
 where a change to a panel can be seen without a desktop build.

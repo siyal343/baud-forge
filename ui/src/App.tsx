@@ -224,6 +224,14 @@ export default function App() {
         <span class={`chip ${feed.link()}`}>{feed.link()}</span>
         <span class="chip">{session()?.mode ?? 'idle'}</span>
         <span class="chip">ports {openPorts()}/{ports().length}</span>
+        <For each={feed.snapshot()?.bridges ?? []}>
+          {(bridge) => (
+            <span class="chip bridge" classList={{ forward: bridge.forward }}>
+              {bridge.forward ? 'bridge' : 'tap'} {bridge.a}↔{bridge.b}
+              <Show when={bridge.forward}> {bridge.forwarded} B</Show>
+            </span>
+          )}
+        </For>
         <span class="grow" />
         <span class="chip">elapsed {session() ? seconds(session()!.elapsed_ms) : '-'}</span>
         <span class="chip">chunks {session()?.chunks ?? 0}</span>

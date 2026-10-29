@@ -290,6 +290,11 @@ fn record(args: &[String]) -> ExitCode {
         }
     };
 
+    if let Err(error) = session.enable_bridges(&config.bridges) {
+        eprintln!("error: {error}");
+        return ExitCode::FAILURE;
+    }
+
     let events = session.subscribe();
     let stop = stop_signal(duration);
     println!("recording {} port(s) into {out}", session.port_count());
@@ -503,6 +508,10 @@ fn serve(args: &[String]) -> ExitCode {
             }
         };
     if let Err(error) = session.enable_decode(&config.ports) {
+        eprintln!("error: {error}");
+        return ExitCode::FAILURE;
+    }
+    if let Err(error) = session.enable_bridges(&config.bridges) {
         eprintln!("error: {error}");
         return ExitCode::FAILURE;
     }

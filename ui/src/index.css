@@ -63,6 +63,8 @@ body {
 }
 
 .chip.live { color: var(--valid); border-color: var(--valid); }
+.chip.bridge { color: var(--dim); }
+.chip.bridge.forward { color: var(--tx); border-color: var(--tx); }
 .chip.connecting { color: var(--yield); border-color: var(--yield); }
 .chip.down { color: var(--fault); border-color: var(--fault); }
 

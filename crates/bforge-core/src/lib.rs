@@ -30,6 +30,9 @@ pub struct ProjectConfig {
     pub workspace: WorkspaceMeta,
     #[serde(default)]
     pub ports: Vec<PortConfig>,
+    /// Port pairs for a tap or an inline bridge (FR-MITM-01).
+    #[serde(default)]
+    pub bridges: Vec<BridgeConfig>,
     #[serde(default)]
     pub commands: Vec<CommandConfig>,
     #[serde(default)]
@@ -101,6 +104,20 @@ pub struct DissectorConfig {
     pub name: Option<String>,
     pub file: Option<String>,
     pub root_struct: Option<String>,
+}
+
+/// A pair of ports joined by the engine.
+///
+/// `forward` off is a passive tap: both sides are recorded and shown in one
+/// timeline, and nothing is sent. `forward` on is an inline bridge: bytes that
+/// arrive on one side are written to the other.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+pub struct BridgeConfig {
+    pub id: String,
+    pub a: String,
+    pub b: String,
+    #[serde(default)]
+    pub forward: bool,
 }
 
 /// One `[[commands]]` entry: a parameterized frame the user can send.

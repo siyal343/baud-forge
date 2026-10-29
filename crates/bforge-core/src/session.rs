@@ -10,12 +10,14 @@ use crate::pipeline::{Pipeline, PipelineConfig, YieldRequest};
 use crate::series::{SeriesSet, SeriesUpdate};
 use crate::symbolize::symbolize;
 use crate::tail::{Stream, TailError, TailRow, tail_config};
-use crate::ui::{CONTRACT_VERSION, EventBus, PinsView, PortView, SessionView, UiEvent, UiSnapshot};
-use crate::{PortConfig, ProjectConfig};
+use crate::ui::{
+    BridgeView, CONTRACT_VERSION, EventBus, PinsView, PortView, SessionView, UiEvent, UiSnapshot,
+};
+use crate::{BridgeConfig, PortConfig, ProjectConfig};
 use bforge_hal::tcp::{TcpConfig, TcpTransport};
 use bforge_hal::uart::{UartConfig, UartTransport, available};
 use bforge_hal::udp::{UdpConfig, UdpTransport};
-use bforge_hal::{LineConfig, PinStateFlags, TransportDriver};
+use bforge_hal::{Direction, LineConfig, PinStateFlags, TransportDriver};
 use bforge_storage::{LogHeader, LogReader, LogSummary, LogWriter, RawChunk, StorageError};
 use std::path::{Path, PathBuf};
 use std::sync::Arc;
@@ -115,9 +117,18 @@ pub struct Session {
     faults: std::sync::Mutex<std::collections::HashMap<String, Injector>>,
     /// The firmware image, when the workspace names one. Frames get address badges.
     image: Option<bforge_elf::ElfImage>,
+    /// Port pairs joined by the engine.
+    bridges: Vec<Bridge>,
     frames: std::collections::VecDeque<TailRow>,
     frames_dropped: u64,
     series: SeriesSet,
+}
+
+/// One bridge, resolved to port indices.
+struct Bridge {
+    view: BridgeView,
+    a: usize,
+    b: usize,
 }
 
 /// What a running session answers on the control socket.
@@ -247,6 +258,7 @@ impl Session {
             streams: Vec::new(),
             faults: std::sync::Mutex::new(std::collections::HashMap::new()),
             image: None,
+            bridges: Vec::new(),
             frames: std::collections::VecDeque::new(),
             frames_dropped: 0,
             series: SeriesSet::new(),
@@ -262,6 +274,34 @@ impl Session {
     /// Subscribe to the event stream before pumping.
     pub fn subscribe(&self) -> std::sync::mpsc::Receiver<UiEvent> {
         self.bus.subscribe()
+    }
+
+    /// Join port pairs. A passive bridge only puts both sides in one timeline; a
+    /// forwarding bridge also writes what one side receives to the other.
+    pub fn enable_bridges(&mut self, bridges: &[BridgeConfig]) -> Result<(), SessionError> {
+        let mut resolved = Vec::with_capacity(bridges.len());
+        for bridge in bridges {
+            let find = |id: &str| self.ports.iter().position(|port| port.info.id == id);
+            let (Some(a), Some(b)) = (find(&bridge.a), find(&bridge.b)) else {
+                return Err(SessionError::Settings(format!(
+                    "bridge `{}` names a port that is not in this workspace",
+                    bridge.id
+                )));
+            };
+            resolved.push(Bridge {
+                view: BridgeView {
+                    id: bridge.id.clone(),
+                    a: bridge.a.clone(),
+                    b: bridge.b.clone(),
+                    forward: bridge.forward,
+                    forwarded: 0,
+                },
+                a,
+                b,
+            });
+        }
+        self.bridges = resolved;
+        Ok(())
     }
 
     /// Load a firmware image so decoded addresses become function names.
@@ -380,6 +420,8 @@ impl Session {
     /// Move ready chunks into the vault. Returns how many moved.
     pub fn pump_once(&mut self) -> Result<usize, SessionError> {
         let mut moved = 0;
+        let mut crossed: Vec<Vec<u8>> = vec![Vec::new(); self.ports.len()];
+        #[allow(clippy::needless_range_loop)] // `crossed` exists only to be indexed here
         for index in 0..self.ports.len() {
             let mut taken = 0;
             while taken < PUMP_BUDGET {
@@ -400,6 +442,14 @@ impl Session {
                     };
                     writer.append(&chunk, slab.bytes())?;
                 }
+                if let Some(bridge) = self
+                    .bridges
+                    .iter()
+                    .find(|bridge| bridge.a == index || bridge.b == index)
+                    && bridge.view.forward
+                {
+                    crossed[index].extend_from_slice(slab.bytes());
+                }
                 if let Some(Some(stream)) = self.streams.get_mut(index) {
                     for mut row in stream.feed(meta.timestamp_ns, slab.bytes()) {
                         if let Some(image) = &self.image {
@@ -418,6 +468,7 @@ impl Session {
                 moved += 1;
             }
         }
+        self.forward(&mut crossed)?;
         // A scrubber reads the vault from another thread, so what is appended must
         // reach the operating system now, not when the 64 KiB buffer fills.
         if moved > 0
@@ -528,6 +579,11 @@ impl Session {
                 elf: self.elf.clone(),
             },
             ports: self.ports.iter().map(|port| port.info.clone()).collect(),
+            bridges: self
+                .bridges
+                .iter()
+                .map(|bridge| bridge.view.clone())
+                .collect(),
         }
     }
 
@@ -772,4 +828,54 @@ fn symbolize_for(image: &bforge_elf::ElfImage, row: &TailRow) -> Vec<crate::tail
             (location.function, file, line)
         })
     })
+}
+
+impl Session {
+    /// Write what one side received to the other side, and record the copy.
+    fn forward(&mut self, crossed: &mut [Vec<u8>]) -> Result<(), SessionError> {
+        if self.bridges.is_empty() {
+            return Ok(());
+        }
+        let now_ns = self.started.elapsed().as_nanos() as u64;
+        for bridge_index in 0..self.bridges.len() {
+            let (a, b) = (self.bridges[bridge_index].a, self.bridges[bridge_index].b);
+            for (from, to) in [(a, b), (b, a)] {
+                if crossed[from].is_empty() {
+                    continue;
+                }
+                let bytes = std::mem::take(&mut crossed[from]);
+                let written = match self.ports[to]
+                    .pipeline
+                    .write(bytes.clone(), Duration::from_millis(100))
+                {
+                    Ok(written) => written,
+                    Err(error) => {
+                        self.bridges[bridge_index].view.forwarded += 0;
+                        return Err(SessionError::Write(format!(
+                            "bridge `{}` could not write to `{}`: {error}",
+                            self.bridges[bridge_index].view.id, self.ports[to].info.id
+                        )));
+                    }
+                };
+                self.bridges[bridge_index].view.forwarded += written as u64;
+                // The vault records what left the engine, so a bridge is auditable.
+                if let Some(writer) = self.writer.as_mut() {
+                    let chunk = RawChunk {
+                        seq_id: self.chunks + written as u64,
+                        timestamp_ns: now_ns,
+                        port_id: to as u16,
+                        direction: Direction::Tx,
+                        line_state: PinStateFlags::default(),
+                        payload_offset: 0,
+                        payload_len: bytes.len() as u32,
+                    };
+                    writer.append(&chunk, &bytes)?;
+                    writer.flush()?;
+                    self.chunks += 1;
+                    self.payload_bytes += bytes.len() as u64;
+                }
+            }
+        }
+        Ok(())
+    }
 }

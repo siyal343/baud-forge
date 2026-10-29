@@ -20,6 +20,20 @@ pub struct UiSnapshot {
     pub contract: u32,
     pub session: SessionView,
     pub ports: Vec<PortView>,
+    /// Port pairs joined by the engine (spec 0025).
+    pub bridges: Vec<BridgeView>,
+}
+
+/// One bridge, as the ribbon draws it.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct BridgeView {
+    pub id: String,
+    pub a: String,
+    pub b: String,
+    /// Bytes are written from one side to the other.
+    pub forward: bool,
+    /// Bytes forwarded so far, both directions.
+    pub forwarded: u64,
 }
 
 /// Session-level state: the mode strip, the vault line and the footer.

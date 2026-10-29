@@ -37,10 +37,19 @@ export interface SessionView {
   elf: string | null
 }
 
+export interface BridgeView {
+  id: string
+  a: string
+  b: string
+  forward: boolean
+  forwarded: number
+}
+
 export interface UiSnapshot {
   contract: number
   session: SessionView
   ports: PortView[]
+  bridges: BridgeView[]
 }
 
 export interface FieldRow {
