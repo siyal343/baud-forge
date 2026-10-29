@@ -14,6 +14,7 @@ bforge-hal.workspace = true
 bforge-framer.workspace = true
 bforge-storage.workspace = true
 bforge-dissect.workspace = true
+bforge-elf.workspace = true
 rtrb.workspace = true
 
 [dev-dependencies]

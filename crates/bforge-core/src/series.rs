@@ -125,6 +125,7 @@ mod tests {
                 value_num: value,
             }],
             decode_error: None,
+            symbols: Vec::new(),
         }
     }
 

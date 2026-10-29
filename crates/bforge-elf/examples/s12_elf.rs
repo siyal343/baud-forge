@@ -31,6 +31,16 @@ fn main() {
         image.functions().len(),
         load_time.as_secs_f64() * 1000.0
     );
+    // `s12_elf <image> <needle>` lists symbols whose name contains the needle, so a
+    // demo can hand a real address to something that emits frames.
+    if let Some(needle) = std::env::args().nth(2) {
+        for function in image.functions() {
+            if function.name.contains(&needle) {
+                println!("0x{:x} {}", function.address, function.name);
+            }
+        }
+        return;
+    }
     if let (Some(first), Some(last)) = (image.functions().first(), image.functions().last()) {
         println!(
             "code span 0x{:08x}..0x{:08x}, line info: {}",

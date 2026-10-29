@@ -106,6 +106,19 @@ pub struct TailRow {
     pub fields: Vec<FieldRow>,
     /// Set when the frame matched the schema but could not be decoded.
     pub decode_error: Option<String>,
+    /// Addresses that resolved inside the firmware image (spec 0024).
+    pub symbols: Vec<SymbolHit>,
+}
+
+/// One address from a frame that resolved to code.
+#[derive(Debug, Clone, PartialEq, serde::Serialize)]
+pub struct SymbolHit {
+    /// The field the address came from, so the badge can point at it.
+    pub field: String,
+    pub address: u64,
+    pub function: String,
+    pub file: Option<String>,
+    pub line: Option<u32>,
 }
 
 struct Port {
@@ -264,6 +277,7 @@ fn build_row(
         protocol: None,
         fields: Vec::new(),
         decode_error: None,
+        symbols: Vec::new(),
     };
 
     if let Some(decoder) = dissector {

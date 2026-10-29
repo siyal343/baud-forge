@@ -58,6 +58,14 @@ export interface SeriesUpdate {
   values: number[]
 }
 
+export interface SymbolHit {
+  field: string
+  address: number
+  function: string
+  file: string | null
+  line: number | null
+}
+
 export interface TailRow {
   port: string
   timestamp_us: number
@@ -68,6 +76,7 @@ export interface TailRow {
   protocol: string | null
   fields: FieldRow[]
   decode_error: string | null
+  symbols: SymbolHit[]
 }
 
 export type UiEvent =

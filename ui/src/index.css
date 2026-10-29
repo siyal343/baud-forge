@@ -187,6 +187,9 @@ tbody tr.faulty td:last-child { color: var(--fault); }
 .text { margin: 0; padding: 8px 12px; color: var(--dim); border-bottom: 1px solid var(--line); word-break: break-all; }
 .error { margin: 0; padding: 8px 12px; color: var(--fault); border-bottom: 1px solid var(--line); }
 
+.crash { color: var(--fault); font-size: 11px; }
+.symbols { display: block; padding: 6px 0 4px; border-bottom: 1px solid var(--line); background: rgba(248, 81, 73, .06); }
+
 .fields { display: block; padding: 4px 0 10px; }
 
 .field {

@@ -40,6 +40,7 @@ state through one contract (F1.7).
 | S8b assert fields | D-15 | done | a 6 s recording from the board decodes to 122 frames and passes 5 field, protocol and count checks |
 | S9 sockets | F1.2.7 (TCP, UDP, config) | done | simulator over loopback: tail decodes, record stores 60 frames, assert passes 3 of 3, no hardware |
 | S10 native packs | F3.4 (CCSDS/PUS, CSP, Modbus; MAVLink deferred) | done | 12 pack tests on hand-built fixtures; a CCSDS packet in a vault decodes and passes assert rules with no schema file |
+| S17 symbol badges | F2.2.1 (addresses in frames resolved and drawn) | done | `pc 0x140001480 -> std/src/env.rs:228` from a real image, over the live contract; 4 unit tests |
 | S16 scrubber | F1.7.5 (vault window in the contract, slider in the workbench) | done | 517 frames from record 200 of 108 704, plotted from the window; found and fixed a vault that could not be read while recording |
 | S15 fault injector | FR-FLT-01 (bit flips, drops, truncation, CRC corruption) | done | device received 2 bytes with exactly one bit flipped each; `off` restores clean sends; 6 unit tests |
 | S14 send path | F2.1.1 (write from the UI, checksum on the wire) | done | 3 sent, then 7 sent with CRC-32C, 404 for an unknown port, 400 for odd hex; the device received 10 bytes in order |
@@ -290,10 +291,21 @@ S16 notes:
   next delimiter. Recorded, with the reason.
 - Seeks are by record ordinal, not wall-clock time (D-68).
 
-Next action: the ELF crash path on the wire. `bforge-elf` already resolves an address
-to a function and a source line; what is missing is the badge in the stream: a frame
-carrying a panic address decoded, symbolized and drawn next to the row, with the
-source popover. `serve` is the only interface it needs, so the
+S17 notes:
+
+- The resolver is a parameter, not a global: the session passes the loaded image, a
+  test passes a stub, and the rule (finite, integral, at least 0x1000, inside the
+  image) is pinned by four unit tests.
+- The demo found the boundary: a 32-bit field cannot hold an address from an image at
+  0x140000000, so the truncated value resolved to nothing. A wrong function would have
+  been worse than no badge, and the rule refuses it.
+- Mangling (D-44) makes function names unreadable, so the badge leads with the source
+  location and the name stays in the tooltip.
+- Text crash lines are not parsed (D-71) and no source text is fetched (D-70).
+
+Next action: the receive-side MITM bridge (FR-MITM-01): two ports in one pipeline, a
+forwarding rule per direction, and the fault profile available on both. That is the
+last large item of Phase 2 before packaging. `serve` is the only interface it needs, so the
 work can be done in Edge with hot reload, and the Tauri shell wraps the same files
 afterwards. The engine has published the contract since S4; this is the first phase
 where a change to a panel can be seen without a desktop build.

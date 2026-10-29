@@ -15,6 +15,7 @@ pub mod series;
 pub mod serve;
 pub mod session;
 pub mod slab;
+pub mod symbolize;
 pub mod tail;
 pub mod ui;
 pub mod validate;

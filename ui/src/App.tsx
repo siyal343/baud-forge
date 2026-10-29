@@ -1,12 +1,27 @@
 import { For, Show, createMemo, createSignal, onMount } from 'solid-js'
 import { createFeed } from './lib/feed'
-import type { FieldRow, TailRow } from './lib/types'
+import type { FieldRow, SymbolHit, TailRow } from './lib/types'
 import './index.css'
 
 const bytes = (value: number) =>
   value < 1000 ? `${value} B` : value < 1e6 ? `${(value / 1e3).toFixed(1)} kB` : `${(value / 1e6).toFixed(1)} MB`
 const seconds = (ms: number) => `${(ms / 1000).toFixed(1)} s`
 const clock = (us: number) => `${(us / 1e6).toFixed(4)} s`
+
+/** Rust symbols arrive mangled (D-44), so the badge leads with where, not what. */
+function sourceOf(hit: { file: string | null; line: number | null }): string {
+  if (!hit.file) return ''
+  // Toolchain paths are long and mixed: the last two segments are what a person
+  // recognises, on either separator.
+  const parts = hit.file.replaceAll(String.fromCharCode(92), '/').split('/').filter(Boolean)
+  const tail = parts.slice(-2).join('/')
+  return hit.line ? `${tail}:${hit.line}` : tail
+}
+
+function shortName(symbol: string): string {
+  const tail = symbol.split('::').filter(Boolean).pop() ?? symbol
+  return tail.length > 26 ? `${tail.slice(0, 23)}...` : tail
+}
 
 /** Bytes of a frame as separate spans, so a field can point at its own bytes. */
 function HexDump(props: { row: TailRow; field: FieldRow | null }) {
@@ -267,6 +282,7 @@ export default function App() {
               <th>len</th>
               <th>hex</th>
               <th>protocol</th>
+              <th>crash</th>
             </tr>
           </thead>
           <tbody>
@@ -282,6 +298,16 @@ export default function App() {
                   <td>{row.len}</td>
                   <td class="hexcell">{row.hex}</td>
                   <td>{row.protocol ?? (row.text ? 'text' : '-')}</td>
+                  <td class="crash">
+                    <Show when={row.symbols[0]}>
+                      {(hit) => (
+                        <span title={`${shortName(hit().function)} @ 0x${hit().address.toString(16)}`}>
+                          {hit().field}
+                          <Show when={sourceOf(hit())}> {sourceOf(hit())}</Show>
+                        </span>
+                      )}
+                    </Show>
+                  </td>
                 </tr>
               )}
             </For>
@@ -329,6 +355,23 @@ export default function App() {
               </Show>
               <Show when={row().text}>
                 {(text) => <p class="text">{text()}</p>}
+              </Show>
+              <Show when={row().symbols.length > 0}>
+                <dl class="symbols">
+                  <For each={row().symbols}>
+                    {(hit: SymbolHit) => (
+                      <div class="field">
+                        <dt>{hit.field}</dt>
+                        <dd>
+                          <span class="value">0x{hit.address.toString(16)}</span>
+                          <span class="at" title={hit.function}>
+                            {sourceOf(hit) || shortName(hit.function)}
+                          </span>
+                        </dd>
+                      </div>
+                    )}
+                  </For>
+                </dl>
               </Show>
               <dl class="fields">
                 <For each={row().fields} fallback={<p class="empty">No schema on this port.</p>}>

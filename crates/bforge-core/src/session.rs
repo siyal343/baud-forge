@@ -8,6 +8,7 @@ use crate::control::{ControlServer, ControlTarget};
 use crate::fault::{FaultOutcome, FaultProfile, Injector};
 use crate::pipeline::{Pipeline, PipelineConfig, YieldRequest};
 use crate::series::{SeriesSet, SeriesUpdate};
+use crate::symbolize::symbolize;
 use crate::tail::{Stream, TailError, TailRow, tail_config};
 use crate::ui::{CONTRACT_VERSION, EventBus, PinsView, PortView, SessionView, UiEvent, UiSnapshot};
 use crate::{PortConfig, ProjectConfig};
@@ -112,6 +113,8 @@ pub struct Session {
     streams: Vec<Option<Stream>>,
     /// Armed fault profiles, by port id. A send applies its port's profile.
     faults: std::sync::Mutex<std::collections::HashMap<String, Injector>>,
+    /// The firmware image, when the workspace names one. Frames get address badges.
+    image: Option<bforge_elf::ElfImage>,
     frames: std::collections::VecDeque<TailRow>,
     frames_dropped: u64,
     series: SeriesSet,
@@ -243,6 +246,7 @@ impl Session {
             yield_requests,
             streams: Vec::new(),
             faults: std::sync::Mutex::new(std::collections::HashMap::new()),
+            image: None,
             frames: std::collections::VecDeque::new(),
             frames_dropped: 0,
             series: SeriesSet::new(),
@@ -258,6 +262,14 @@ impl Session {
     /// Subscribe to the event stream before pumping.
     pub fn subscribe(&self) -> std::sync::mpsc::Receiver<UiEvent> {
         self.bus.subscribe()
+    }
+
+    /// Load a firmware image so decoded addresses become function names.
+    pub fn enable_symbols(&mut self, path: &Path) -> Result<(), SessionError> {
+        let image = bforge_elf::ElfImage::load(path)
+            .map_err(|error| SessionError::Settings(format!("{}: {error}", path.display())))?;
+        self.image = Some(image);
+        Ok(())
     }
 
     /// Frame and decode the bytes as they pass, for a UI that shows frames.
@@ -389,7 +401,10 @@ impl Session {
                     writer.append(&chunk, slab.bytes())?;
                 }
                 if let Some(Some(stream)) = self.streams.get_mut(index) {
-                    for row in stream.feed(meta.timestamp_ns, slab.bytes()) {
+                    for mut row in stream.feed(meta.timestamp_ns, slab.bytes()) {
+                        if let Some(image) = &self.image {
+                            row.symbols = symbolize_for(image, &row);
+                        }
                         self.series.sample(&row);
                         if self.frames.len() >= FRAME_QUEUE {
                             self.frames.pop_front();
@@ -741,4 +756,20 @@ pub fn replay_to(
     report.elapsed = started.elapsed();
     transport.close();
     Ok(report)
+}
+
+/// Resolve a frame's plausible addresses against the loaded image.
+fn symbolize_for(image: &bforge_elf::ElfImage, row: &TailRow) -> Vec<crate::tail::SymbolHit> {
+    let fields: Vec<(String, Option<f64>)> = row
+        .fields
+        .iter()
+        .map(|field| (field.name.clone(), field.value_num))
+        .collect();
+    symbolize(&fields, |address| {
+        image.resolve(address).map(|location| {
+            let line = (location.line > 0).then_some(location.line);
+            let file = (!location.file.is_empty()).then_some(location.file);
+            (location.function, file, line)
+        })
+    })
 }

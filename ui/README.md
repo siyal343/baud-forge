@@ -70,6 +70,13 @@ curl -X POST -d '{"port":"sim","kind":"bit_flip","flip_rate":1.0,"seed":7}' \
   http://127.0.0.1:7717/api/fault
 ```
 
+## Crash badges
+
+When the workspace names `elf_path`, addresses in decoded frames resolve to a function
+and a source line (spec 0024). The `crash` column shows `field file:line`, and the
+inspector lists each address with its source. Names arrive mangled (D-44), so the
+location is the readable part.
+
 ## Looking back
 
 With `bforge serve --vault session.bflog`, the slider above the plot reads a decoded

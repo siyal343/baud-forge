@@ -13,6 +13,12 @@ use std::io::Write;
 use std::net::TcpListener;
 use std::time::{Duration, Instant};
 
+/// A real code address from this image, so a symbol badge can be demonstrated.
+/// The example prints it at startup and can put it in a frame.
+fn own_address() -> u64 {
+    frame as *const () as usize as u64
+}
+
 fn frame(sequence: u64) -> Vec<u8> {
     let mut frame = Vec::with_capacity(23);
     frame.extend_from_slice(&0xAA55u16.to_le_bytes()); // sync
@@ -46,6 +52,25 @@ fn crc32c(data: &[u8]) -> u32 {
     !crc
 }
 
+/// A crash report: the magic word and two real addresses from this image.
+fn panic_frame(sequence: u64, address: u64) -> Vec<u8> {
+    let mut frame = Vec::with_capacity(20);
+    frame.extend_from_slice(&0xC0DE_FEEDu32.to_le_bytes());
+    frame.extend_from_slice(&address.to_le_bytes());
+    frame.extend_from_slice(&address.wrapping_add(0x40).to_le_bytes());
+    let _ = sequence;
+    frame
+}
+
+/// The same frame, with the code address in place of the timestamp.
+fn frame_with_address(sequence: u64, address: u64) -> Vec<u8> {
+    let mut frame = frame(sequence);
+    frame[4..8].copy_from_slice(&(address as u32).to_le_bytes());
+    let crc = crc32c(&frame[..19]);
+    frame[19..23].copy_from_slice(&crc.to_le_bytes());
+    frame
+}
+
 fn main() {
     let mut args = std::env::args().skip(1);
     let address = args.next().unwrap_or_else(|| "127.0.0.1:9100".to_string());
@@ -61,6 +86,18 @@ fn main() {
             std::process::exit(1);
         }
     };
+    // With `--address`, the timestamp field carries an address, which is what a
+    // panic report looks like to the host. `BFORGE_SIM_ADDRESS=0x...` picks a static
+    // address from the image; the dynamic one here is not what a symbolizer reads.
+    let override_address = std::env::var("BFORGE_SIM_ADDRESS")
+        .ok()
+        .and_then(|value| u64::from_str_radix(value.trim_start_matches("0x"), 16).ok());
+    let panic = std::env::args().any(|argument| argument == "--panic");
+    let addresses = override_address.is_some() || std::env::args().any(|a| a == "--address");
+    let address_value = override_address.unwrap_or_else(own_address);
+    if addresses || panic {
+        println!("address {address_value:#x}");
+    }
     println!("simulator listening on {address} at {hz} Hz");
 
     // Serve one client at a time and keep listening, so a test can tail, record and
@@ -76,7 +113,13 @@ fn main() {
         let mut sequence = 0u64;
         let mut next_due = Instant::now();
         loop {
-            let mut payload = cobs_encode(&frame(sequence));
+            let mut payload = cobs_encode(&if panic {
+                panic_frame(sequence, address_value)
+            } else if addresses {
+                frame_with_address(sequence, address_value)
+            } else {
+                frame(sequence)
+            });
             payload.push(0);
             if stream.write_all(&payload).is_err() {
                 println!("client went away after {sequence} frames");

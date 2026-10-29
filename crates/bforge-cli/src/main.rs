@@ -506,6 +506,12 @@ fn serve(args: &[String]) -> ExitCode {
         eprintln!("error: {error}");
         return ExitCode::FAILURE;
     }
+    if let Some(path) = config.workspace.elf_path.as_deref() {
+        // A stale image must not stop a session: the badge is a bonus.
+        if let Err(error) = session.enable_symbols(std::path::Path::new(path)) {
+            eprintln!("warning: {error}");
+        }
+    }
     if let Some(vault) = vault.clone() {
         let source = bforge_core::serve::VaultSource {
             path: vault,
