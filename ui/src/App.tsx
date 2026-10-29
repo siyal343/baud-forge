@@ -87,6 +87,9 @@ export default function App() {
   const [crc, setCrc] = createSignal('')
   const [answer, setAnswer] = createSignal<string | null>(null)
   const [sent, setSent] = createSignal<string[]>([])
+  const [faultKind, setFaultKind] = createSignal('off')
+  const [faultValue, setFaultValue] = createSignal('1.0')
+  const [faultLine, setFaultLine] = createSignal<string | null>(null)
   const bytesOf = (text: string) =>
     text.replace(/0x/gi, '').replace(/[\s:,]/g, '').length / 2
   const plotKeys = createMemo(() => Object.keys(feed.series()).sort())
@@ -97,6 +100,31 @@ export default function App() {
   const shown = createMemo(() => feed.frames().slice(-120).reverse())
   const detail = () => selected() ?? feed.frames().at(-1) ?? null
   const openPorts = () => ports().filter((port) => port.state === 'open').length
+
+  async function armFault(event: SubmitEvent) {
+    event.preventDefault()
+    const port = ports()[0]?.id
+    if (!port) {
+      setFaultLine('no port in this workspace')
+      return
+    }
+    const body: Record<string, number | string> = { port, kind: faultKind() }
+    const value = Number(faultValue())
+    if (faultKind() === 'bit_flip') body.flip_rate = Number.isFinite(value) ? value : 1
+    if (faultKind() === 'drop') body.drop_every = Number.isFinite(value) ? value : 2
+    if (faultKind() === 'truncate') body.truncate = Number.isFinite(value) ? value : 2
+    if (faultKind() === 'corrupt_crc') body.corrupt_crc = Number.isFinite(value) ? value : 4
+    try {
+      const response = await fetch('/api/fault', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(body),
+      })
+      setFaultLine(`${response.status} ${await response.text()}`)
+    } catch (error) {
+      setFaultLine(String(error))
+    }
+  }
 
   async function forgeSend(event: SubmitEvent) {
     event.preventDefault()
@@ -268,7 +296,10 @@ export default function App() {
       </section>
 
       <section class="forge">
-        <h2>Command forge</h2>
+        <div class="band-head">
+          <h2>Command forge</h2>
+          <h2>Fault injector</h2>
+        </div>
         <form onSubmit={forgeSend}>
           <input
             value={hex()}
@@ -287,6 +318,27 @@ export default function App() {
           <span class="hint">{Number.isFinite(bytesOf(hex())) ? bytesOf(hex()) : 0} B</span>
         </form>
         <Show when={answer()}>{(line) => <p class="answer">{line()}</p>}</Show>
+        <form class="fault-form" onSubmit={armFault}>
+          <select value={faultKind()} onChange={(event) => setFaultKind(event.currentTarget.value)} aria-label="fault kind">
+            <option value="off">off</option>
+            <option value="bit_flip">bit flip</option>
+            <option value="drop">drop bytes</option>
+            <option value="truncate">truncate</option>
+            <option value="corrupt_crc">corrupt CRC</option>
+          </select>
+          <input
+            class="narrow"
+            value={faultValue()}
+            onInput={(event) => setFaultValue(event.currentTarget.value)}
+            aria-label="fault amount"
+            title={faultKind() === 'bit_flip' ? 'probability per byte, 0 to 1' : 'bytes or interval'}
+          />
+          <button type="submit">Arm</button>
+          <span class="hint">
+            {faultKind() === 'bit_flip' ? 'per-byte probability' : 'bytes / interval'}
+          </span>
+        </form>
+        <Show when={faultLine()}>{(line) => <p class="answer">{line()}</p>}</Show>
         <ol class="sent">
           <For each={sent()}>{(line) => <li>{line}</li>}</For>
         </ol>

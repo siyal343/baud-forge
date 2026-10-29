@@ -5,6 +5,7 @@
 //! the recording path free of a second thread and keeps the counters honest.
 
 use crate::control::{ControlServer, ControlTarget};
+use crate::fault::{FaultOutcome, FaultProfile, Injector};
 use crate::pipeline::{Pipeline, PipelineConfig, YieldRequest};
 use crate::series::{SeriesSet, SeriesUpdate};
 use crate::tail::{Stream, TailError, TailRow, tail_config};
@@ -109,6 +110,8 @@ pub struct Session {
     yield_requests: Vec<(String, Arc<YieldRequest>)>,
     /// One entry per port, in port order. Empty until `enable_decode` is called.
     streams: Vec<Option<Stream>>,
+    /// Armed fault profiles, by port id. A send applies its port's profile.
+    faults: std::sync::Mutex<std::collections::HashMap<String, Injector>>,
     frames: std::collections::VecDeque<TailRow>,
     frames_dropped: u64,
     series: SeriesSet,
@@ -239,6 +242,7 @@ impl Session {
             control,
             yield_requests,
             streams: Vec::new(),
+            faults: std::sync::Mutex::new(std::collections::HashMap::new()),
             frames: std::collections::VecDeque::new(),
             frames_dropped: 0,
             series: SeriesSet::new(),
@@ -288,16 +292,67 @@ impl Session {
     ///
     /// The reader thread performs the write: it owns the transport, so a write from
     /// another thread would race it.
-    pub fn send(&self, port: &str, bytes: Vec<u8>, wait: Duration) -> Result<usize, SessionError> {
+    pub fn send(
+        &self,
+        port: &str,
+        bytes: Vec<u8>,
+        wait: Duration,
+    ) -> Result<FaultOutcome, SessionError> {
         let running = self
             .ports
             .iter()
             .find(|running| running.info.id == port)
             .ok_or_else(|| SessionError::UnknownPort(port.to_string()))?;
-        running
+
+        // The fault profile is applied here, before the reader writes, so the
+        // device sees the corruption and the caller learns what it sent.
+        let prepared = {
+            let mut faults = self.faults.lock().unwrap();
+            match faults.get_mut(port) {
+                Some(injector) => injector.apply(bytes),
+                None => {
+                    let sent = bytes.len();
+                    Some((
+                        bytes,
+                        FaultOutcome {
+                            sent,
+                            bytes: 0,
+                            dropped: false,
+                        },
+                    ))
+                }
+            }
+        };
+        let Some((bytes, mut outcome)) = prepared else {
+            return Ok(FaultOutcome {
+                sent: 0,
+                bytes: 0,
+                dropped: true,
+            });
+        };
+        outcome.sent = running
             .pipeline
             .write(bytes, wait)
-            .map_err(SessionError::Write)
+            .map_err(SessionError::Write)?;
+        Ok(outcome)
+    }
+
+    /// Arm a fault profile on a port. Sends through that port are changed from now
+    /// on, and the seed makes the changes reproducible.
+    pub fn arm_fault(&mut self, port: &str, profile: FaultProfile) -> Result<(), SessionError> {
+        if !self.ports.iter().any(|running| running.info.id == port) {
+            return Err(SessionError::UnknownPort(port.to_string()));
+        }
+        self.faults
+            .lock()
+            .unwrap()
+            .insert(port.to_string(), Injector::new(profile));
+        Ok(())
+    }
+
+    /// Disarm the profile on a port.
+    pub fn disarm_fault(&mut self, port: &str) {
+        self.faults.lock().unwrap().remove(port);
     }
 
     /// Take the numeric samples added since the last call.

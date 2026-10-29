@@ -216,11 +216,17 @@ tbody tr.faulty td:last-child { color: var(--fault); }
 
 .empty { color: var(--dim); padding: 10px 12px; margin: 0; }
 
+.band-head { display: flex; gap: 40px; }
+.band-head h2 { flex: 1; }
+
+.fault-form { display: flex; gap: 8px; align-items: center; padding: 0 12px 8px; }
+.fault-form input.narrow { flex: 0 0 90px; }
+
 .forge { grid-area: forge; border-top: 1px solid var(--line); background: var(--panel); overflow: auto; }
 
 .forge form { display: flex; gap: 8px; align-items: center; padding: 4px 12px 8px; }
 
-.forge input {
+.forge input, .fault-form input {
   flex: 1;
   min-width: 0;
   background: var(--bg);
@@ -233,7 +239,7 @@ tbody tr.faulty td:last-child { color: var(--fault); }
 
 .forge input:focus { outline: 1px solid var(--tx); }
 
-.forge select, .forge button {
+.forge select, .forge button, .fault-form select, .fault-form button {
   background: var(--panel-2);
   color: var(--text);
   border: 1px solid var(--line);
@@ -243,8 +249,8 @@ tbody tr.faulty td:last-child { color: var(--fault); }
   font-size: 11px;
 }
 
-.forge button { color: var(--tx); border-color: var(--tx); cursor: pointer; }
-.forge button:disabled { color: var(--dim); border-color: var(--line); cursor: default; }
+.forge button, .fault-form button { color: var(--tx); border-color: var(--tx); cursor: pointer; }
+.forge button:disabled, .fault-form button:disabled { color: var(--dim); border-color: var(--line); cursor: default; }
 
 .forge .answer { margin: 0; padding: 0 12px 6px; color: var(--dim); font-size: 11px; word-break: break-all; }
 .forge .sent { list-style: none; margin: 0; padding: 0 12px 8px; font-size: 11px; color: var(--dim); display: grid; gap: 2px; }

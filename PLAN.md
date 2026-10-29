@@ -40,6 +40,7 @@ state through one contract (F1.7).
 | S8b assert fields | D-15 | done | a 6 s recording from the board decodes to 122 frames and passes 5 field, protocol and count checks |
 | S9 sockets | F1.2.7 (TCP, UDP, config) | done | simulator over loopback: tail decodes, record stores 60 frames, assert passes 3 of 3, no hardware |
 | S10 native packs | F3.4 (CCSDS/PUS, CSP, Modbus; MAVLink deferred) | done | 12 pack tests on hand-built fixtures; a CCSDS packet in a vault decodes and passes assert rules with no schema file |
+| S15 fault injector | FR-FLT-01 (bit flips, drops, truncation, CRC corruption) | done | device received 2 bytes with exactly one bit flipped each; `off` restores clean sends; 6 unit tests |
 | S14 send path | F2.1.1 (write from the UI, checksum on the wire) | done | 3 sent, then 7 sent with CRC-32C, 404 for an unknown port, 400 for odd hex; the device received 10 bytes in order |
 | S13 telemetry | F1.7.4 (numeric series, plot band) | done | 98 880 chunks over 209 s, `sim.channel` plotted with 600 samples; found and fixed a pump starvation at 8 kHz |
 | S12 workbench | F1.7.3 (SolidJS frontend over the served contract) | done | 258 326 chunks and 11.2 MB drawn live; frames decode to 9 fields each; hover marks a field's bytes |
@@ -266,9 +267,19 @@ S14 notes:
 - Typed encoding is not there yet (D-64): the forge takes hex. Sends are not in the
   contract either (D-65).
 
-Next action: the fault injector, which is a send path with a schedule. It needs
-`POST /api/fault` with a port, a rate and a kind (bit flip, drop, truncate), and the
-same reader-thread write, so a fault cannot be injected behind the reader's back. `serve` is the only interface it needs, so the
+S15 notes:
+
+- A profile is applied in the session's send path, before the reader writes, so the
+  device sees the corruption and the caller learns what it sent.
+- One SplitMix64 stream per profile, seeded, makes every fault reproducible.
+- `/api/send` now reports `fault_bytes` and `dropped`, so a test can assert that the
+  corruption happened rather than infer it.
+- Jitter and latency are still missing (D-66), as are the MITM bridge and scripted
+  faults (D-67).
+
+Next action: the scrubber, the last band. It needs the vault read path in the
+contract: a seek to a time or a record, a bounded window of frames around it, and
+the same plot band reading from the window instead of the live stream. `serve` is the only interface it needs, so the
 work can be done in Edge with hot reload, and the Tauri shell wraps the same files
 afterwards. The engine has published the contract since S4; this is the first phase
 where a change to a panel can be seen without a desktop build.

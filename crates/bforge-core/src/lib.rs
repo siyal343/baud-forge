@@ -8,6 +8,7 @@
 
 pub mod assert;
 pub mod control;
+pub mod fault;
 pub mod mem;
 pub mod pipeline;
 pub mod series;

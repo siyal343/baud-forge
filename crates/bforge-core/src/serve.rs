@@ -83,7 +83,15 @@ struct Client {
 struct SendJob {
     port: String,
     bytes: Vec<u8>,
-    reply: std::sync::mpsc::SyncSender<Result<usize, String>>,
+    reply: std::sync::mpsc::SyncSender<Result<crate::fault::FaultOutcome, String>>,
+}
+
+/// One `POST /api/fault`: arm a profile, or clear it with `None`.
+#[derive(Debug)]
+struct FaultJob {
+    port: String,
+    profile: Option<crate::fault::FaultProfile>,
+    reply: std::sync::mpsc::SyncSender<Result<(), String>>,
 }
 
 #[derive(Debug, Default)]
@@ -96,6 +104,8 @@ struct Shared {
     clients_max: AtomicU64,
     /// Set once the pump thread is running: the only thread that may write.
     send: Mutex<Option<std::sync::mpsc::Sender<SendJob>>>,
+    /// Same for arming a fault profile.
+    fault: Mutex<Option<std::sync::mpsc::Sender<FaultJob>>>,
 }
 
 impl Shared {
@@ -178,6 +188,8 @@ impl Server {
 
         let (send_tx, send_rx) = std::sync::mpsc::channel::<SendJob>();
         *shared.send.lock().unwrap() = Some(send_tx);
+        let (fault_tx, fault_rx) = std::sync::mpsc::channel::<FaultJob>();
+        *shared.fault.lock().unwrap() = Some(fault_tx);
 
         let events = session.subscribe();
         let started = Instant::now();
@@ -187,6 +199,17 @@ impl Server {
                 let result = session
                     .send(&job.port, job.bytes, Duration::from_secs(2))
                     .map_err(|error| error.to_string());
+                let _ = job.reply.send(result);
+            }
+            while let Ok(job) = fault_rx.try_recv() {
+                let result = match job.profile {
+                    Some(profile) => session.arm_fault(&job.port, profile),
+                    None => {
+                        session.disarm_fault(&job.port);
+                        Ok(())
+                    }
+                }
+                .map_err(|error| error.to_string());
                 let _ = job.reply.send(result);
             }
             session.pump_once()?;
@@ -297,6 +320,11 @@ fn handle(mut stream: TcpStream, shared: Arc<Shared>, stop: Arc<AtomicBool>) {
     if method == "POST" && path == "/api/send" {
         let body = read_body(&mut reader, content_length);
         send(&mut stream, &shared, &body);
+        return;
+    }
+    if method == "POST" && path == "/api/fault" {
+        let body = read_body(&mut reader, content_length);
+        fault(&mut stream, &shared, &body);
         return;
     }
     if method != "GET" && method != "HEAD" {
@@ -526,8 +554,140 @@ fn send(stream: &mut TcpStream, shared: &Arc<Shared>, body: &[u8]) {
         );
     }
     match answer.recv_timeout(Duration::from_secs(5)) {
-        Ok(Ok(sent)) => {
-            let body = format!("{{\"port\":\"{port}\",\"sent\":{sent}}}");
+        Ok(Ok(outcome)) => {
+            let body = format!(
+                "{{\"port\":\"{port}\",\"sent\":{},\"fault_bytes\":{},\"dropped\":{}}}",
+                outcome.sent, outcome.bytes, outcome.dropped
+            );
+            respond(stream, "200 OK", "application/json", body.as_bytes());
+        }
+        Ok(Err(error)) => {
+            let status = if error.contains("not in this session") {
+                "404 Not Found"
+            } else {
+                "409 Conflict"
+            };
+            let body = format!("{{\"error\":\"{error}\"}}");
+            respond(stream, status, "application/json", body.as_bytes());
+        }
+        Err(_) => {
+            let body = "{\"error\":\"no answer from the pump\"}";
+            respond(
+                stream,
+                "504 Gateway Timeout",
+                "application/json",
+                body.as_bytes(),
+            );
+        }
+    }
+}
+
+#[derive(Debug, serde::Deserialize)]
+struct FaultRequest {
+    port: String,
+    /// `off` clears the profile; anything else is a kind name.
+    kind: String,
+    #[serde(default)]
+    flip_rate: f64,
+    #[serde(default)]
+    burst: Option<u8>,
+    #[serde(default)]
+    drop_every: Option<u32>,
+    #[serde(default)]
+    truncate: Option<u8>,
+    #[serde(default)]
+    corrupt_crc: Option<u8>,
+    #[serde(default)]
+    seed: Option<u64>,
+}
+
+fn fault(stream: &mut TcpStream, shared: &Arc<Shared>, body: &[u8]) {
+    let request: FaultRequest = match serde_json::from_slice(body) {
+        Ok(request) => request,
+        Err(error) => {
+            let body = format!("{{\"error\":\"bad request: {error}\"}}");
+            return respond(
+                stream,
+                "400 Bad Request",
+                "application/json",
+                body.as_bytes(),
+            );
+        }
+    };
+    let profile = if request.kind == "off" {
+        None
+    } else {
+        let defaults = crate::fault::FaultProfile::default();
+        let mut profile = match request.kind.as_str() {
+            "bit_flip" | "ber" => crate::fault::FaultProfile::bit_flip(request.flip_rate),
+            "drop" => crate::fault::FaultProfile {
+                drop_every: request.drop_every.unwrap_or(2),
+                ..defaults
+            },
+            "truncate" => crate::fault::FaultProfile {
+                truncate: request.truncate.unwrap_or(2),
+                ..defaults
+            },
+            "corrupt_crc" => crate::fault::FaultProfile {
+                corrupt_crc: request.corrupt_crc.unwrap_or(4),
+                ..defaults
+            },
+            other => {
+                let body = format!(
+                    "{{\"error\":\"`{other}` is not a fault kind; use bit_flip, drop, truncate, corrupt_crc or off\"}}"
+                );
+                return respond(
+                    stream,
+                    "400 Bad Request",
+                    "application/json",
+                    body.as_bytes(),
+                );
+            }
+        };
+        if let Some(burst) = request.burst {
+            profile.burst = burst.max(1);
+        }
+        if let Some(seed) = request.seed {
+            profile.seed = seed;
+        }
+        Some(profile)
+    };
+
+    let sender = shared.fault.lock().unwrap().clone();
+    let Some(sender) = sender else {
+        let body = "{\"error\":\"the pump is not running\"}";
+        return respond(
+            stream,
+            "503 Service Unavailable",
+            "application/json",
+            body.as_bytes(),
+        );
+    };
+    let (reply, answer) = std::sync::mpsc::sync_channel(1);
+    let port = request.port.clone();
+    if sender
+        .send(FaultJob {
+            port: port.clone(),
+            profile,
+            reply,
+        })
+        .is_err()
+    {
+        let body = "{\"error\":\"the pump has stopped\"}";
+        return respond(
+            stream,
+            "503 Service Unavailable",
+            "application/json",
+            body.as_bytes(),
+        );
+    }
+    match answer.recv_timeout(Duration::from_secs(5)) {
+        Ok(Ok(())) => {
+            let state = match profile {
+                Some(profile) => serde_json::to_string(&profile).unwrap_or_default(),
+                None => "null".to_string(),
+            };
+            let body = format!("{{\"port\":\"{port}\",\"profile\":{state}}}");
             respond(stream, "200 OK", "application/json", body.as_bytes());
         }
         Ok(Err(error)) => {

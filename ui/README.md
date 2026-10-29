@@ -62,6 +62,14 @@ curl -X POST -d '{"port":"sim","hex":"AA 55 03","crc":"crc32c"}' \
 
 Typed field entry is not there yet (D-64); the form takes hex and shows its length.
 
+The fault injector sits beside it (spec 0022): pick a kind, set the amount and arm.
+The send response reports `fault_bytes`, so the corruption is visible in the answer:
+
+```sh
+curl -X POST -d '{"port":"sim","kind":"bit_flip","flip_rate":1.0,"seed":7}' \
+  http://127.0.0.1:7717/api/fault
+```
+
 ## What is missing
 
 Five of the six bands in `specs/UI-UX-Guide.md`: plots, command forge, full

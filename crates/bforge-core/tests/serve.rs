@@ -311,3 +311,64 @@ fn a_send_request_reaches_the_port_with_its_checksum() {
     client.join().expect("client");
     assert!(stats.requests >= 4, "{stats:?}");
 }
+
+#[test]
+fn an_armed_fault_changes_the_bytes_the_device_receives() {
+    let (device, received) = chatty_device();
+    let config = workspace(&device);
+    let ports = session_ports_from_config(&config, &[]).expect("ports");
+    let mut session = Session::start(ports, None, None).expect("session");
+    session.enable_decode(&config.ports).expect("decode");
+
+    let server = Server::bind("127.0.0.1:0".parse().unwrap()).expect("bind");
+    let address = server.local_addr().unwrap().to_string();
+
+    let client = std::thread::spawn(move || {
+        std::thread::sleep(Duration::from_millis(500));
+        let heard = received;
+
+        // Every byte gets exactly one bit flipped, with a fixed seed.
+        let (status, body) = post(
+            &address,
+            "/api/fault",
+            r#"{"port":"sim","kind":"bit_flip","flip_rate":1.0,"seed":7}"#,
+        );
+        assert!(status.contains("200"), "{status} {body}");
+        assert!(body.contains("\"flip_rate\":1.0"), "{body}");
+
+        let (status, body) = post(&address, "/api/send", r#"{"port":"sim","hex":"0000"}"#);
+        assert!(status.contains("200"), "{status} {body}");
+        assert!(body.contains("\"fault_bytes\":2"), "{body}");
+
+        let deadline = Instant::now() + Duration::from_secs(3);
+        let mut seen = Vec::new();
+        while Instant::now() < deadline {
+            seen = heard.lock().unwrap().clone();
+            if seen.len() >= 2 {
+                break;
+            }
+            std::thread::sleep(Duration::from_millis(20));
+        }
+        assert_eq!(seen.len(), 2, "{seen:02X?}");
+        for (index, byte) in seen.iter().enumerate() {
+            assert_eq!(
+                byte.count_ones(),
+                1,
+                "byte {index} is one flipped bit: {byte:08b}"
+            );
+        }
+
+        // Off leaves the port clean.
+        let (status, body) = post(&address, "/api/fault", r#"{"port":"sim","kind":"off"}"#);
+        assert!(status.contains("200"), "{status} {body}");
+        let (status, body) = post(&address, "/api/send", r#"{"port":"sim","hex":"00"}"#);
+        assert!(status.contains("200"), "{status} {body}");
+        assert!(body.contains("\"fault_bytes\":0"), "{body}");
+    });
+
+    let stats = server
+        .run(session, Some(Duration::from_secs(2)))
+        .expect("serve");
+    client.join().expect("client");
+    assert!(stats.requests >= 4, "{stats:?}");
+}
