@@ -8,7 +8,7 @@
 #![cfg_attr(not(debug_assertions), windows_subsystem = "windows")]
 
 use bforge_core::ProjectConfig;
-use bforge_core::serve::Server;
+use bforge_core::serve::{Server, VaultSource};
 use bforge_core::session::{Session, session_ports_from_config};
 use std::path::{Path, PathBuf};
 use tauri::Manager;
@@ -25,10 +25,39 @@ fn ui_directory() -> Option<PathBuf> {
 
 /// The workspace: the first argument, or `.bforge.toml` at the top of the repository.
 fn workspace_path() -> Option<PathBuf> {
-    std::env::args_os().nth(1).map(PathBuf::from).or_else(|| {
-        let example = PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../../.bforge.toml");
-        example.exists().then_some(example)
-    })
+    std::env::args_os()
+        .skip(1)
+        .map(PathBuf::from)
+        .find(|argument| !argument.to_string_lossy().starts_with("--"))
+        .or_else(|| {
+            let example = PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../../.bforge.toml");
+            example.exists().then_some(example)
+        })
+}
+
+/// `--vault <path>`, or a session file in the temporary directory.
+///
+/// The window records by default: a monitor that forgets is one someone has to
+/// remember to start, and the scrubber has nothing to show without a vault.
+fn vault_path() -> PathBuf {
+    let mut arguments = std::env::args_os().skip(1);
+    while let Some(argument) = arguments.next() {
+        if argument == "--vault" {
+            return arguments
+                .next()
+                .map(PathBuf::from)
+                .unwrap_or_else(default_vault);
+        }
+    }
+    default_vault()
+}
+
+fn default_vault() -> PathBuf {
+    let stamp = std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)
+        .map(|since| since.as_secs())
+        .unwrap_or(0);
+    std::env::temp_dir().join(format!("bforge-gui-{stamp}.bflog"))
 }
 
 fn fail(message: String) -> ! {
@@ -45,9 +74,10 @@ fn main() {
     let config: ProjectConfig = toml::from_str(&text)
         .unwrap_or_else(|error| fail(format!("{}: {error}", workspace.display())));
 
+    let vault = vault_path();
     let mut session = session_ports_from_config(&config, &[])
-        .and_then(|ports| Session::start(ports, None, config.workspace.elf_path.clone()))
-        .unwrap_or_else(|error| fail(error.to_string()));
+        .and_then(|ports| Session::start(ports, Some(&vault), config.workspace.elf_path.clone()))
+        .unwrap_or_else(|error| fail(format!("{}: {error}", vault.display())));
     if let Err(error) = session.enable_decode(&config.ports) {
         fail(error.to_string());
     }
@@ -71,6 +101,10 @@ fn main() {
         Some(directory) => server.with_ui(directory),
         None => server,
     };
+    let server = server.with_vault(VaultSource {
+        path: vault.clone(),
+        ports: config.ports.clone(),
+    });
 
     std::thread::spawn(move || {
         // Runs until the process ends; the window is the only way out.

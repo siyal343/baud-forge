@@ -333,9 +333,23 @@ fn read_loop(
         reconnect_attempts,
         writes,
     } = context;
+    // A port that is not there yet is not a failure: a window opened before the
+    // board is plugged in must recover, so the first open gets the same patience as
+    // a reconnect.
     if transport.open().is_err() {
         counters.read_errors.fetch_add(1, Ordering::Relaxed);
-        return;
+        counters.state.store(STATE_RECONNECTING, Ordering::Relaxed);
+        let mut failed = 0;
+        if !reopen(
+            &mut transport,
+            &counters,
+            &stop,
+            reconnect_attempts,
+            &mut failed,
+        ) {
+            counters.state.store(STATE_CLOSED, Ordering::Relaxed);
+            return;
+        }
     }
     counters.state.store(STATE_OPEN, Ordering::Relaxed);
 

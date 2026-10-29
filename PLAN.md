@@ -40,6 +40,7 @@ state through one contract (F1.7).
 | S8b assert fields | D-15 | done | a 6 s recording from the board decodes to 122 frames and passes 5 field, protocol and count checks |
 | S9 sockets | F1.2.7 (TCP, UDP, config) | done | simulator over loopback: tail decodes, record stores 60 frames, assert passes 3 of 3, no hardware |
 | S10 native packs | F3.4 (CCSDS/PUS, CSP, Modbus; MAVLink deferred) | done | 12 pack tests on hand-built fixtures; a CCSDS packet in a vault decodes and passes assert rules with no schema file |
+| S20 GUI recording | FR-UI-02 (the window keeps a vault) | done | 2308 records in a vault started by the window; the scrubber decoded a window from it; a port that was not up yet now retries instead of closing |
 | S19 desktop shell | FR-UI-01 (a window around the workbench) | done | `MainWindowTitle "BaudForge"`, engine on `127.0.0.1:54348`, API and assets served; found and fixed a `Send` bound on the framing trait object |
 | S18 bridge | FR-MITM-01 (tap and inline bridge between two ports) | done | bytes travel both ways between two loopback devices; a passive tap forwards nothing; validation refuses a missing port |
 | S17 symbol badges | F2.2.1 (addresses in frames resolved and drawn) | done | `pc 0x140001480 -> std/src/env.rs:228` from a real image, over the live contract; 4 unit tests |
@@ -329,8 +330,21 @@ S19 notes:
 - CI excludes the crate everywhere except a Windows job, because Tauri wants platform
   libraries that headless Linux runners do not have.
 
-Next action: the installer (D-74), signing aside: `tauri bundle` with WiX or NSIS, a
-designed icon set (D-76), and a release step that attaches the artefact to a tag. `serve` is the only interface it needs, so the
+S20 notes:
+
+- The installer is deliberately deferred to release (D-74, 29 October 2026), so the
+  shell stays a folder until the surface settles.
+- Recording from the window needed one line of plumbing plus one behaviour change: a
+  first open that fails now goes through the reconnect budget. Without it, a window
+  opened before the board was plugged in closed its port for good, which the live run
+  showed as `state: closed, chunks: 0` after 74 s.
+- The vault path is printed at startup and `--vault` overrides it (D-78 keeps the
+  picker open).
+
+Next action: the receive-side gap that matters most for a rig: `serve` and the window
+only record what arrives. A tap on two RX ports is one timeline (spec 0025), but the
+direction column is still one per port (D-72), so a bridge reads as two streams
+instead of one bus. That is the next honest improvement. `serve` is the only interface it needs, so the
 work can be done in Edge with hot reload, and the Tauri shell wraps the same files
 afterwards. The engine has published the contract since S4; this is the first phase
 where a change to a panel can be seen without a desktop build.
