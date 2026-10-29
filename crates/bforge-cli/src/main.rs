@@ -27,7 +27,7 @@ Commands:
   status -c <file>              Print the UI state contract as JSON
          [--duration 1s] [--watch]
   serve -c <file>               Serve the UI contract over loopback HTTP
-         [--addr 127.0.0.1:7717] [--vault <file>] [--duration 1h]
+         [--addr 127.0.0.1:7717] [--vault <file>] [--ui <dir>] [--duration 1h]
   tail -c <file>                Frame and decode a live port
          [--port <id>]... [--duration 5s] [--fields] [--json]
   assert <vault> -r <rules>     Check a vault against a TOML rule file
@@ -459,6 +459,7 @@ fn serve(args: &[String]) -> ExitCode {
         .value("--addr")
         .unwrap_or_else(|| "127.0.0.1:7717".to_string());
     let vault = args.value("--vault").map(std::path::PathBuf::from);
+    let ui = args.value("--ui").map(std::path::PathBuf::from);
     let duration = args
         .value("--duration")
         .as_deref()
@@ -520,6 +521,9 @@ fn serve(args: &[String]) -> ExitCode {
         if let Err(error) = session.enable_symbols(std::path::Path::new(path)) {
             eprintln!("warning: {error}");
         }
+    }
+    if let Some(directory) = ui {
+        server = server.with_ui(directory);
     }
     if let Some(vault) = vault.clone() {
         let source = bforge_core::serve::VaultSource {

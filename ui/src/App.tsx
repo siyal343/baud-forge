@@ -110,15 +110,41 @@ export default function App() {
   const [windowRows, setWindowRows] = createSignal<TailRow[]>([])
   const [records, setRecords] = createSignal(0)
   const [scrubNote, setScrubNote] = createSignal<string | null>(null)
+  // A paired bus: one bridge's two ports, merged by time (spec 0029).
+  // `null` follows the workspace: one bridge means one bus, no choice to make.
+  const [bridge, setBridge] = createSignal<string | null>(null)
   const bytesOf = (text: string) =>
     text.replace(/0x/gi, '').replace(/[\s:,]/g, '').length / 2
-  const plotKeys = createMemo(() => Object.keys(feed.series()).sort())
+  const bridges = () => feed.snapshot()?.bridges ?? []
+  const activeBridge = createMemo(() => {
+    const chosen = bridge()
+    if (chosen === 'all') return null
+    if (chosen !== null) return chosen
+    return bridges().length === 1 ? bridges()[0].id : null
+  })
+  const bridgePorts = createMemo(() => {
+    const found = bridges().find((item) => item.id === activeBridge())
+    return found ? [found.a, found.b] : null
+  })
+  const plotKeys = createMemo(() => {
+    const keys = Object.keys(feed.series()).sort()
+    const pair = bridgePorts()
+    return pair ? keys.filter((key) => pair.includes(key.split('.')[0])) : keys
+  })
   const activePlot = createMemo(() => plotKey() ?? plotKeys()[0] ?? null)
 
   const session = () => feed.snapshot()?.session
   const ports = () => feed.snapshot()?.ports ?? []
-  const rows = createMemo(() => (at() === null ? feed.frames() : windowRows()))
-  const shown = createMemo(() => rows().slice(-120).reverse())
+  const rows = createMemo(() => {
+    const all = at() === null ? feed.frames() : windowRows()
+    const pair = bridgePorts()
+    return pair ? all.filter((row) => pair.includes(row.port)) : all
+  })
+  // One sequence for the pair: the table reads top to bottom in time order.
+  const shown = createMemo(() => {
+    const window = rows().slice(-120).reverse()
+    return bridgePorts() ? [...window].sort((left, right) => right.timestamp_us - left.timestamp_us) : window
+  })
   const plotValues = createMemo(() => {
     const key = activePlot()
     if (key === null) return []
@@ -148,7 +174,10 @@ export default function App() {
   }
 
   onMount(async () => {
-    const shared = new URLSearchParams(location.search).get('at')
+    const params = new URLSearchParams(location.search)
+    const shared = params.get('at')
+    const sharedBridge = params.get('bridge')
+    if (sharedBridge !== null) setBridge(sharedBridge)
     try {
       const response = await fetch('/api/vault')
       if (response.ok) {
@@ -335,6 +364,18 @@ export default function App() {
             </Show>
           </div>
           <div class="scrubber">
+            <Show when={(feed.snapshot()?.bridges ?? []).length > 0}>
+              <select
+                value={activeBridge() ?? 'all'}
+                onChange={(event) => setBridge(event.currentTarget.value)}
+                aria-label="bridge"
+              >
+                <option value="all">all ports</option>
+                <For each={bridges()}>
+                  {(item) => <option value={item.id}>{`bus ${item.a}↔${item.b}`}</option>}
+                </For>
+              </select>
+            </Show>
             <input
               type="range"
               min="0"

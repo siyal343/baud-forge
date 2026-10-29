@@ -377,12 +377,16 @@ fn handle(mut stream: TcpStream, shared: Arc<Shared>, stop: Arc<AtomicBool>) {
         return;
     }
     match path {
-        "/" | "/index.html" => respond(
-            &mut stream,
-            "200 OK",
-            "text/html; charset=utf-8",
-            INDEX.as_bytes(),
-        ),
+        // The frontend's own page when it is served, otherwise the built-in one.
+        "/" | "/index.html" => match ui_index(&shared) {
+            Some(index) => respond(&mut stream, "200 OK", "text/html; charset=utf-8", &index),
+            None => respond(
+                &mut stream,
+                "200 OK",
+                "text/html; charset=utf-8",
+                INDEX.as_bytes(),
+            ),
+        },
         "/api/health" => {
             let body = format!(
                 "{{\"ok\":true,\"service\":\"bforge-serve\",\"version\":\"{}\",\"contract\":{}}}",

@@ -40,6 +40,7 @@ state through one contract (F1.7).
 | S8b assert fields | D-15 | done | a 6 s recording from the board decodes to 122 frames and passes 5 field, protocol and count checks |
 | S9 sockets | F1.2.7 (TCP, UDP, config) | done | simulator over loopback: tail decodes, record stores 60 frames, assert passes 3 of 3, no hardware |
 | S10 native packs | F3.4 (CCSDS/PUS, CSP, Modbus; MAVLink deferred) | done | 12 pack tests on hand-built fixtures; a CCSDS packet in a vault decodes and passes assert rules with no schema file |
+| S22 paired bus | FR-MITM-01 (one timeline for a bridged pair) | done | two simulators on one bus, frames merged by chunk time, one plot over the pair; found a memo-ordering fault before it shipped |
 | S21 direction | F1.7.6 (direction on every frame row) | done | a bridged pair's vault holds Rx and Tx, and a decoded window marks the forwarded frames as Tx |
 | S20 GUI recording | FR-UI-02 (the window keeps a vault) | done | 2308 records in a vault started by the window; the scrubber decoded a window from it; a port that was not up yet now retries instead of closing |
 | S19 desktop shell | FR-UI-01 (a window around the workbench) | done | `MainWindowTitle "BaudForge"`, engine on `127.0.0.1:54348`, API and assets served; found and fixed a `Send` bound on the framing trait object |
@@ -350,8 +351,19 @@ S21 notes:
   (D-79). A forwarded byte is visible in a vault window as `Tx`.
 - The workbench colours `tx` in the transmit colour the guide reserves for it.
 
-Next action: a paired-bus view, the second half of D-72: choose a bridge and see both
-ports in one sequence, with the direction on each row and one plot over the pair. `serve` is the only interface it needs, so the
+S22 notes:
+
+- The engine needed nothing: a row already carried its port and its direction, which is
+  all a bus view asks for.
+- The runtime check caught a memo used before its declaration. The build was clean and
+  the type check passed; only running the page showed it.
+- One bridge opens on that bus by default: a workspace with a single pair has no choice
+  worth making.
+- No screenshot for this slice. Headless Edge stopped producing output in this session,
+  and the spec says so rather than implying a picture exists.
+
+Next action: the per-direction queue (the remaining half of D-72), so a destination that
+stops accepting stops costing the pump 100 ms per write. `serve` is the only interface it needs, so the
 work can be done in Edge with hot reload, and the Tauri shell wraps the same files
 afterwards. The engine has published the contract since S4; this is the first phase
 where a change to a panel can be seen without a desktop build.
