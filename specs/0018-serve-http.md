@@ -13,8 +13,8 @@ counter but not that it reached a screen.
 
 A loopback HTTP server that publishes the F1.7 contract, and one page that draws it.
 Not in this stage: the SolidJS workbench with the six bands (the page is a
-placeholder, D-60), authentication (loopback only, D-59), and writes of any kind —
-the surface is read-only.
+placeholder, D-60), authentication (loopback only, D-59), and writes (added by spec
+0021).
 
 ## Behavior
 
@@ -74,6 +74,6 @@ which any browser, `curl` and EventSource accept.
 
 ## Limits, recorded
 
-- Read-only, loopback, no authentication: D-59.
+- The surface grew a write route in spec 0021; it is loopback only and has no authentication (D-59).
 - The page is not the workbench: D-60.
 - `GET` and `HEAD` only; anything else answers 405.

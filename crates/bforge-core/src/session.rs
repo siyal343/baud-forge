@@ -33,6 +33,10 @@ pub enum SessionError {
     NoPorts,
     /// A port configuration cannot be used, for example a socket port with no address.
     Settings(String),
+    /// A write was asked for a port that is not in this session.
+    UnknownPort(String),
+    /// A write did not reach the port.
+    Write(String),
 }
 
 impl std::fmt::Display for SessionError {
@@ -42,6 +46,8 @@ impl std::fmt::Display for SessionError {
             Self::Storage(error) => write!(f, "vault: {error}"),
             Self::NoPorts => write!(f, "no ports selected"),
             Self::Settings(message) => write!(f, "{message}"),
+            Self::UnknownPort(port) => write!(f, "port `{port}` is not in this session"),
+            Self::Write(message) => write!(f, "{message}"),
         }
     }
 }
@@ -276,6 +282,22 @@ impl Session {
     /// Frames thrown away because the reader did not keep up.
     pub fn frames_dropped(&self) -> u64 {
         self.frames_dropped
+    }
+
+    /// Send bytes to a port and report how many the transport accepted.
+    ///
+    /// The reader thread performs the write: it owns the transport, so a write from
+    /// another thread would race it.
+    pub fn send(&self, port: &str, bytes: Vec<u8>, wait: Duration) -> Result<usize, SessionError> {
+        let running = self
+            .ports
+            .iter()
+            .find(|running| running.info.id == port)
+            .ok_or_else(|| SessionError::UnknownPort(port.to_string()))?;
+        running
+            .pipeline
+            .write(bytes, wait)
+            .map_err(SessionError::Write)
     }
 
     /// Take the numeric samples added since the last call.

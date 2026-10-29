@@ -11,7 +11,7 @@
 
 use crate::session::{Session, SessionError};
 use crate::ui::UiEvent;
-use std::io::{BufRead, BufReader, Write};
+use std::io::{BufRead, BufReader, Read, Write};
 use std::net::{SocketAddr, TcpListener, TcpStream};
 use std::sync::atomic::{AtomicBool, AtomicU64, Ordering};
 use std::sync::mpsc::{TrySendError, sync_channel};
@@ -78,6 +78,14 @@ struct Client {
     frames: Mutex<Option<String>>,
 }
 
+/// One `POST /api/send` waiting for the pump thread to reach the transport.
+#[derive(Debug)]
+struct SendJob {
+    port: String,
+    bytes: Vec<u8>,
+    reply: std::sync::mpsc::SyncSender<Result<usize, String>>,
+}
+
 #[derive(Debug, Default)]
 struct Shared {
     /// The newest snapshot as JSON. The snapshot is the source of truth; a client
@@ -86,6 +94,8 @@ struct Shared {
     clients: Mutex<Vec<Arc<Client>>>,
     requests: AtomicU64,
     clients_max: AtomicU64,
+    /// Set once the pump thread is running: the only thread that may write.
+    send: Mutex<Option<std::sync::mpsc::Sender<SendJob>>>,
 }
 
 impl Shared {
@@ -166,10 +176,19 @@ impl Server {
             std::thread::spawn(move || accept_loop(listener, shared, stop))
         };
 
+        let (send_tx, send_rx) = std::sync::mpsc::channel::<SendJob>();
+        *shared.send.lock().unwrap() = Some(send_tx);
+
         let events = session.subscribe();
         let started = Instant::now();
         let mut published = Instant::now();
         loop {
+            while let Ok(job) = send_rx.try_recv() {
+                let result = session
+                    .send(&job.port, job.bytes, Duration::from_secs(2))
+                    .map_err(|error| error.to_string());
+                let _ = job.reply.send(result);
+            }
             session.pump_once()?;
             let frames = session.take_frames();
             if !frames.is_empty() {
@@ -252,12 +271,20 @@ fn handle(mut stream: TcpStream, shared: Arc<Shared>, stop: Arc<AtomicBool>) {
     if reader.read_line(&mut request_line).is_err() {
         return;
     }
+    // The body length is the only header this server needs, and the drain loop is
+    // the only place that sees the headers.
+    let mut content_length = 0usize;
     loop {
         let mut header = String::new();
         match reader.read_line(&mut header) {
             Ok(0) => break,
             Ok(_) if header.trim().is_empty() => break,
-            Ok(_) => {}
+            Ok(_) => {
+                let lower = header.to_ascii_lowercase();
+                if let Some(value) = lower.strip_prefix("content-length:") {
+                    content_length = value.trim().parse().unwrap_or(0);
+                }
+            }
             Err(_) => break,
         }
     }
@@ -266,12 +293,18 @@ fn handle(mut stream: TcpStream, shared: Arc<Shared>, stop: Arc<AtomicBool>) {
     let method = parts.next().unwrap_or("");
     let target = parts.next().unwrap_or("/");
     let path = target.split(['?', '#']).next().unwrap_or("/");
+    // Writes take a body, so a POST is answered before the read-only guard.
+    if method == "POST" && path == "/api/send" {
+        let body = read_body(&mut reader, content_length);
+        send(&mut stream, &shared, &body);
+        return;
+    }
     if method != "GET" && method != "HEAD" {
         respond(
             &mut stream,
             "405 Method Not Allowed",
             "text/plain",
-            b"GET only\n",
+            b"GET and POST only\n",
         );
         return;
     }
@@ -301,6 +334,12 @@ fn handle(mut stream: TcpStream, shared: Arc<Shared>, stop: Arc<AtomicBool>) {
             };
             respond(&mut stream, "200 OK", "application/json", body.as_bytes());
         }
+        "/api/send" => respond(
+            &mut stream,
+            "405 Method Not Allowed",
+            "text/plain",
+            b"POST a JSON body to send\n",
+        ),
         "/api/events" => {
             if wants_body {
                 stream_events(stream, shared, stop);
@@ -362,6 +401,152 @@ fn stream_events(mut stream: TcpStream, shared: Arc<Shared>, stop: Arc<AtomicBoo
         std::thread::sleep(EVENT_TICK);
         if stream.write_all(b": keep-alive\n\n").is_err() {
             return;
+        }
+    }
+}
+
+/// Read exactly `length` bytes of body. `shortcut: at most 64 KiB and no chunked
+/// encoding, which is what a forge needs; a larger payload is a different feature`.
+fn read_body(reader: &mut BufReader<TcpStream>, length: usize) -> Vec<u8> {
+    let mut body = vec![0u8; length.min(64 * 1024)];
+    let mut read = 0;
+    while read < body.len() {
+        match reader.read(&mut body[read..]) {
+            Ok(0) => break,
+            Ok(count) => read += count,
+            Err(_) => break,
+        }
+    }
+    body.truncate(read);
+    body
+}
+
+#[derive(Debug, serde::Deserialize)]
+struct SendRequest {
+    port: String,
+    /// Bytes as hex, spaced or not, with or without `0x` prefixes.
+    hex: String,
+    /// Optional checksum appended after the bytes: `crc8`, `crc16_ccitt_false`
+    /// or `crc32c`, little endian as the field would travel.
+    crc: Option<String>,
+}
+
+/// Parse spaced or run-together hex into bytes.
+fn parse_hex(text: &str) -> Result<Vec<u8>, String> {
+    let cleaned: String = text
+        .replace("0x", "")
+        .chars()
+        .filter(|character| !character.is_whitespace() && *character != ':' && *character != ',')
+        .collect();
+    if cleaned.is_empty() {
+        return Err("no bytes".to_string());
+    }
+    if !cleaned.len().is_multiple_of(2) {
+        return Err("hex needs an even number of digits".to_string());
+    }
+    let mut bytes = Vec::with_capacity(cleaned.len() / 2);
+    let digits: Vec<char> = cleaned.chars().collect();
+    for pair in digits.chunks(2) {
+        let text: String = pair.iter().collect();
+        let byte = u8::from_str_radix(&text, 16).map_err(|_| format!("`{text}` is not hex"))?;
+        bytes.push(byte);
+    }
+    Ok(bytes)
+}
+
+fn send(stream: &mut TcpStream, shared: &Arc<Shared>, body: &[u8]) {
+    let request: SendRequest = match serde_json::from_slice(body) {
+        Ok(request) => request,
+        Err(error) => {
+            let body = format!("{{\"error\":\"bad request: {error}\"}}");
+            return respond(
+                stream,
+                "400 Bad Request",
+                "application/json",
+                body.as_bytes(),
+            );
+        }
+    };
+    let mut bytes = match parse_hex(&request.hex) {
+        Ok(bytes) => bytes,
+        Err(error) => {
+            let body = format!("{{\"error\":\"{error}\"}}");
+            return respond(
+                stream,
+                "400 Bad Request",
+                "application/json",
+                body.as_bytes(),
+            );
+        }
+    };
+    if let Some(name) = &request.crc {
+        let Some(kind) = bforge_framer::Checksum::from_name(name) else {
+            let body = format!("{{\"error\":\"`{name}` is not a checksum\"}}");
+            return respond(
+                stream,
+                "400 Bad Request",
+                "application/json",
+                body.as_bytes(),
+            );
+        };
+        let value = kind.compute(&bytes);
+        match kind.width() {
+            8 => bytes.push(value as u8),
+            16 => bytes.extend_from_slice(&(value as u16).to_le_bytes()),
+            _ => bytes.extend_from_slice(&value.to_le_bytes()),
+        }
+    }
+
+    let sender = shared.send.lock().unwrap().clone();
+    let Some(sender) = sender else {
+        let body = "{\"error\":\"the pump is not running\"}";
+        return respond(
+            stream,
+            "503 Service Unavailable",
+            "application/json",
+            body.as_bytes(),
+        );
+    };
+    let (reply, answer) = std::sync::mpsc::sync_channel(1);
+    let port = request.port.clone();
+    if sender
+        .send(SendJob {
+            port: port.clone(),
+            bytes,
+            reply,
+        })
+        .is_err()
+    {
+        let body = "{\"error\":\"the pump has stopped\"}";
+        return respond(
+            stream,
+            "503 Service Unavailable",
+            "application/json",
+            body.as_bytes(),
+        );
+    }
+    match answer.recv_timeout(Duration::from_secs(5)) {
+        Ok(Ok(sent)) => {
+            let body = format!("{{\"port\":\"{port}\",\"sent\":{sent}}}");
+            respond(stream, "200 OK", "application/json", body.as_bytes());
+        }
+        Ok(Err(error)) => {
+            let status = if error.contains("not in this session") {
+                "404 Not Found"
+            } else {
+                "409 Conflict"
+            };
+            let body = format!("{{\"error\":\"{error}\"}}");
+            respond(stream, status, "application/json", body.as_bytes());
+        }
+        Err(_) => {
+            let body = "{\"error\":\"no answer from the pump\"}";
+            respond(
+                stream,
+                "504 Gateway Timeout",
+                "application/json",
+                body.as_bytes(),
+            );
         }
     }
 }

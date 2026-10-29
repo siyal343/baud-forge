@@ -139,13 +139,21 @@ impl YieldRequest {
 }
 
 /// Everything the reader thread needs to publish.
-#[derive(Debug, Default)]
 struct ReaderContext {
     counters: Arc<Counters>,
     stop: Arc<AtomicBool>,
     yield_request: Arc<YieldRequest>,
     port_id: u16,
     reconnect_attempts: u32,
+    /// Bytes another thread asked the reader to send. The reader owns the
+    /// transport, so a write must happen on its thread, between reads.
+    writes: std::sync::mpsc::Receiver<WriteRequest>,
+}
+
+/// One queued write and where to report the result.
+pub struct WriteRequest {
+    pub bytes: Vec<u8>,
+    pub reply: std::sync::mpsc::Sender<Result<usize, String>>,
 }
 
 #[derive(Debug, Default)]
@@ -194,6 +202,7 @@ pub struct Pipeline {
     started: Instant,
     thread: Option<JoinHandle<()>>,
     yield_request: Arc<YieldRequest>,
+    writes: std::sync::mpsc::Sender<WriteRequest>,
 }
 
 impl Pipeline {
@@ -220,6 +229,8 @@ impl Pipeline {
         let port_id = config.port_id;
         let reconnect_attempts = config.reconnect_attempts;
 
+        let (write_sender, write_receiver) = std::sync::mpsc::channel();
+
         let thread = thread::Builder::new()
             .name(format!("bforge-reader-{port_id}"))
             .spawn(move || {
@@ -233,6 +244,7 @@ impl Pipeline {
                         yield_request: reader_yield,
                         port_id,
                         reconnect_attempts,
+                        writes: write_receiver,
                     },
                 )
             })
@@ -245,6 +257,7 @@ impl Pipeline {
             started: Instant::now(),
             thread: Some(thread),
             yield_request,
+            writes: write_sender,
         }
     }
 
@@ -256,6 +269,20 @@ impl Pipeline {
     /// Ask the reader to release the port so another program can use it.
     pub fn yield_for(&self, duration: Duration) {
         self.yield_request.request(duration);
+    }
+
+    /// Queue bytes for the port and wait for the reader to report the result.
+    ///
+    /// The reader owns the transport, so this cannot write directly: a second
+    /// writer on a serial port is exactly the race the reader exists to prevent.
+    pub fn write(&self, bytes: Vec<u8>, wait: Duration) -> Result<usize, String> {
+        let (reply, answer) = std::sync::mpsc::channel();
+        self.writes
+            .send(WriteRequest { bytes, reply })
+            .map_err(|_| "the reader has stopped".to_string())?;
+        answer
+            .recv_timeout(wait)
+            .map_err(|_| "the reader did not answer in time".to_string())?
     }
 
     /// The handle a control plane keeps, so it can yield without touching the
@@ -304,6 +331,7 @@ fn read_loop(
         yield_request,
         port_id,
         reconnect_attempts,
+        writes,
     } = context;
     if transport.open().is_err() {
         counters.read_errors.fetch_add(1, Ordering::Relaxed);
@@ -320,6 +348,13 @@ fn read_loop(
     // On stop, a slab that is still waiting for the logger ring is abandoned.
     // Nobody is left to read it, and the wait must not outlive the session.
     'read: while !stop.load(Ordering::Relaxed) {
+        while let Ok(request) = writes.try_recv() {
+            let result = transport
+                .write_frame(&request.bytes)
+                .map(|()| request.bytes.len())
+                .map_err(|error| error.to_string());
+            let _ = request.reply.send(result);
+        }
         if let Some(window) = yield_request.take() {
             counters.state.store(STATE_YIELDED, Ordering::Relaxed);
             counters.yields.fetch_add(1, Ordering::Relaxed);

@@ -40,6 +40,7 @@ state through one contract (F1.7).
 | S8b assert fields | D-15 | done | a 6 s recording from the board decodes to 122 frames and passes 5 field, protocol and count checks |
 | S9 sockets | F1.2.7 (TCP, UDP, config) | done | simulator over loopback: tail decodes, record stores 60 frames, assert passes 3 of 3, no hardware |
 | S10 native packs | F3.4 (CCSDS/PUS, CSP, Modbus; MAVLink deferred) | done | 12 pack tests on hand-built fixtures; a CCSDS packet in a vault decodes and passes assert rules with no schema file |
+| S14 send path | F2.1.1 (write from the UI, checksum on the wire) | done | 3 sent, then 7 sent with CRC-32C, 404 for an unknown port, 400 for odd hex; the device received 10 bytes in order |
 | S13 telemetry | F1.7.4 (numeric series, plot band) | done | 98 880 chunks over 209 s, `sim.channel` plotted with 600 samples; found and fixed a pump starvation at 8 kHz |
 | S12 workbench | F1.7.3 (SolidJS frontend over the served contract) | done | 258 326 chunks and 11.2 MB drawn live; frames decode to 9 fields each; hover marks a field's bytes |
 | S11 serve | F1.7.2 (contract over HTTP, events over SSE) | done | 300 s session served: snapshot every 200 ms, 40 snapshot and 32 ui frames in 8 s, 74 032 chunks; page captured in Edge |
@@ -254,9 +255,20 @@ S13 notes:
   209 s. No chunk was lost. The fix for that is a larger ring or a faster pump, not a
   different policy.
 
-Next action: the write path. Band 5 (command forge) and the fault injector both need
-`POST /api/send`: a port, bytes or a typed frame, and the same encoding the
-dissector already understands in reverse. `serve` is the only interface it needs, so the
+S14 notes:
+
+- The write is performed by the reader thread. It owns the transport, so a second
+  writer would interleave frames with the reader on a serial port.
+- The route validates before it sends: odd hex, an unknown port and an unknown
+  checksum are refusals, not partial writes.
+- `crc` appends `crc8`, `crc16_ccitt_false` or `crc32c` little endian, which is how
+  the field travels.
+- Typed encoding is not there yet (D-64): the forge takes hex. Sends are not in the
+  contract either (D-65).
+
+Next action: the fault injector, which is a send path with a schedule. It needs
+`POST /api/fault` with a port, a rate and a kind (bit flip, drop, truncate), and the
+same reader-thread write, so a fault cannot be injected behind the reader's back. `serve` is the only interface it needs, so the
 work can be done in Edge with hot reload, and the Tauri shell wraps the same files
 afterwards. The engine has published the contract since S4; this is the first phase
 where a change to a panel can be seen without a desktop build.

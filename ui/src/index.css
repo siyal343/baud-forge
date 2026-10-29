@@ -25,10 +25,11 @@ body {
 .shell {
   display: grid;
   grid-template-columns: 260px minmax(0, 1fr) 340px;
-  grid-template-rows: 42px minmax(0, 1fr) 30px;
+  grid-template-rows: 42px minmax(0, 1fr) 212px 30px;
   grid-template-areas:
     'ribbon ribbon ribbon'
     'sidebar stage inspector'
+    'sidebar forge inspector'
     'footer footer footer';
   height: 100%;
 }
@@ -215,6 +216,39 @@ tbody tr.faulty td:last-child { color: var(--fault); }
 
 .empty { color: var(--dim); padding: 10px 12px; margin: 0; }
 
+.forge { grid-area: forge; border-top: 1px solid var(--line); background: var(--panel); overflow: auto; }
+
+.forge form { display: flex; gap: 8px; align-items: center; padding: 4px 12px 8px; }
+
+.forge input {
+  flex: 1;
+  min-width: 0;
+  background: var(--bg);
+  border: 1px solid var(--line);
+  border-radius: 5px;
+  color: var(--text);
+  font: inherit;
+  padding: 5px 8px;
+}
+
+.forge input:focus { outline: 1px solid var(--tx); }
+
+.forge select, .forge button {
+  background: var(--panel-2);
+  color: var(--text);
+  border: 1px solid var(--line);
+  border-radius: 5px;
+  padding: 5px 8px;
+  font: inherit;
+  font-size: 11px;
+}
+
+.forge button { color: var(--tx); border-color: var(--tx); cursor: pointer; }
+.forge button:disabled { color: var(--dim); border-color: var(--line); cursor: default; }
+
+.forge .answer { margin: 0; padding: 0 12px 6px; color: var(--dim); font-size: 11px; word-break: break-all; }
+.forge .sent { list-style: none; margin: 0; padding: 0 12px 8px; font-size: 11px; color: var(--dim); display: grid; gap: 2px; }
+
 .plot-band { border-top: 1px solid var(--line); display: grid; grid-template-rows: auto minmax(0, 1fr); min-height: 0; }
 
 .plot-band select {
@@ -239,10 +273,11 @@ tbody tr.faulty td:last-child { color: var(--fault); }
 @media (max-width: 1100px) {
   .shell {
     grid-template-columns: 220px minmax(0, 1fr);
-    grid-template-rows: 42px minmax(0, 1fr) 40vh 30px;
+    grid-template-rows: 42px minmax(0, 1fr) 180px 40vh 30px;
     grid-template-areas:
       'ribbon ribbon'
       'stage stage'
+      'forge forge'
       'sidebar inspector'
       'footer footer';
   }

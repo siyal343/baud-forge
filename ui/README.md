@@ -50,6 +50,18 @@ src/
 The snapshot is the source of truth and the events are a hint. The frame list is a
 bounded window; the engine bounds its own queue at 4096 and counts what it drops.
 
+## Sending bytes
+
+The command forge posts hex to `/api/send`. The reader thread performs the write and
+the engine appends the checksum you pick (spec 0021):
+
+```sh
+curl -X POST -d '{"port":"sim","hex":"AA 55 03","crc":"crc32c"}' \
+  http://127.0.0.1:7717/api/send
+```
+
+Typed field entry is not there yet (D-64); the form takes hex and shows its length.
+
 ## What is missing
 
 Five of the six bands in `specs/UI-UX-Guide.md`: plots, command forge, full

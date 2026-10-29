@@ -7,6 +7,7 @@ use bforge_core::session::{Session, session_ports_from_config};
 use bforge_framer::cobs_encode;
 use std::io::{Read, Write};
 use std::net::{TcpListener, TcpStream};
+use std::sync::{Arc, Mutex};
 use std::time::{Duration, Instant};
 
 /// The 19-byte frame the fixture header describes, plus its CRC-32C.
@@ -57,6 +58,37 @@ fn device() -> String {
         std::thread::sleep(Duration::from_millis(500));
     });
     address
+}
+
+/// A device that writes frames and records everything the engine sends it.
+fn chatty_device() -> (String, Arc<Mutex<Vec<u8>>>) {
+    let listener = TcpListener::bind("127.0.0.1:0").unwrap();
+    let address = listener.local_addr().unwrap().to_string();
+    let received = Arc::new(Mutex::new(Vec::new()));
+    let sink = Arc::clone(&received);
+    std::thread::spawn(move || {
+        let (mut stream, _) = listener.accept().unwrap();
+        let mut writer = stream.try_clone().unwrap();
+        std::thread::spawn(move || {
+            for index in 0..500u64 {
+                let mut payload = cobs_encode(&imu_frame(index));
+                payload.push(0);
+                if writer.write_all(&payload).is_err() {
+                    return;
+                }
+                std::thread::sleep(Duration::from_millis(4));
+            }
+            std::thread::sleep(Duration::from_millis(500));
+        });
+        let mut buffer = [0u8; 256];
+        while let Ok(count) = stream.read(&mut buffer) {
+            if count == 0 {
+                return;
+            }
+            sink.lock().unwrap().extend_from_slice(&buffer[..count]);
+        }
+    });
+    (address, received)
 }
 
 fn workspace(address: &str) -> bforge_core::ProjectConfig {
@@ -199,4 +231,83 @@ fn an_event_source_receives_the_snapshot_without_asking() {
         .expect("serve");
     client.join().expect("client");
     assert!(stats.clients_max >= 1, "{stats:?}");
+}
+
+/// A POST with a JSON body against the serve surface.
+fn post(address: &str, path: &str, body: &str) -> (String, String) {
+    let mut stream = TcpStream::connect(address).unwrap();
+    stream
+        .set_read_timeout(Some(Duration::from_secs(5)))
+        .unwrap();
+    let request = format!(
+        "POST {path} HTTP/1.1\r\nHost: test\r\nContent-Type: application/json\r\nContent-Length: {}\r\nConnection: close\r\n\r\n{}",
+        body.len(),
+        body
+    );
+    stream.write_all(request.as_bytes()).unwrap();
+    let mut text = String::new();
+    let _ = stream.read_to_string(&mut text);
+    let status = text.lines().next().unwrap_or_default().to_string();
+    let body = text
+        .split_once("\r\n\r\n")
+        .map(|(_, body)| body.to_string())
+        .unwrap_or_default();
+    (status, body)
+}
+
+#[test]
+fn a_send_request_reaches_the_port_with_its_checksum() {
+    let (device, received) = chatty_device();
+    let config = workspace(&device);
+    let ports = session_ports_from_config(&config, &[]).expect("ports");
+    let mut session = Session::start(ports, None, None).expect("session");
+    session.enable_decode(&config.ports).expect("decode");
+
+    let server = Server::bind("127.0.0.1:0".parse().unwrap()).expect("bind");
+    let address = server.local_addr().unwrap().to_string();
+
+    let client = std::thread::spawn(move || {
+        std::thread::sleep(Duration::from_millis(500));
+        let heard = received;
+
+        let (status, body) = post(&address, "/api/send", r#"{"port":"sim","hex":"AA 55 03"}"#);
+        assert!(status.contains("200"), "{status} {body}");
+        assert!(body.contains("\"sent\":3"), "{body}");
+
+        // A checksum is appended little endian, four bytes for CRC-32C.
+        let (status, body) = post(
+            &address,
+            "/api/send",
+            r#"{"port":"sim","hex":"aa5503","crc":"crc32c"}"#,
+        );
+        assert!(status.contains("200"), "{status} {body}");
+        assert!(body.contains("\"sent\":7"), "{body}");
+
+        // A port that is not in the session is refused.
+        let (status, body) = post(&address, "/api/send", r#"{"port":"nope","hex":"00"}"#);
+        assert!(status.contains("404"), "{status} {body}");
+
+        // Odd hex is a bad request, not a silent send.
+        let (status, body) = post(&address, "/api/send", r#"{"port":"sim","hex":"ABC"}"#);
+        assert!(status.contains("400"), "{status} {body}");
+
+        let deadline = Instant::now() + Duration::from_secs(3);
+        let mut seen = Vec::new();
+        while Instant::now() < deadline {
+            seen = heard.lock().unwrap().clone();
+            if seen.len() >= 10 {
+                break;
+            }
+            std::thread::sleep(Duration::from_millis(20));
+        }
+        assert!(seen.starts_with(&[0xAA, 0x55, 0x03]), "{seen:02X?}");
+        assert_eq!(seen[3], 0xAA, "the second frame follows: {seen:02X?}");
+        assert_eq!(seen.len(), 10, "3 bytes then 7 bytes: {seen:02X?}");
+    });
+
+    let stats = server
+        .run(session, Some(Duration::from_secs(2)))
+        .expect("serve");
+    client.join().expect("client");
+    assert!(stats.requests >= 4, "{stats:?}");
 }

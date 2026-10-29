@@ -83,6 +83,12 @@ export default function App() {
   const [selected, setSelected] = createSignal<TailRow | null>(null)
   const [hovered, setHovered] = createSignal<FieldRow | null>(null)
   const [plotKey, setPlotKey] = createSignal<string | null>(null)
+  const [hex, setHex] = createSignal('AA 55 03')
+  const [crc, setCrc] = createSignal('')
+  const [answer, setAnswer] = createSignal<string | null>(null)
+  const [sent, setSent] = createSignal<string[]>([])
+  const bytesOf = (text: string) =>
+    text.replace(/0x/gi, '').replace(/[\s:,]/g, '').length / 2
   const plotKeys = createMemo(() => Object.keys(feed.series()).sort())
   const activePlot = createMemo(() => plotKey() ?? plotKeys()[0] ?? null)
 
@@ -91,6 +97,34 @@ export default function App() {
   const shown = createMemo(() => feed.frames().slice(-120).reverse())
   const detail = () => selected() ?? feed.frames().at(-1) ?? null
   const openPorts = () => ports().filter((port) => port.state === 'open').length
+
+  async function forgeSend(event: SubmitEvent) {
+    event.preventDefault()
+    const port = ports()[0]?.id
+    if (!port) {
+      setAnswer('no port in this workspace')
+      return
+    }
+    const body: { port: string; hex: string; crc?: string } = { port, hex: hex() }
+    if (crc()) body.crc = crc()
+    try {
+      const response = await fetch('/api/send', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(body),
+      })
+      const reply = await response.text()
+      setAnswer(`${response.status} ${reply}`)
+      if (response.ok) {
+        const sentBytes = (JSON.parse(reply) as { sent: number }).sent
+        setSent((current) =>
+          [`${new Date().toLocaleTimeString()}  ${port}  ${sentBytes} B  ${hex()}`].concat(current).slice(0, 6),
+        )
+      }
+    } catch (error) {
+      setAnswer(String(error))
+    }
+  }
 
   return (
     <div class="shell">
@@ -231,6 +265,31 @@ export default function App() {
             </>
           )}
         </Show>
+      </section>
+
+      <section class="forge">
+        <h2>Command forge</h2>
+        <form onSubmit={forgeSend}>
+          <input
+            value={hex()}
+            onInput={(event) => setHex(event.currentTarget.value)}
+            placeholder="AA 55 03"
+            spellcheck={false}
+            aria-label="bytes to send, in hex"
+          />
+          <select value={crc()} onChange={(event) => setCrc(event.currentTarget.value)} aria-label="checksum">
+            <option value="">no checksum</option>
+            <option value="crc32c">crc32c</option>
+            <option value="crc16_ccitt_false">crc16</option>
+            <option value="crc8">crc8</option>
+          </select>
+          <button type="submit" disabled={ports().length === 0}>Send</button>
+          <span class="hint">{Number.isFinite(bytesOf(hex())) ? bytesOf(hex()) : 0} B</span>
+        </form>
+        <Show when={answer()}>{(line) => <p class="answer">{line()}</p>}</Show>
+        <ol class="sent">
+          <For each={sent()}>{(line) => <li>{line}</li>}</For>
+        </ol>
       </section>
 
       <footer class="footer">
