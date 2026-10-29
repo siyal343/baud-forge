@@ -40,6 +40,7 @@ state through one contract (F1.7).
 | S8b assert fields | D-15 | done | a 6 s recording from the board decodes to 122 frames and passes 5 field, protocol and count checks |
 | S9 sockets | F1.2.7 (TCP, UDP, config) | done | simulator over loopback: tail decodes, record stores 60 frames, assert passes 3 of 3, no hardware |
 | S10 native packs | F3.4 (CCSDS/PUS, CSP, Modbus; MAVLink deferred) | done | 12 pack tests on hand-built fixtures; a CCSDS packet in a vault decodes and passes assert rules with no schema file |
+| S19 desktop shell | FR-UI-01 (a window around the workbench) | done | `MainWindowTitle "BaudForge"`, engine on `127.0.0.1:54348`, API and assets served; found and fixed a `Send` bound on the framing trait object |
 | S18 bridge | FR-MITM-01 (tap and inline bridge between two ports) | done | bytes travel both ways between two loopback devices; a passive tap forwards nothing; validation refuses a missing port |
 | S17 symbol badges | F2.2.1 (addresses in frames resolved and drawn) | done | `pc 0x140001480 -> std/src/env.rs:228` from a real image, over the live contract; 4 unit tests |
 | S16 scrubber | F1.7.5 (vault window in the contract, slider in the workbench) | done | 517 frames from record 200 of 108 704, plotted from the window; found and fixed a vault that could not be read while recording |
@@ -315,9 +316,21 @@ S18 notes:
   drop: a wedged destination is visible, not absorbed. A queue per direction is D-72.
 - Validation covers the three ways a bridge can be wrong.
 
-Next action: packaging. The engine, the contract and the workbench are in place; what
-is missing is the desktop shell (D-62), which the machine can now build: the Tauri
-host crate, the icons and the installer, with CI publishing artefacts per target. `serve` is the only interface it needs, so the
+S19 notes:
+
+- The window is a webview onto the same HTTP surface the browser uses. No second data
+  path, no second set of panels, and the shell is 120 lines that mostly read a
+  workspace.
+- `bforge serve` now serves a built frontend from a directory, with `index.html` as the
+  client-side fallback. That one small change is what makes the shell possible without
+  an IPC layer.
+- The GUI needed the session to move to a thread, which exposed a missing `Send` on
+  `Box<dyn ByteMachine>`. One bound fixed it; the machines were always thread-safe.
+- CI excludes the crate everywhere except a Windows job, because Tauri wants platform
+  libraries that headless Linux runners do not have.
+
+Next action: the installer (D-74), signing aside: `tauri bundle` with WiX or NSIS, a
+designed icon set (D-76), and a release step that attaches the artefact to a tag. `serve` is the only interface it needs, so the
 work can be done in Edge with hot reload, and the Tauri shell wraps the same files
 afterwards. The engine has published the contract since S4; this is the first phase
 where a change to a panel can be seen without a desktop build.

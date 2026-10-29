@@ -7,3 +7,9 @@ repository.workspace = true
 description = "Tauri v2 desktop host for BaudForge (Milestone 2)"
 
 [dependencies]
+bforge-core.workspace = true
+toml.workspace = true
+tauri = { version = "2", features = [] }
+
+[build-dependencies]
+tauri-build = { version = "2", features = [] }

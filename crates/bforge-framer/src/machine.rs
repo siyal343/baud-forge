@@ -61,7 +61,7 @@ pub fn machine_for(
     mode: &str,
     delimiter: Option<&[u8]>,
     max_frame_bytes: usize,
-) -> Result<Box<dyn ByteMachine>, FrameError> {
+) -> Result<Box<dyn ByteMachine + Send>, FrameError> {
     match mode {
         "delimiter" => {
             let delimiter = delimiter.ok_or(FrameError::MissingDelimiter)?;

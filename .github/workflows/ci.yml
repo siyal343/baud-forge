@@ -28,7 +28,7 @@ jobs:
       - name: Check formatting
         run: cargo fmt --all --check
       - name: Run clippy
-        run: cargo clippy --workspace --all-targets --locked -- -D warnings
+        run: cargo clippy --workspace --exclude bforge-gui --all-targets --locked -- -D warnings
 
   ui:
     name: ui (build)
@@ -52,6 +52,37 @@ jobs:
         with:
           name: bforge-ui
           path: ui/dist
+          if-no-files-found: error
+
+  desktop:
+    name: desktop (windows)
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+          cache-dependency-path: ui/package-lock.json
+      - name: Build the frontend
+        working-directory: ui
+        run: |
+          npm ci
+          npm run build
+      - uses: dtolnay/rust-toolchain@stable
+      - name: Build the desktop shell
+        run: cargo build -p bforge-gui --release --locked
+      - name: Stage the app
+        shell: pwsh
+        run: |
+          New-Item -ItemType Directory -Force -Path dist-app | Out-Null
+          Copy-Item target/release/bforge-gui.exe dist-app/
+          Copy-Item ui/dist -Destination dist-app/ui -Recurse
+      - name: Upload the desktop app
+        uses: actions/upload-artifact@v4
+        with:
+          name: bforge-desktop-windows
+          path: dist-app
           if-no-files-found: error
 
   test:
@@ -82,9 +113,9 @@ jobs:
         if: runner.os == 'Linux'
         run: sudo apt-get update && sudo apt-get install -y libudev-dev pkg-config
       - name: Build
-        run: cargo build --workspace --locked
+        run: cargo build --workspace --exclude bforge-gui --locked
       - name: Test
-        run: cargo test --workspace --locked
+        run: cargo test --workspace --exclude bforge-gui --locked
       - name: Run the headless CLI
         run: cargo run --locked -p bforge-cli -- version
 
@@ -119,7 +150,7 @@ jobs:
         with:
           targets: x86_64-apple-darwin
       - name: Build
-        run: cargo build --workspace --locked --target x86_64-apple-darwin
+        run: cargo build --workspace --exclude bforge-gui --locked --target x86_64-apple-darwin
       - name: Build the app
         run: cargo build --release --locked -p bforge-cli --target x86_64-apple-darwin
       - name: Stage the app binary

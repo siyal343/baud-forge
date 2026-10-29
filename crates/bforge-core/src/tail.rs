@@ -46,7 +46,7 @@ impl Decoder {
 
 /// How a port is framed and, when it has one, decoded.
 pub struct TailConfig {
-    pub machine: Box<dyn ByteMachine>,
+    pub machine: Box<dyn ByteMachine + Send>,
     pub dissector: Option<Decoder>,
 }
 
@@ -134,7 +134,7 @@ struct Port {
 /// bytes without a second port reader.
 pub struct Stream {
     port: String,
-    machine: Box<dyn ByteMachine>,
+    machine: Box<dyn ByteMachine + Send>,
     dissector: Option<Decoder>,
     last_ns: Option<u64>,
 }
@@ -386,7 +386,7 @@ pub fn tail_config(port: &PortConfig) -> Result<TailConfig, TailError> {
     let framing = &port.framing;
     let limit = framing.max_frame.unwrap_or(DEFAULT_MAX_FRAME);
 
-    let machine: Box<dyn ByteMachine> = match framing.mode.as_str() {
+    let machine: Box<dyn ByteMachine + Send> = match framing.mode.as_str() {
         "delimiter" => {
             let byte = framing.delimiter.unwrap_or(b'\n' as u32) as u8;
             machine_for("delimiter", Some(&[byte]), limit)

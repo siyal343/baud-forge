@@ -115,6 +115,8 @@ struct Shared {
     fault: Mutex<Option<std::sync::mpsc::Sender<FaultJob>>>,
     /// Set by `with_vault`, before the server runs.
     vault: Mutex<Option<VaultSource>>,
+    /// Set by `with_ui`: the built frontend to serve instead of the placeholder.
+    ui: Mutex<Option<std::path::PathBuf>>,
 }
 
 impl Shared {
@@ -174,6 +176,12 @@ impl Server {
     /// A flag another thread can set to end the serve loop.
     pub fn stop_handle(&self) -> Arc<AtomicBool> {
         Arc::clone(&self.stop)
+    }
+
+    /// Serve a built frontend from a directory instead of the placeholder page.
+    pub fn with_ui(self, directory: impl Into<std::path::PathBuf>) -> Self {
+        *self.shared.ui.lock().unwrap() = Some(directory.into());
+        self
     }
 
     /// Let the scrubber read a vault. Without this, `/api/vault` answers 404.
@@ -361,6 +369,13 @@ fn handle(mut stream: TcpStream, shared: Arc<Shared>, stop: Arc<AtomicBool>) {
     }
     let wants_body = method == "GET";
 
+    if path != "/"
+        && path != "/index.html"
+        && let Some(asset) = ui_file(&shared, path)
+    {
+        respond(&mut stream, "200 OK", &asset.0, &asset.1);
+        return;
+    }
     match path {
         "/" | "/index.html" => respond(
             &mut stream,
@@ -398,7 +413,11 @@ fn handle(mut stream: TcpStream, shared: Arc<Shared>, stop: Arc<AtomicBool>) {
                 respond(&mut stream, "200 OK", "text/event-stream", b"");
             }
         }
-        _ => respond(&mut stream, "404 Not Found", "text/plain", b"not found\n"),
+        // A single-page app routes on the client: anything else is its entry page.
+        _ => match ui_index(&shared) {
+            Some(index) => respond(&mut stream, "200 OK", "text/html; charset=utf-8", &index),
+            None => respond(&mut stream, "404 Not Found", "text/plain", b"not found\n"),
+        },
     }
 }
 
@@ -821,6 +840,45 @@ fn vault_frames(stream: &mut TcpStream, shared: &Arc<Shared>, target: &str) {
         serde_json::to_string(&rows).unwrap_or_else(|_| "[]".to_string())
     );
     respond(stream, "200 OK", "application/json", body.as_bytes());
+}
+
+/// One file from the served frontend: content type and bytes.
+fn ui_file(shared: &Arc<Shared>, path: &str) -> Option<(String, Vec<u8>)> {
+    let root = shared.ui.lock().unwrap().clone()?;
+    // Only plain paths inside the directory: no `..`, no absolute targets.
+    let relative = path.trim_start_matches('/');
+    if relative
+        .split('/')
+        .any(|part| part == ".." || part.is_empty())
+    {
+        return None;
+    }
+    let file = root.join(relative);
+    let bytes = std::fs::read(&file).ok()?;
+    Some((content_type(relative), bytes))
+}
+
+/// The frontend's entry page, when a directory is served.
+fn ui_index(shared: &Arc<Shared>) -> Option<Vec<u8>> {
+    let root = shared.ui.lock().unwrap().clone()?;
+    std::fs::read(root.join("index.html")).ok()
+}
+
+fn content_type(path: &str) -> String {
+    let extension = path.rsplit('.').next().unwrap_or_default();
+    let kind = match extension {
+        "html" => "text/html; charset=utf-8",
+        "js" | "mjs" => "text/javascript",
+        "css" => "text/css",
+        "json" => "application/json",
+        "svg" => "image/svg+xml",
+        "png" => "image/png",
+        "ico" => "image/x-icon",
+        "woff2" => "font/woff2",
+        "map" => "application/json",
+        _ => "application/octet-stream",
+    };
+    kind.to_string()
 }
 
 fn respond(stream: &mut TcpStream, status: &str, content_type: &str, body: &[u8]) {

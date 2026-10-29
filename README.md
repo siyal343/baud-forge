@@ -36,6 +36,11 @@ root, then `cd ui && npm run dev`. The frontend reads the engine's contract over
 loopback HTTP, so a panel can change with hot reload while the engine keeps the
 port. Details in [`ui/README.md`](ui/README.md).
 
+There is also a window: `cargo build -p bforge-gui --release` and run
+`bforge-gui <workspace.toml>` with `ui/dist` beside it. It hosts the same workbench
+over the same HTTP surface (spec 0026); it needs the MSVC toolchain, see
+[`docs/GUI-SETUP.md`](docs/GUI-SETUP.md).
+
 ## Platforms
 
 | Target | Triple | CI coverage |
