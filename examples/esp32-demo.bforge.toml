@@ -1,0 +1,18 @@
+# The demo workspace: an ESP32-C3 on the test firmware, framed with COBS and
+# dissected with the ImuPacket header that the firmware actually fills.
+#
+#   arduino-cli upload -p COM8 --fqbn "esp32:esp32:esp32c3:CDCOnBoot=cdc" firmware/bforge_test
+#   bforge serve -c examples/esp32-demo.bforge.toml --vault demo.bflog --ui ui/dist
+#
+# The firmware starts idle. Send `mode imu\n` to make it stream.
+
+[workspace]
+name = "esp32-demo"
+version = "1.0"
+
+[[ports]]
+id = "esp"
+device_path = "COM8"
+baud_rate = 115200
+framing = { mode = "cobs" }
+dissector = { type = "c_header", file = "crates/bforge-dissect/tests/fixtures/imu_packet.h", root_struct = "ImuPacket" }

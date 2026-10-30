@@ -242,3 +242,36 @@ fn replay_keeps_the_gaps_when_the_speed_is_one() {
     assert_eq!(transport.written(), 12);
     let _ = std::fs::remove_file(&vault);
 }
+
+/// A session never truncates an existing vault: a monitor that silently destroyed
+/// yesterday's capture would be a data-loss bug.
+#[test]
+fn a_session_refuses_to_overwrite_an_existing_vault() {
+    let path = std::env::temp_dir().join(format!(
+        "bforge-refuse-{}-{}.bflog",
+        std::process::id(),
+        line!()
+    ));
+    let _ = std::fs::remove_file(&path);
+    std::fs::write(&path, b"yesterday").unwrap();
+
+    let error = match Session::start(vec![port("obc", vec![1, 2, 3])], Some(&path), None) {
+        Ok(_) => panic!("an existing vault must be refused"),
+        Err(error) => error,
+    };
+    assert!(error.to_string().contains("already exists"), "{error}");
+    assert_eq!(
+        std::fs::read(&path).unwrap(),
+        b"yesterday",
+        "the file is untouched"
+    );
+
+    // An empty file is not a capture, and is allowed.
+    std::fs::write(&path, b"").unwrap();
+    let session = Session::start(vec![port("obc", vec![1, 2, 3])], Some(&path), None)
+        .expect("an empty file is fine");
+    let _ = session.seal();
+
+    let _ = std::fs::remove_file(&path);
+    let _ = std::fs::remove_file(bforge_storage::index_path(&path));
+}

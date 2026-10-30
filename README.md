@@ -11,35 +11,46 @@ errors, delays and truncation into a live link.
 
 Binary name: `bforge`.
 
-## Status: engine complete, GUI in progress
+## Status: 0.1.0 release candidate
 
-This repository holds the project skeleton. It defines the crate topology, the
-data types and the configuration schema from the
-[ADR and SRS](specs/ADR%20%26%20SRS.md). It does not implement recording,
-framing, dissection or the GUI yet. The implementation plan comes next.
+The engine, the command line and the workbench are built and measured. What is
+missing is listed in [`RELEASE-NOTES.md`](RELEASE-NOTES.md) and, with reasons, in
+[`DEFERRED.md`](DEFERRED.md). Progress and remaining scope: [`STATUS.md`](STATUS.md).
+
+**Start here: [`docs/QUICKSTART.md`](docs/QUICKSTART.md)** — two simulated devices,
+an ESP32-C3, or the desktop window.
 
 What works today:
 
-- The Cargo workspace builds, with the nine crates from the architecture.
-- `.bforge.toml` parses into typed structs.
-- `bforge help` and `bforge version` run.
-- Record, replay, tail, assert, yield and vault repair work on serial ports and
-  sockets, with six framing modes, a C header dissector and three native packs.
-- `bforge serve` publishes the UI contract over loopback HTTP, so the workbench can
-  run in a browser while the desktop shell is built. The workbench draws the live
-  stream, plots a field, sends bytes, arms a fault profile and scrubs the vault.
+- **Record, replay, tail, assert, yield, vault repair** on serial ports (USB
+  identity or device path) and on TCP client, TCP server and UDP.
+- **Six framing modes**: delimiter, COBS, SLIP, Intel HEX, sync word plus length,
+  idle gap. Checksums CRC-8, CRC-16/CCITT-FALSE and CRC-32C.
+- **Dissection** with a C header parser (packed structs, bitfields, enums, arrays,
+  endianness) and three native packs: CCSDS TM/TC with PUS, CSP v1, Modbus RTU.
+- **Symbols**: an address in a frame becomes a function and a source line.
+- **Sending** bytes with a checksum appended, and **fault profiles** — bit flips,
+  drops, truncation, corrupted CRC — seeded so a run reproduces.
+- **Bridges**: a passive tap or an inline forward between two ports.
+- **A workbench** in the browser or in a window: live stream, decoded fields with
+  field-to-byte highlighting, a plot, a scrubber over the vault, the forge, the
+  fault row and a paired bus view.
 
 ![The workbench](docs/screenshots/workbench.png)
 
-The workbench runs in two steps: `bforge serve -c <workspace>` in the repository
-root, then `cd ui && npm run dev`. The frontend reads the engine's contract over
-loopback HTTP, so a panel can change with hot reload while the engine keeps the
-port. Details in [`ui/README.md`](ui/README.md).
+Two ways to run the workbench:
 
-There is also a window: `cargo build -p bforge-gui --release` and run
-`bforge-gui <workspace.toml>` with `ui/dist` beside it. It hosts the same workbench
-over the same HTTP surface (spec 0026); it needs the MSVC toolchain, see
-[`docs/GUI-SETUP.md`](docs/GUI-SETUP.md).
+```sh
+# browser: engine plus the built frontend
+bforge serve -c examples/loopback-demo.bforge.toml --vault loop.bflog --ui ui/dist
+
+# window: needs the MSVC toolchain, see docs/GUI-SETUP.md
+cargo build -p bforge-gui --release
+bforge-gui examples/esp32-demo.toml --vault demo.bflog
+```
+
+For frontend development, `cd ui && npm run dev` proxies the engine with hot reload
+([`ui/README.md`](ui/README.md)).
 
 ## Platforms
 

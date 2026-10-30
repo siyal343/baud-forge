@@ -183,13 +183,44 @@ impl LogReader {
     }
 
     /// Read `count` records starting at record `frame_id`, clipped to the end.
+    /// Records `frame_id .. frame_id + count`, read in one forward pass.
+    ///
+    /// Reading record by record would walk from the sparse index on every call,
+    /// which turns a whole-vault decode into a quadratic one: a ten-minute capture
+    /// took minutes per check before this.
     pub fn window(&mut self, frame_id: u64, count: usize) -> Result<Vec<LogRecord>, StorageError> {
+        if frame_id >= self.chunks || count == 0 {
+            return Ok(Vec::new());
+        }
+        let (mut ordinal, mut position) = match self.index.seek_frame(frame_id) {
+            Some(entry) => (entry.frame_id, entry.file_offset),
+            None => (0, HEADER_LEN as u64),
+        };
+
+        // Skip to the first record the caller asked for, without reading payloads.
+        while ordinal < frame_id {
+            let chunk = self.read_record_at(position)?;
+            position += RECORD_HEADER_LEN as u64 + chunk.payload_len as u64;
+            ordinal += 1;
+        }
+
         let mut records = Vec::with_capacity(count);
-        for offset in 0..count as u64 {
-            match self.read_at(frame_id + offset)? {
-                Some(record) => records.push(record),
-                None => break,
-            }
+        while ordinal < frame_id + count as u64 && ordinal < self.chunks {
+            let chunk = self.read_record_at(position)?;
+            let len = chunk.payload_len as u64;
+            let payload_offset = position + RECORD_HEADER_LEN as u64;
+            let mut payload = vec![0u8; len as usize];
+            self.file.seek(SeekFrom::Start(payload_offset))?;
+            self.file.read_exact(&mut payload)?;
+            records.push(LogRecord {
+                chunk: RawChunk {
+                    payload_offset,
+                    ..chunk
+                },
+                payload,
+            });
+            position = payload_offset + len;
+            ordinal += 1;
         }
         Ok(records)
     }

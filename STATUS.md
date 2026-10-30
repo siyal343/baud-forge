@@ -1,6 +1,6 @@
 # BaudForge status
 
-Written 29 October 2026, measured from the repository at commit `8b5ee82`.
+Written 29 October 2026, measured from the repository at commit `8b5ee82`; updated 30 October 2026 during the release pass.
 
 ## Numbers
 
@@ -9,7 +9,7 @@ Written 29 October 2026, measured from the repository at commit `8b5ee82`.
 | Commits | 48 | `git rev-list --count HEAD` |
 | Rust | 18 323 lines across 9 crates | `wc -l` over `crates/**/*.rs` |
 | Frontend | 1 010 lines, SolidJS + TypeScript | `wc -l` over `ui/src` |
-| Tests | 233 passing, 19 s, workspace | `cargo test --workspace --exclude bforge-gui` |
+| Tests | 234 passing, 20 s, workspace | `cargo test --workspace --exclude bforge-gui` |
 | Feature specs | 30 written before the code | `specs/0001` … `specs/0030` |
 | CI | 9 jobs green, 6 targets | GitHub Actions |
 | Open gaps | 71 entries | `DEFERRED.md` |
@@ -95,6 +95,20 @@ Three reasons, and two are fixable.
 3. **Scope crept past the first cut.** The plan recommended scope B (35 days) for a
    first release. What was built is closer to scope A: bridge, faults, packs, symbols,
    desktop shell. Good, but it also means the "first cut" is overdue.
+
+## Release pass, 30 October 2026
+
+The freeze was put into practice:
+
+- Two release blockers were found on real data and fixed: `assert` was quadratic on a
+  15-minute capture (over ten minutes, now 10 s) and a session truncated an existing
+  vault (now refused, with a test).
+- The hardware session ran on the ESP32-C3: 327 929 chunks, 164 073 decoded frames,
+  3 of 3 checks passed.
+- `docs/QUICKSTART.md`, `RELEASE-NOTES.md`, two demo workspaces and a rewritten README
+  first screen landed.
+- `bforge serve` now seals the vault when it stops, and can serve the built frontend
+  (`--ui`) instead of the placeholder page.
 
 ## Recommendation: stop adding, cut a release
 

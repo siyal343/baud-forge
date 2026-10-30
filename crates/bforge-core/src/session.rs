@@ -41,6 +41,8 @@ pub enum SessionError {
     UnknownPort(String),
     /// A write did not reach the port.
     Write(String),
+    /// A vault already exists at that path, and a monitor never overwrites one.
+    VaultExists(String),
 }
 
 impl std::fmt::Display for SessionError {
@@ -52,6 +54,10 @@ impl std::fmt::Display for SessionError {
             Self::Settings(message) => write!(f, "{message}"),
             Self::UnknownPort(port) => write!(f, "port `{port}` is not in this session"),
             Self::Write(message) => write!(f, "{message}"),
+            Self::VaultExists(path) => write!(
+                f,
+                "a vault already exists at `{path}`; remove it, or pick another name"
+            ),
         }
     }
 }
@@ -197,10 +203,20 @@ impl Session {
             port_table_offset: 256,
         };
         let (writer, vault) = match vault {
-            Some(path) => (
-                Some(LogWriter::create(path, header)?),
-                path.display().to_string(),
-            ),
+            Some(path) => {
+                // A session that silently truncated yesterday's capture would be a
+                // data-loss bug, not a convenience.
+                let occupied = std::fs::metadata(path)
+                    .map(|metadata| metadata.len() > 0)
+                    .unwrap_or(false);
+                if occupied {
+                    return Err(SessionError::VaultExists(path.display().to_string()));
+                }
+                (
+                    Some(LogWriter::create(path, header)?),
+                    path.display().to_string(),
+                )
+            }
             None => (None, String::new()),
         };
 

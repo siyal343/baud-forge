@@ -1,0 +1,31 @@
+# No hardware: two simulators on loopback, joined by a forwarding bridge.
+#
+#   cargo run -p bforge-core --release --example s8_device_sim -- 127.0.0.1:9100 200 &
+#   cargo run -p bforge-core --release --example s8_device_sim -- 127.0.0.1:9101 150 &
+#   bforge serve -c examples/loopback-demo.bforge.toml --vault loop.bflog --ui ui/dist
+
+[workspace]
+name = "loopback-demo"
+version = "1.0"
+
+[[ports]]
+id = "obc"
+transport = "tcp-client"
+address = "127.0.0.1:9100"
+baud_rate = 115200
+framing = { mode = "cobs" }
+dissector = { type = "c_header", file = "crates/bforge-dissect/tests/fixtures/imu_packet.h", root_struct = "ImuPacket" }
+
+[[ports]]
+id = "eps"
+transport = "tcp-client"
+address = "127.0.0.1:9101"
+baud_rate = 115200
+framing = { mode = "cobs" }
+dissector = { type = "c_header", file = "crates/bforge-dissect/tests/fixtures/imu_packet.h", root_struct = "ImuPacket" }
+
+[[bridges]]
+id = "link"
+a = "obc"
+b = "eps"
+forward = true

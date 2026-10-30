@@ -267,9 +267,18 @@ impl Server {
         // A client that is still reading keeps a disconnected sender until the next
         // broadcast; clearing the list closes its stream now.
         shared.clients.lock().unwrap().clear();
+        // A served session is a recorded session: seal it, so the vault gets its
+        // index and a reader does not have to repair it.
+        let chunks = match session.seal() {
+            Ok(summary) => summary.chunks,
+            Err(error) => {
+                eprintln!("bforge-serve: the vault could not be sealed: {error}");
+                return Err(ServeError::Session(error));
+            }
+        };
         Ok(ServeStats {
             requests: shared.requests.load(Ordering::Relaxed),
-            chunks: session.chunks(),
+            chunks,
             clients_max: shared.clients_max.load(Ordering::Relaxed) as usize,
         })
     }
