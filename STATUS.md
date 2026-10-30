@@ -109,6 +109,9 @@ The freeze was put into practice:
   first screen landed.
 - `bforge serve` now seals the vault when it stops, and can serve the built frontend
   (`--ui`) instead of the placeholder page.
+- **`v0.1.0` is tagged and published** with six binaries (`bforge-linux-x86_64`,
+  `bforge-linux-aarch64`, `bforge-macos-x86_64`, `bforge-macos-aarch64`,
+  `bforge-windows-x86_64.exe`, `bforge-windows-aarch64.exe`).
 
 ## Recommendation: stop adding, cut a release
 
