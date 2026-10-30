@@ -9,8 +9,8 @@
 //! has an instruction budget: an infinite loop in a script costs one frame, not the
 //! session.
 
-use std::cell::Cell;
-use std::rc::Rc;
+use std::sync::Arc;
+use std::sync::atomic::{AtomicU32, Ordering};
 
 use mlua::{HookTriggers, Lua, Value, VmState};
 
@@ -35,7 +35,7 @@ pub struct ScriptRuntime {
     lua: Lua,
     hook: mlua::RegistryKey,
     path: String,
-    ticks: Rc<Cell<u32>>,
+    ticks: Arc<AtomicU32>,
     /// Frames the script changed.
     pub changed: u64,
     /// Frames the script dropped.
@@ -105,13 +105,12 @@ impl ScriptRuntime {
             }
         };
 
-        let ticks = Rc::new(Cell::new(0));
-        let counter = Rc::clone(&ticks);
+        let ticks = Arc::new(AtomicU32::new(0));
+        let counter = Arc::clone(&ticks);
         lua.set_hook(
             HookTriggers::new().every_nth_instruction(HOOK_TICK),
             move |_lua, _debug| {
-                let spent = counter.get() + 1;
-                counter.set(spent);
+                let spent = counter.fetch_add(1, Ordering::Relaxed) + 1;
                 if spent > HOOK_TICKS {
                     Err(mlua::Error::runtime("instruction budget exceeded"))
                 } else {
@@ -149,7 +148,7 @@ impl ScriptRuntime {
             }
         };
 
-        self.ticks.set(0);
+        self.ticks.store(0, Ordering::Relaxed);
         let answer: Result<Value, mlua::Error> = function.call(hex_of(bytes));
         match answer {
             Ok(Value::Nil) => {

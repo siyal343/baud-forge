@@ -78,6 +78,10 @@ provides `cl.exe`, and with it the vendored build works. The GNU toolchain on th
 machine still has no C compiler, so local GNU builds now need
 `--exclude bforge-script` or the MSVC toolchain; the CI runners all have a compiler.
 
+The VM is built with mlua's `send` feature: the desktop shell moves the session onto a
+thread, and a Lua state that is not `Send` would have made the window impossible. The
+instruction counter is an atomic for the same reason.
+
 ## Limits, recorded
 
 - Transmit path only: a script cannot change what arrives (D-84).
