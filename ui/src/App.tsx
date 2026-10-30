@@ -100,6 +100,8 @@ export default function App() {
   const [plotKey, setPlotKey] = createSignal<string | null>(null)
   const [hex, setHex] = createSignal('AA 55 03')
   const [crc, setCrc] = createSignal('')
+  const [typed, setTyped] = createSignal(false)
+  const [typedValues, setTypedValues] = createSignal<Record<string, string>>({})
   const [answer, setAnswer] = createSignal<string | null>(null)
   const [sent, setSent] = createSignal<string[]>([])
   const [faultKind, setFaultKind] = createSignal('off')
@@ -178,6 +180,9 @@ export default function App() {
     const shared = params.get('at')
     const sharedBridge = params.get('bridge')
     if (sharedBridge !== null) setBridge(sharedBridge)
+    // `?typed=1` opens on the typed form, which is also the only way to capture it
+    // with a headless browser.
+    if (params.get('typed') === '1') chooseTyped(true)
     try {
       const response = await fetch('/api/vault')
       if (response.ok) {
@@ -191,6 +196,63 @@ export default function App() {
   })
   const detail = () => selected() ?? rows().at(-1) ?? null
   const openPorts = () => ports().filter((port) => port.state === 'open').length
+
+  // The schema the port decodes with is the schema the form sends with: one table,
+  // read and written (spec 0032).
+  const schemaFields = createMemo(() => {
+    const row = [...rows()].reverse().find((candidate) => candidate.fields.length > 0)
+    if (!row) return []
+    return row.fields.filter((field) => field.value_num !== null && !field.name.includes('.'))
+  })
+
+  function chooseTyped(on: boolean) {
+    setTyped(on)
+    if (on) {
+      const seeded: Record<string, string> = {}
+      for (const field of schemaFields()) {
+        seeded[field.name] = field.value_num === null ? '' : String(field.value_num)
+      }
+      setTypedValues(seeded)
+    }
+  }
+
+  async function forgeSendTyped(event: SubmitEvent) {
+    event.preventDefault()
+    const port = ports()[0]?.id
+    if (!port) {
+      setAnswer('no port in this workspace')
+      return
+    }
+    const values: Record<string, number> = {}
+    for (const [name, text] of Object.entries(typedValues())) {
+      if (text.trim() === '') continue
+      const value = Number(text)
+      if (!Number.isFinite(value)) {
+        setAnswer(`\`${name}\` is not a number`)
+        return
+      }
+      values[name] = value
+    }
+    try {
+      const response = await fetch('/api/send', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ port, values }),
+      })
+      const reply = await response.text()
+      setAnswer(`${response.status} ${reply}`)
+      if (response.ok) {
+        const sentBytes = (JSON.parse(reply) as { sent: number }).sent
+        setSent((current) =>
+          [`${new Date().toLocaleTimeString()}  ${port}  ${sentBytes} B  typed`]
+            .concat(current)
+            .slice(0, 6),
+        )
+      }
+    } catch (error) {
+      setAnswer(String(error))
+    }
+  }
 
   async function armFault(event: SubmitEvent) {
     event.preventDefault()
@@ -455,20 +517,61 @@ export default function App() {
           <h2>Command forge</h2>
           <h2>Fault injector</h2>
         </div>
-        <form onSubmit={forgeSend}>
-          <input
-            value={hex()}
-            onInput={(event) => setHex(event.currentTarget.value)}
-            placeholder="AA 55 03"
-            spellcheck={false}
-            aria-label="bytes to send, in hex"
-          />
+        <form onSubmit={typed() ? forgeSendTyped : forgeSend}>
+          <button
+            type="button"
+            class="mode"
+            classList={{ active: typed() }}
+            onClick={() => chooseTyped(!typed())}
+            title="send named fields instead of hex"
+          >
+            {typed() ? 'typed' : 'hex'}
+          </button>
+          <Show
+            when={!typed()}
+            fallback={
+              <div class="typed">
+                <Show
+                  when={schemaFields().length > 0}
+                  fallback={<span class="hint">No decoded frame yet: this port has no schema to fill.</span>}
+                >
+                  <For each={schemaFields()}>
+                    {(field) => (
+                      <label>
+                        <span>{field.name}</span>
+                        <input
+                          value={typedValues()[field.name] ?? ''}
+                          onInput={(event) =>
+                            setTypedValues((current) => ({
+                              ...current,
+                              [field.name]: event.currentTarget.value,
+                            }))
+                          }
+                          aria-label={field.name}
+                        />
+                      </label>
+                    )}
+                  </For>
+                </Show>
+              </div>
+            }
+          >
+            <input
+              value={hex()}
+              onInput={(event) => setHex(event.currentTarget.value)}
+              placeholder="AA 55 03"
+              spellcheck={false}
+              aria-label="bytes to send, in hex"
+            />
+          </Show>
+          <Show when={!typed()}>
           <select value={crc()} onChange={(event) => setCrc(event.currentTarget.value)} aria-label="checksum">
             <option value="">no checksum</option>
             <option value="crc32c">crc32c</option>
             <option value="crc16_ccitt_false">crc16</option>
             <option value="crc8">crc8</option>
           </select>
+          </Show>
           <button type="submit" disabled={ports().length === 0}>Send</button>
           <span class="hint">{Number.isFinite(bytesOf(hex())) ? bytesOf(hex()) : 0} B</span>
         </form>

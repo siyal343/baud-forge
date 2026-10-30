@@ -40,6 +40,7 @@ state through one contract (F1.7).
 | S8b assert fields | D-15 | done | a 6 s recording from the board decodes to 122 frames and passes 5 field, protocol and count checks |
 | S9 sockets | F1.2.7 (TCP, UDP, config) | done | simulator over loopback: tail decodes, record stores 60 frames, assert passes 3 of 3, no hardware |
 | S10 native packs | F3.4 (CCSDS/PUS, CSP, Modbus; MAVLink deferred) | done | 12 pack tests on hand-built fixtures; a CCSDS packet in a vault decodes and passes assert rules with no schema file |
+| S26 typed form | FR-CMD-01 (the forge sends named fields) | done | two modes in the forge; the typed row lists one box per decoded field and posts `values`; the route answered `{"sent":19}` for those values |
 | S25 typed encoding | FR-CMD-01 (a frame from named values) | done | 7 encoder tests, and a typed post that put 19 bytes on a device with bitfields and big endian in the right places |
 | S24 Lua scripts | FR-SCR-01 (a sandboxed hook per transmitted frame) | done | 6 runtime tests and one end-to-end: the device received `01 02 FC` for a posted `01 02 03`; mlua builds once a C compiler exists |
 | S23 bridge queue | D-72 (a wedged destination cannot stop the pump) | done | five posts returned in <150 ms against a port that sleeps 300 ms per write; 233 tests in 19 s |
@@ -396,8 +397,18 @@ S25 notes:
 - The workbench still posts hex (D-85); the route, the script encoder and the CLI can
   send a struct.
 
-Next action: the typed form in the workbench (D-85), which is the piece that makes the
-encoder visible to a person. `serve` is the only interface it needs, so the
+S26 notes:
+
+- The form's field list is the last decoded frame, so there is no second schema to keep
+  in step.
+- Values are seeded from what the device just sent, which makes "change one field and
+  send it back" the default move.
+- `?typed=1` exists so the mode can be reached without a click, and so a browser test
+  could use it later.
+- No screenshot: headless Edge returns an empty document in this session (D-81 area of
+  doubt, recorded in spec 0029).
+
+Next action: enum labels (D-86), so a typed enum field reads `MODE_RUN` instead of 1. `serve` is the only interface it needs, so the
 work can be done in Edge with hot reload, and the Tauri shell wraps the same files
 afterwards. The engine has published the contract since S4; this is the first phase
 where a change to a panel can be seen without a desktop build.

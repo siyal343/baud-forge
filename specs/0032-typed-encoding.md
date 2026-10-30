@@ -58,9 +58,26 @@ cargo test -p bforge-dissect --lib encoder
 cargo test -p bforge-core --test serve
 ```
 
+## The form
+
+The command forge has two modes, switched by the small button on the left of the row:
+
+- `hex`, as before;
+- `typed`, which lists one row per numeric leaf of the last decoded frame, seeded with
+  the values that frame carried, and posts `values` instead of `hex`.
+
+The field list comes from the frame the port just decoded, so the form and the schema
+are the same thing seen twice. A port with no schema says so instead of showing an empty
+form. `?typed=1` opens the page on the typed form, which is also how a headless browser
+can reach it.
+
+Not captured: a screenshot of the typed form. Headless Edge in this session returns an
+empty document for the engine's page as well as the dev server, as recorded in spec 0029.
+The build type-checks, and the route it calls answers `{"sent":19}` for the same values,
+measured above.
+
 ## Limits, recorded
 
-- The workbench still posts hex; a typed form needs the field list in the UI (D-85).
 - An enum field takes a number, not its label (D-86).
 - Only the root struct: a nested struct is not addressable by name yet (D-87).
 - Arrays take `name.0`, `name.1`, … and only when the element is named in the header.

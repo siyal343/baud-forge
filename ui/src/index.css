@@ -225,6 +225,32 @@ tbody tr.faulty td:last-child { color: var(--fault); }
 .band-head { display: flex; gap: 40px; }
 .band-head h2 { flex: 1; }
 
+.forge button.mode { color: var(--dim); border-color: var(--line); }
+.forge button.mode.active { color: var(--tx); border-color: var(--tx); }
+
+.typed {
+  flex: 1;
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px 12px;
+  min-width: 0;
+  max-height: 84px;
+  overflow: auto;
+}
+
+.typed label { display: flex; align-items: center; gap: 5px; font-size: 11px; color: var(--dim); }
+.typed input {
+  width: 78px;
+  background: var(--bg);
+  border: 1px solid var(--line);
+  border-radius: 4px;
+  color: var(--text);
+  font: inherit;
+  font-size: 11px;
+  padding: 2px 5px;
+}
+.typed input:focus { outline: 1px solid var(--tx); }
+
 .fault-form { display: flex; gap: 8px; align-items: center; padding: 0 12px 8px; }
 .fault-form input.narrow { flex: 0 0 90px; }
 
