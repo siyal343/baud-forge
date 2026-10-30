@@ -31,6 +31,9 @@ structs written by name (D-87).
 7. An enum field takes a number or a **label** from the header, matched without regard to
    case: `"mode":"MODE_RUN"`, `"mode":"mode_run"` and `"mode":1` are the same frame. A
    label the enum does not carry is refused with both names.
+8. Both spellings a header uses work: `enum mode_e mode;` and, through the typedef,
+   `state_t state;`. The typedef spelling names the enum after the alias, which is what a
+   real header writes.
 
 ## Data
 
@@ -56,6 +59,8 @@ device received 55 AA 03 4D … 1C E8 …, which is what the decoder reads back
 POST {"mode":"MODE_FAULT","sync":43605,"flags":1} -> {"sent":7}
 POST {"mode":"MODE_WOBBLE"}                        -> {"error":"`MODE_WOBBLE` is not a value of `mode`"}
 POST {"mode":2}                                     -> {"sent":7}
+POST {"state":"STATE_ON"} on a typedef'd enum        -> {"sent":7}
+POST {"state":"STATE_BROKEN"}                        -> {"error":"`STATE_BROKEN` is not a value of `state`"}
 ```
 
 ## Test
@@ -85,7 +90,7 @@ measured above.
 
 ## Limits, recorded
 
-- A `typedef enum … mode_t;` alias is still not resolved as a field type: the field must
-  be spelled `enum mode_t` (D-88).
+- An enum is four bytes, which is what a C compiler gives it without `-fshort-enums`; a
+  firmware built with short enums needs the width said out loud (not implemented).
 - Only the root struct: a nested struct is not addressable by name yet (D-87).
 - Arrays take `name.0`, `name.1`, … and only when the element is named in the header.

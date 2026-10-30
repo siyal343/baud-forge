@@ -40,6 +40,7 @@ state through one contract (F1.7).
 | S8b assert fields | D-15 | done | a 6 s recording from the board decodes to 122 frames and passes 5 field, protocol and count checks |
 | S9 sockets | F1.2.7 (TCP, UDP, config) | done | simulator over loopback: tail decodes, record stores 60 frames, assert passes 3 of 3, no hardware |
 | S10 native packs | F3.4 (CCSDS/PUS, CSP, Modbus; MAVLink deferred) | done | 12 pack tests on hand-built fixtures; a CCSDS packet in a vault decodes and passes assert rules with no schema file |
+| S28 enum typedefs | FR-CMD-01 (a real header works unedited) | done | `state_t state;` resolves as an enum field; `STATE_ON` encodes and decodes; an unknown label is refused |
 | S27 enum labels | FR-CMD-01 (a label instead of a number) | done | `MODE_FAULT` and `mode_fault` both encode to 2; an unknown label is refused with both names; the parser now accepts an enum as a field type |
 | S26 typed form | FR-CMD-01 (the forge sends named fields) | done | two modes in the forge; the typed row lists one box per decoded field and posts `values`; the route answered `{"sent":19}` for those values |
 | S25 typed encoding | FR-CMD-01 (a frame from named values) | done | 7 encoder tests, and a typed post that put 19 bytes on a device with bitfields and big endian in the right places |
@@ -420,7 +421,18 @@ S27 notes:
 - The forge sends a label when the box does not hold a number, so a person can type
   `MODE_RUN` where a number used to be required.
 
-Next action: D-88, so a real header's typedef'd enums work without editing the header. `serve` is the only interface it needs, so the
+S28 notes:
+
+- `resolve_type` now accepts an enum name, so a field spelled through a typedef is an
+  enum field. The typedef form names the enum after the alias, which is why one lookup
+  covers both spellings.
+- An enum is four bytes, decided once. A short-enum firmware would need the width in the
+  workspace (D-89).
+- Both spellings are in one fixture, `mode_packet.h`, so a regression shows up as a
+  decode mismatch rather than a missing test.
+
+Next action: nested structs by name (D-87), the last encoder gap before the typed forge
+covers any header. `serve` is the only interface it needs, so the
 work can be done in Edge with hot reload, and the Tauri shell wraps the same files
 afterwards. The engine has published the contract since S4; this is the first phase
 where a change to a panel can be seen without a desktop build.

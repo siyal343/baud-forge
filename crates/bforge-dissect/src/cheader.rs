@@ -767,6 +767,12 @@ impl Parser {
         if type_info(name).is_some() {
             return Some(name.to_string());
         }
+        // `typedef enum { … } mode_t;` names the enum after its typedef, so a field
+        // spelled `mode_t` is an enum field. Without `-fshort-enums` a C compiler
+        // gives it four bytes, which is what the decoder will read.
+        if self.header.enums.iter().any(|item| item.name == name) {
+            return Some("uint32_t".to_string());
+        }
         self.aliases
             .get(name)
             .cloned()

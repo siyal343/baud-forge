@@ -1,8 +1,7 @@
-/* A packet whose mode field is an enum, so a label can round-trip.
+/* A packet whose mode field is an enum, in both spellings a header uses.
  *
- * The field is spelled `enum mode_e`, not through a typedef: the parser resolves a
- * field type through `enum_for`, and a `typedef enum … mode_t;` alias is not one of
- * the types it resolves (D-88). */
+ * `ModePacket` names the enum with the `enum` keyword, `TypedefPacket` through the
+ * typedef, and both must decode and encode the same field. */
 #include <stdint.h>
 
 enum mode_e {
@@ -11,8 +10,19 @@ enum mode_e {
     MODE_FAULT = 2,
 };
 
+typedef enum {
+    STATE_OFF = 0,
+    STATE_ON  = 1,
+} state_t;
+
 struct __attribute__((packed)) ModePacket {
-    uint16_t  sync;   /* 0..2 */
+    uint16_t    sync; /* 0..2 */
     enum mode_e mode; /* 2..6  the enum, so the decoder prints its label */
-    uint8_t   flags;  /* 6..7 */
+    uint8_t     flags; /* 6..7 */
+};
+
+struct __attribute__((packed)) TypedefPacket {
+    uint16_t sync;  /* 0..2 */
+    state_t  state; /* 2..6  through a typedef, which a real header usually writes */
+    uint8_t  flags; /* 6..7 */
 };

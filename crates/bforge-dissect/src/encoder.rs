@@ -484,6 +484,28 @@ mod tests {
     }
 
     #[test]
+    fn an_enum_named_through_a_typedef_takes_its_label_too() {
+        let path = concat!(env!("CARGO_MANIFEST_DIR"), "/tests/fixtures/mode_packet.h");
+        let text = std::fs::read_to_string(path).expect("fixture");
+        let header = cheader::parse(&text).expect("parses");
+        let ir = cheader::compile(&header, "TypedefPacket", path).expect("compiles");
+
+        let mut given = values(&[("sync", 43605.0), ("flags", 1.0)]);
+        given.insert("state".to_string(), Value::Label("state_on".to_string()));
+        let frame = encode(&ir, &given).expect("encodes");
+        let fields = crate::exec::execute(&ir, &frame).expect("decodes");
+        let state = fields
+            .iter()
+            .find(|field| field.name == "state")
+            .expect("state");
+        assert_eq!(state.value, "STATE_ON");
+        assert_eq!(
+            state.byte_len, 4,
+            "an enum is four bytes without -fshort-enums"
+        );
+    }
+
+    #[test]
     fn an_enum_label_the_schema_does_not_have_is_refused() {
         let ir = mode_packet();
         let mut given = values(&[]);
