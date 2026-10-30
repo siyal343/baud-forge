@@ -31,6 +31,8 @@ What works today:
 - **Symbols**: an address in a frame becomes a function and a source line.
 - **Sending** bytes with a checksum appended, and **fault profiles** — bit flips,
   drops, truncation, corrupted CRC — seeded so a run reproduces.
+- **Lua fault scripts**: a sandboxed hook on every transmitted frame, with an
+  instruction budget, so a fault can depend on the bytes (`examples/flip-last-byte.lua`).
 - **Bridges**: a passive tap or an inline forward between two ports.
 - **A workbench** in the browser or in a window: live stream, decoded fields with
   field-to-byte highlighting, a plot, a scrubber over the vault, the forge, the

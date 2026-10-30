@@ -49,6 +49,19 @@ impl ProjectConfig {
         if self.workspace.name.trim().is_empty() {
             issues.push(ConfigIssue::new("workspace.name", "must not be empty"));
         }
+        if let Some(script) = self.workspace.script_path.as_deref() {
+            if script.trim().is_empty() {
+                issues.push(ConfigIssue::new(
+                    "workspace.script_path",
+                    "must not be empty",
+                ));
+            } else if !std::path::Path::new(script).exists() {
+                issues.push(ConfigIssue::new(
+                    "workspace.script_path",
+                    format!("`{script}` does not exist"),
+                ));
+            }
+        }
         if self.workspace.watch_elf && self.workspace.elf_path.is_none() {
             issues.push(ConfigIssue::new(
                 "workspace.elf_path",

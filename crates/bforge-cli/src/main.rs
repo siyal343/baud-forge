@@ -522,6 +522,14 @@ fn serve(args: &[String]) -> ExitCode {
             eprintln!("warning: {error}");
         }
     }
+    if let Some(path) = config.workspace.script_path.as_deref() {
+        // A script is a different matter: a rig that silently runs without its
+        // fault logic is worse than one that refuses to start.
+        if let Err(error) = session.enable_script(std::path::Path::new(path)) {
+            eprintln!("error: {error}");
+            return ExitCode::FAILURE;
+        }
+    }
     if let Some(directory) = ui {
         server = server.with_ui(directory);
     }

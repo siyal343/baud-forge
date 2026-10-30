@@ -48,6 +48,8 @@ pub struct WorkspaceMeta {
     pub elf_path: Option<String>,
     #[serde(default)]
     pub watch_elf: bool,
+    /// Lua script run on every transmitted frame (FR-SCR-01, spec 0031).
+    pub script_path: Option<String>,
 }
 
 /// One `[[ports]]` entry.

@@ -30,6 +30,8 @@ Things worth trying:
   many bytes left.
 - Arm a fault: kind `bit flip`, amount `1.0`. Send again; the answer reports
   `fault_bytes`. The devices receive corrupted bytes on purpose.
+- Write a script: `script_path = "examples/flip-last-byte.lua"` in the workspace, then
+  send. The device receives a corrupted frame whatever the fault profile says.
 
 ## 2. With a board: ESP32-C3
 

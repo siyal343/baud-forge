@@ -5,6 +5,10 @@
 
 use bforge_dissect::DissectedFrame;
 
+pub mod runtime;
+
+pub use runtime::{FrameVerdict, ScriptError, ScriptRuntime};
+
 /// Built-in fault primitives that do not need a script (FR-FLT-01).
 #[derive(Debug, Clone, PartialEq, Default)]
 pub struct FaultProfile {

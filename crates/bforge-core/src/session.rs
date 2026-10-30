@@ -18,6 +18,7 @@ use bforge_hal::tcp::{TcpConfig, TcpTransport};
 use bforge_hal::uart::{UartConfig, UartTransport, available};
 use bforge_hal::udp::{UdpConfig, UdpTransport};
 use bforge_hal::{Direction, LineConfig, PinStateFlags, TransportDriver};
+use bforge_script::{FrameVerdict, ScriptRuntime};
 use bforge_storage::{LogHeader, LogReader, LogSummary, LogWriter, RawChunk, StorageError};
 use std::path::{Path, PathBuf};
 use std::sync::Arc;
@@ -127,6 +128,8 @@ pub struct Session {
     bridges: Vec<Bridge>,
     /// One set of counters per port, shared with its reader thread.
     outboxes: Vec<Outbox>,
+    /// The HIL script, when the workspace names one.
+    script: Option<ScriptRuntime>,
     frames: std::collections::VecDeque<TailRow>,
     frames_dropped: u64,
     series: SeriesSet,
@@ -292,6 +295,7 @@ impl Session {
             outboxes: std::iter::repeat_with(Outbox::default)
                 .take(port_count)
                 .collect(),
+            script: None,
             frames: std::collections::VecDeque::new(),
             frames_dropped: 0,
             series: SeriesSet::new(),
@@ -338,6 +342,21 @@ impl Session {
         Ok(())
     }
 
+    /// Load the HIL script that runs on every transmitted frame.
+    pub fn enable_script(&mut self, path: &Path) -> Result<(), SessionError> {
+        let runtime = ScriptRuntime::load(path)
+            .map_err(|error| SessionError::Settings(format!("script: {error}")))?;
+        self.script = Some(runtime);
+        Ok(())
+    }
+
+    /// Script counters, for a report: changed, dropped and failed frames.
+    pub fn script_report(&self) -> Option<(u64, u64, u64)> {
+        self.script
+            .as_ref()
+            .map(|script| (script.changed, script.dropped, script.failures))
+    }
+
     /// Load a firmware image so decoded addresses become function names.
     pub fn enable_symbols(&mut self, path: &Path) -> Result<(), SessionError> {
         let image = bforge_elf::ElfImage::load(path)
@@ -379,7 +398,7 @@ impl Session {
     /// The reader thread performs the write: it owns the transport, so a write from
     /// another thread would race it.
     pub fn send(
-        &self,
+        &mut self,
         port: &str,
         bytes: Vec<u8>,
         wait: Duration,
@@ -415,6 +434,22 @@ impl Session {
                 bytes: 0,
                 dropped: true,
             });
+        };
+
+        // The script sees what the fault profile made of the frame, which is what
+        // would leave the engine if the script said nothing.
+        let bytes = match self.script.as_mut() {
+            Some(script) => match script.run(&bytes) {
+                FrameVerdict::Send(next) => next,
+                FrameVerdict::Drop => {
+                    return Ok(FaultOutcome {
+                        sent: 0,
+                        bytes: 0,
+                        dropped: true,
+                    });
+                }
+            },
+            None => bytes,
         };
         outcome.sent = running
             .pipeline

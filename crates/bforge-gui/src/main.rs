@@ -84,6 +84,11 @@ fn main() {
     if let Err(error) = session.enable_bridges(&config.bridges) {
         fail(error.to_string());
     }
+    if let Some(script) = config.workspace.script_path.as_deref() {
+        if let Err(error) = session.enable_script(Path::new(script)) {
+            fail(error.to_string());
+        }
+    }
     if let Some(elf) = config.workspace.elf_path.as_deref() {
         // A stale image must not stop a session: the badge is a bonus.
         if let Err(error) = session.enable_symbols(Path::new(elf)) {

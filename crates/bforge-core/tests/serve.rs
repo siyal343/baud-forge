@@ -429,3 +429,75 @@ fn a_scrubber_reads_a_frame_window_from_the_vault() {
     client.join().expect("client");
     assert!(stats.requests >= 3, "{stats:?}");
 }
+
+/// The script runs on the transmit path: the device receives what the script made,
+/// not what was posted.
+#[test]
+fn a_script_rewrites_what_the_device_receives() {
+    let (device, received) = chatty_device();
+    let script = std::env::temp_dir().join(format!("bforge-script-{}.lua", std::process::id()));
+    std::fs::write(
+        &script,
+        r#"
+        bforge.on_frame(function(frame)
+          local bytes = bforge.unhex(frame)
+          bytes[#bytes] = bytes[#bytes] ~ 0xFF
+          return bforge.hex(bytes)
+        end)
+        "#,
+    )
+    .unwrap();
+    let workspace = format!(
+        r#"
+[workspace]
+name = "script"
+version = "1.0"
+script_path = "{}"
+
+[[ports]]
+id = "sim"
+transport = "tcp-client"
+address = "{device}"
+baud_rate = 115200
+framing = {{ mode = "delimiter", delimiter = 10 }}
+"#,
+        script.display().to_string().replace('\\', "/")
+    );
+    let config: bforge_core::ProjectConfig = toml::from_str(&workspace).expect("workspace");
+    let ports = session_ports_from_config(&config, &[]).expect("ports");
+    let mut session = Session::start(ports, None, None).expect("session");
+    session.enable_script(&script).expect("the script loads");
+
+    let server = Server::bind("127.0.0.1:0".parse().unwrap()).expect("bind");
+    let address = server.local_addr().unwrap().to_string();
+
+    let cleanup = script.clone();
+    let client = std::thread::spawn(move || {
+        std::thread::sleep(Duration::from_millis(400));
+        let heard = received;
+        let (status, body) = post(&address, "/api/send", r#"{"port":"sim","hex":"01 02 03"}"#);
+        assert!(status.contains("200"), "{status} {body}");
+
+        let deadline = Instant::now() + Duration::from_secs(3);
+        let mut seen = Vec::new();
+        while Instant::now() < deadline {
+            seen = heard.lock().unwrap().clone();
+            if seen.len() >= 3 {
+                break;
+            }
+            std::thread::sleep(Duration::from_millis(20));
+        }
+        assert_eq!(
+            seen,
+            vec![0x01, 0x02, 0x03 ^ 0xFF],
+            "the last byte was flipped"
+        );
+        let _ = std::fs::remove_file(&cleanup);
+    });
+
+    let stats = server
+        .run(session, Some(Duration::from_secs(2)))
+        .expect("serve");
+    client.join().expect("client");
+    assert!(stats.requests >= 1, "{stats:?}");
+}
