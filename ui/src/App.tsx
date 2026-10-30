@@ -223,15 +223,14 @@ export default function App() {
       setAnswer('no port in this workspace')
       return
     }
-    const values: Record<string, number> = {}
+    // A number is a number; anything else is an enum label, which the engine
+    // resolves against the schema (spec 0032).
+    const values: Record<string, number | string> = {}
     for (const [name, text] of Object.entries(typedValues())) {
-      if (text.trim() === '') continue
-      const value = Number(text)
-      if (!Number.isFinite(value)) {
-        setAnswer(`\`${name}\` is not a number`)
-        return
-      }
-      values[name] = value
+      const trimmed = text.trim()
+      if (trimmed === '') continue
+      const value = Number(trimmed)
+      values[name] = Number.isFinite(value) && trimmed !== '' ? value : trimmed
     }
     try {
       const response = await fetch('/api/send', {

@@ -85,7 +85,7 @@ struct SendJob {
     /// Raw bytes, or empty when `values` carries the frame.
     bytes: Vec<u8>,
     /// Named fields to encode with the port's schema.
-    values: Option<std::collections::BTreeMap<String, f64>>,
+    values: Option<std::collections::BTreeMap<String, bforge_dissect::encoder::Value>>,
     reply: std::sync::mpsc::SyncSender<Result<crate::fault::FaultOutcome, String>>,
 }
 
@@ -517,7 +517,7 @@ struct SendRequest {
     hex: String,
     /// Named field values, encoded with the port's C header schema (spec 0032).
     #[serde(default)]
-    values: Option<std::collections::BTreeMap<String, f64>>,
+    values: Option<std::collections::BTreeMap<String, bforge_dissect::encoder::Value>>,
     /// Optional checksum appended after the bytes: `crc8`, `crc16_ccitt_false`
     /// or `crc32c`, little endian as the field would travel.
     crc: Option<String>,

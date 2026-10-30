@@ -8,7 +8,25 @@
 //! is. A name the schema does not have is an error: a typo must not send zeros.
 
 use crate::{DissectorIr, IrOp};
+use serde::{Deserialize, Serialize};
 use std::collections::BTreeMap;
+
+/// What a caller gives a field: a number, or the label of an enum variant.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[serde(untagged)]
+pub enum Value {
+    Number(f64),
+    Label(String),
+}
+
+impl Value {
+    pub fn number(self) -> Option<f64> {
+        match self {
+            Self::Number(value) => Some(value),
+            Self::Label(_) => None,
+        }
+    }
+}
 
 /// What went wrong while encoding.
 #[derive(Debug, Clone, PartialEq)]
@@ -19,6 +37,8 @@ pub enum EncodeError {
     OutOfRange { field: String, value: f64 },
     /// A float in an integer field, or the reverse.
     NotAWholeNumber { field: String, value: f64 },
+    /// A label an enum does not carry.
+    UnknownLabel { field: String, label: String },
     /// The schema has no fields at all.
     Empty,
 }
@@ -35,6 +55,9 @@ impl std::fmt::Display for EncodeError {
             Self::NotAWholeNumber { field, value } => {
                 write!(formatter, "`{field}` needs a whole number, not `{value}`")
             }
+            Self::UnknownLabel { field, label } => {
+                write!(formatter, "`{label}` is not a value of `{field}`")
+            }
             Self::Empty => write!(formatter, "the schema has no fields"),
         }
     }
@@ -43,7 +66,7 @@ impl std::fmt::Display for EncodeError {
 impl std::error::Error for EncodeError {}
 
 /// Encode a frame. Fields the caller omits stay zero.
-pub fn encode(ir: &DissectorIr, values: &BTreeMap<String, f64>) -> Result<Vec<u8>, EncodeError> {
+pub fn encode(ir: &DissectorIr, values: &BTreeMap<String, Value>) -> Result<Vec<u8>, EncodeError> {
     if ir.ops.is_empty() {
         return Err(EncodeError::Empty);
     }
@@ -97,7 +120,7 @@ fn width_of(width: u8, op: &IrOp) -> usize {
 fn write_op(
     op: &IrOp,
     frame: &mut [u8],
-    values: &BTreeMap<String, f64>,
+    values: &BTreeMap<String, Value>,
     prefix: &str,
     used: &mut Vec<String>,
 ) -> Result<(), EncodeError> {
@@ -141,10 +164,10 @@ fn write_leaf(
     name: &str,
     op: &IrOp,
     frame: &mut [u8],
-    values: &BTreeMap<String, f64>,
+    values: &BTreeMap<String, Value>,
     used: &mut Vec<String>,
 ) -> Result<(), EncodeError> {
-    let Some(value) = values.get(name).copied() else {
+    let Some(value) = values.get(name) else {
         return Ok(());
     };
     used.push(name.to_string());
@@ -153,12 +176,13 @@ fn write_leaf(
         IrOp::UInt {
             width, big_endian, ..
         } => {
-            let whole = whole(name, value)?;
+            let number = number(name, value)?;
+            let whole = whole(name, number)?;
             let bits = u32::from(*width) * 8;
             if whole < 0 || (bits < 128 && whole >= 1i128 << bits) {
                 return Err(EncodeError::OutOfRange {
                     field: name.to_string(),
-                    value,
+                    value: number,
                 });
             }
             write_uint(frame, offset, *width, *big_endian, whole as u128);
@@ -166,13 +190,14 @@ fn write_leaf(
         IrOp::Int {
             width, big_endian, ..
         } => {
-            let whole = whole(name, value)?;
+            let number = number(name, value)?;
+            let whole = whole(name, number)?;
             let bits = u32::from(*width) * 8;
             let limit = 1i128 << (bits - 1);
             if whole < -limit || whole >= limit {
                 return Err(EncodeError::OutOfRange {
                     field: name.to_string(),
-                    value,
+                    value: number,
                 });
             }
             let mask = if bits >= 128 {
@@ -185,22 +210,38 @@ fn write_leaf(
         IrOp::Float {
             width, big_endian, ..
         } => {
+            let number = number(name, value)?;
             if *width == 64 {
-                write_bytes(frame, offset, &value.to_bits().to_le_bytes(), *big_endian);
+                write_bytes(frame, offset, &number.to_bits().to_le_bytes(), *big_endian);
             } else {
-                let narrow = value as f32;
+                let narrow = number as f32;
                 write_bytes(frame, offset, &narrow.to_bits().to_le_bytes(), *big_endian);
             }
         }
         IrOp::Enum {
-            width, big_endian, ..
+            width,
+            variants,
+            big_endian,
+            ..
         } => {
-            let whole = whole(name, value)?;
+            // A label is matched case-insensitively, so `MODE_RUN` and `mode_run` both
+            // work; a number is taken as the raw value.
+            let whole = match value {
+                Value::Number(number) => whole(name, *number)?,
+                Value::Label(label) => variants
+                    .iter()
+                    .find(|(_, name)| name.eq_ignore_ascii_case(label))
+                    .map(|(value, _)| i128::from(*value))
+                    .ok_or_else(|| EncodeError::UnknownLabel {
+                        field: name.to_string(),
+                        label: label.clone(),
+                    })?,
+            };
             let bits = u32::from(*width) * 8;
             if whole < 0 || whole >= 1i128 << bits {
                 return Err(EncodeError::OutOfRange {
                     field: name.to_string(),
-                    value,
+                    value: whole as f64,
                 });
             }
             write_uint(frame, offset, *width, *big_endian, whole as u128);
@@ -211,11 +252,12 @@ fn write_leaf(
             big_endian,
             ..
         } => {
-            let whole = whole(name, value)?;
+            let number = number(name, value)?;
+            let whole = whole(name, number)?;
             if whole < 0 || whole >= 1i128 << *width {
                 return Err(EncodeError::OutOfRange {
                     field: name.to_string(),
-                    value,
+                    value: number,
                 });
             }
             let unit = width_of(*width, op);
@@ -227,6 +269,17 @@ fn write_leaf(
         _ => {}
     }
     Ok(())
+}
+
+/// A label where a number is needed is a mistake the caller can see.
+fn number(name: &str, value: &Value) -> Result<f64, EncodeError> {
+    match value {
+        Value::Number(number) => Ok(*number),
+        Value::Label(label) => Err(EncodeError::UnknownLabel {
+            field: name.to_string(),
+            label: label.clone(),
+        }),
+    }
 }
 
 fn whole(name: &str, value: f64) -> Result<i128, EncodeError> {
@@ -321,10 +374,10 @@ mod tests {
         cheader::compile(&header, "ImuPacket", path).expect("compiles")
     }
 
-    fn values(pairs: &[(&str, f64)]) -> BTreeMap<String, f64> {
+    fn values(pairs: &[(&str, f64)]) -> BTreeMap<String, Value> {
         pairs
             .iter()
-            .map(|(name, value)| (name.to_string(), *value))
+            .map(|(name, value)| (name.to_string(), Value::Number(*value)))
             .collect()
     }
 
@@ -405,6 +458,53 @@ mod tests {
         assert_eq!(&frame[8..10], &[0x1C, 0xE8]);
         // flags is bits 0..3 and channel bits 3..8 of byte 3.
         assert_eq!(frame[3], 5 | (9 << 3));
+    }
+
+    fn mode_packet() -> DissectorIr {
+        let path = concat!(env!("CARGO_MANIFEST_DIR"), "/tests/fixtures/mode_packet.h");
+        let text = std::fs::read_to_string(path).expect("fixture");
+        let header = cheader::parse(&text).expect("parses");
+        cheader::compile(&header, "ModePacket", path).expect("compiles")
+    }
+
+    #[test]
+    fn an_enum_takes_its_label_in_any_case() {
+        let ir = mode_packet();
+        for label in ["MODE_RUN", "mode_run", "Mode_Run"] {
+            let mut given = values(&[("sync", 43605.0)]);
+            given.insert("mode".to_string(), Value::Label(label.to_string()));
+            let frame = encode(&ir, &given).expect("encodes");
+            let fields = crate::exec::execute(&ir, &frame).expect("decodes");
+            let mode = fields
+                .iter()
+                .find(|field| field.name == "mode")
+                .expect("mode");
+            assert_eq!(mode.value, "MODE_RUN", "{label} did not resolve");
+        }
+    }
+
+    #[test]
+    fn an_enum_label_the_schema_does_not_have_is_refused() {
+        let ir = mode_packet();
+        let mut given = values(&[]);
+        given.insert("mode".to_string(), Value::Label("MODE_WOBBLE".to_string()));
+        let error = encode(&ir, &given).expect_err("unknown label");
+        assert_eq!(
+            error,
+            EncodeError::UnknownLabel {
+                field: "mode".to_string(),
+                label: "MODE_WOBBLE".to_string()
+            }
+        );
+    }
+
+    #[test]
+    fn a_label_in_an_integer_field_is_refused() {
+        let ir = imu();
+        let mut given = values(&[]);
+        given.insert("version".to_string(), Value::Label("three".to_string()));
+        let error = encode(&ir, &given).expect_err("a label is not a number");
+        assert!(matches!(error, EncodeError::UnknownLabel { .. }));
     }
 
     #[test]

@@ -688,13 +688,18 @@ impl Parser {
 
         for member in split_members(body)? {
             let (type_words, declarators, line) = classify_member(&member)?;
-            let type_name = type_words.join(" ");
-            let resolved = self.resolve_type(&type_name);
-            let Some(type_name) = resolved else {
-                return Err(CHeaderError {
-                    line,
-                    message: format!("unknown type `{type_name}`"),
-                });
+            let written = type_words.join(" ");
+            let type_name = match self.resolve_type(&written) {
+                Some(resolved) => resolved,
+                // An enum used as a field type is four bytes, which is what a C
+                // compiler gives it without `-fshort-enums`.
+                None if self.enum_for(&type_words).is_some() => "uint32_t".to_string(),
+                None => {
+                    return Err(CHeaderError {
+                        line,
+                        message: format!("unknown type `{written}`"),
+                    });
+                }
             };
             let (size, _, _) = type_info(&type_name).unwrap_or((4, false, false));
             let enum_name = self.enum_for(&type_words);

@@ -403,7 +403,7 @@ impl Session {
     pub fn send_values(
         &mut self,
         port: &str,
-        values: &std::collections::BTreeMap<String, f64>,
+        values: &std::collections::BTreeMap<String, bforge_dissect::encoder::Value>,
         wait: Duration,
     ) -> Result<FaultOutcome, SessionError> {
         let index = self
