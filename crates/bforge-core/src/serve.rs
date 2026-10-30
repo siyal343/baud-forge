@@ -82,7 +82,10 @@ struct Client {
 #[derive(Debug)]
 struct SendJob {
     port: String,
+    /// Raw bytes, or empty when `values` carries the frame.
     bytes: Vec<u8>,
+    /// Named fields to encode with the port's schema.
+    values: Option<std::collections::BTreeMap<String, f64>>,
     reply: std::sync::mpsc::SyncSender<Result<crate::fault::FaultOutcome, String>>,
 }
 
@@ -219,9 +222,11 @@ impl Server {
         let mut published = Instant::now();
         loop {
             while let Ok(job) = send_rx.try_recv() {
-                let result = session
-                    .send(&job.port, job.bytes, Duration::from_secs(2))
-                    .map_err(|error| error.to_string());
+                let result = match &job.values {
+                    Some(values) => session.send_values(&job.port, values, Duration::from_secs(2)),
+                    None => session.send(&job.port, job.bytes, Duration::from_secs(2)),
+                }
+                .map_err(|error| error.to_string());
                 let _ = job.reply.send(result);
             }
             while let Ok(job) = fault_rx.try_recv() {
@@ -508,7 +513,11 @@ fn read_body(reader: &mut BufReader<TcpStream>, length: usize) -> Vec<u8> {
 struct SendRequest {
     port: String,
     /// Bytes as hex, spaced or not, with or without `0x` prefixes.
+    #[serde(default)]
     hex: String,
+    /// Named field values, encoded with the port's C header schema (spec 0032).
+    #[serde(default)]
+    values: Option<std::collections::BTreeMap<String, f64>>,
     /// Optional checksum appended after the bytes: `crc8`, `crc16_ccitt_false`
     /// or `crc32c`, little endian as the field would travel.
     crc: Option<String>,
@@ -550,19 +559,26 @@ fn send(stream: &mut TcpStream, shared: &Arc<Shared>, body: &[u8]) {
             );
         }
     };
-    let mut bytes = match parse_hex(&request.hex) {
-        Ok(bytes) => bytes,
-        Err(error) => {
-            let body = format!("{{\"error\":\"{error}\"}}");
-            return respond(
-                stream,
-                "400 Bad Request",
-                "application/json",
-                body.as_bytes(),
-            );
-        }
+    // A typed send is encoded by the session, which owns the schema.
+    let typed = request.values.clone();
+    let mut bytes = match &typed {
+        Some(_) => Vec::new(),
+        None => match parse_hex(&request.hex) {
+            Ok(bytes) => bytes,
+            Err(error) => {
+                let body = format!("{{\"error\":\"{error}\"}}");
+                return respond(
+                    stream,
+                    "400 Bad Request",
+                    "application/json",
+                    body.as_bytes(),
+                );
+            }
+        },
     };
-    if let Some(name) = &request.crc {
+    if typed.is_none()
+        && let Some(name) = &request.crc
+    {
         let Some(kind) = bforge_framer::Checksum::from_name(name) else {
             let body = format!("{{\"error\":\"`{name}` is not a checksum\"}}");
             return respond(
@@ -596,6 +612,7 @@ fn send(stream: &mut TcpStream, shared: &Arc<Shared>, body: &[u8]) {
         .send(SendJob {
             port: port.clone(),
             bytes,
+            values: typed,
             reply,
         })
         .is_err()

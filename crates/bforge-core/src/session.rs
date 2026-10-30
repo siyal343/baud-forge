@@ -130,6 +130,8 @@ pub struct Session {
     outboxes: Vec<Outbox>,
     /// The HIL script, when the workspace names one.
     script: Option<ScriptRuntime>,
+    /// One IR per port that can encode a typed frame, built with the decoders.
+    encoders: Vec<Option<bforge_dissect::DissectorIr>>,
     frames: std::collections::VecDeque<TailRow>,
     frames_dropped: u64,
     series: SeriesSet,
@@ -296,6 +298,7 @@ impl Session {
                 .take(port_count)
                 .collect(),
             script: None,
+            encoders: Vec::new(),
             frames: std::collections::VecDeque::new(),
             frames_dropped: 0,
             series: SeriesSet::new(),
@@ -380,7 +383,42 @@ impl Session {
             }
         }
         self.streams = streams;
+        self.encoders = self
+            .ports
+            .iter()
+            .map(|port| {
+                configs
+                    .iter()
+                    .find(|config| config.id == port.info.id)
+                    .and_then(crate::tail::encoder_ir)
+            })
+            .collect();
         Ok(())
+    }
+
+    /// Encode a frame from named values and send it.
+    ///
+    /// This is the typed half of the send path: the same schema that decodes a frame
+    /// writes one, so a form and a decoder cannot drift apart.
+    pub fn send_values(
+        &mut self,
+        port: &str,
+        values: &std::collections::BTreeMap<String, f64>,
+        wait: Duration,
+    ) -> Result<FaultOutcome, SessionError> {
+        let index = self
+            .ports
+            .iter()
+            .position(|running| running.info.id == port)
+            .ok_or_else(|| SessionError::UnknownPort(port.to_string()))?;
+        let Some(ir) = self.encoders.get(index).and_then(|ir| ir.as_ref()) else {
+            return Err(SessionError::Settings(format!(
+                "port `{port}` has no C header schema to encode with"
+            )));
+        };
+        let bytes = bforge_dissect::encoder::encode(ir, values)
+            .map_err(|error| SessionError::Settings(error.to_string()))?;
+        self.send(port, bytes, wait)
     }
 
     /// Take the frames completed since the last call, oldest first.

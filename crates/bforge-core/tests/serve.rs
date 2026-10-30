@@ -501,3 +501,80 @@ framing = {{ mode = "delimiter", delimiter = 10 }}
     client.join().expect("client");
     assert!(stats.requests >= 1, "{stats:?}");
 }
+
+/// A typed send is encoded with the same schema the decoder uses.
+#[test]
+fn values_are_encoded_with_the_port_schema() {
+    let (device, received) = chatty_device();
+    let workspace = format!(
+        r#"
+[workspace]
+name = "typed"
+version = "1.0"
+
+[[ports]]
+id = "sim"
+transport = "tcp-client"
+address = "{device}"
+baud_rate = 115200
+framing = {{ mode = "delimiter", delimiter = 10 }}
+dissector = {{ type = "c_header", file = "{header}", root_struct = "ImuPacket" }}
+"#,
+        header = std::path::Path::new(env!("CARGO_MANIFEST_DIR"))
+            .join("../bforge-dissect/tests/fixtures/imu_packet.h")
+            .display()
+            .to_string()
+            .replace('\\', "/")
+    );
+    let config: bforge_core::ProjectConfig = toml::from_str(&workspace).expect("workspace");
+    let ports = session_ports_from_config(&config, &[]).expect("ports");
+    let mut session = Session::start(ports, None, None).expect("session");
+    session.enable_decode(&config.ports).expect("decode");
+
+    let server = Server::bind("127.0.0.1:0".parse().unwrap()).expect("bind");
+    let address = server.local_addr().unwrap().to_string();
+
+    let client = std::thread::spawn(move || {
+        std::thread::sleep(Duration::from_millis(400));
+        let heard = received;
+
+        // 19 bytes from named values: no hex, no manual byte offsets.
+        let (status, body) = post(
+            &address,
+            "/api/send",
+            r#"{"port":"sim","values":{"sync":43605,"version":3,"flags":5,"channel":9,"v_batt_mv":7400,"gyro_z":0.25,"mode":1}}"#,
+        );
+        assert!(status.contains("200"), "{status} {body}");
+        assert!(body.contains("\"sent\":19"), "{body}");
+
+        // A name the schema does not have is refused, not sent as zeros.
+        let (status, body) = post(
+            &address,
+            "/api/send",
+            r#"{"port":"sim","values":{"v_bat_mv":7400}}"#,
+        );
+        assert!(status.contains("409"), "{status} {body}");
+        assert!(body.contains("v_bat_mv"), "{body}");
+
+        let deadline = Instant::now() + Duration::from_secs(3);
+        let mut seen = Vec::new();
+        while Instant::now() < deadline {
+            seen = heard.lock().unwrap().clone();
+            if seen.len() >= 19 {
+                break;
+            }
+            std::thread::sleep(Duration::from_millis(20));
+        }
+        assert!(seen.len() >= 19, "{seen:02X?}");
+        // sync 0xAA55 little endian, version 3, then flags|channel<<3, then the battery.
+        assert_eq!(&seen[0..3], &[0x55, 0xAA, 0x03], "{seen:02X?}");
+        assert_eq!(seen[3], 5 | (9 << 3), "bitfields share byte 3");
+        assert_eq!(&seen[8..10], &[0x1C, 0xE8], "big endian battery");
+    });
+
+    let stats = server
+        .run(session, Some(Duration::from_secs(2)))
+        .expect("serve");
+    client.join().expect("client");
+    assert!(stats.requests >= 2, "{stats:?}");
+}

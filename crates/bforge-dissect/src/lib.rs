@@ -7,6 +7,7 @@
 //! Protocol packs (CCSDS, CSP, MAVLink, Modbus) and Protobuf are F3.3 and F3.4.
 
 pub mod cheader;
+pub mod encoder;
 pub mod exec;
 pub mod packs;
 

@@ -392,6 +392,33 @@ pub fn decode_window(
     Ok(rows)
 }
 
+/// Compile a port's C header into the IR, for decoding and for encoding.
+pub fn c_header_ir(specification: &crate::DissectorConfig) -> Result<DissectorIr, TailError> {
+    let file = specification
+        .file
+        .as_deref()
+        .ok_or_else(|| TailError::Settings("c_header needs a file".into()))?;
+    let root = specification
+        .root_struct
+        .as_deref()
+        .ok_or_else(|| TailError::Settings("c_header needs a root_struct".into()))?;
+    let text = std::fs::read_to_string(file)
+        .map_err(|error| TailError::Settings(format!("cannot read {file}: {error}")))?;
+    let header =
+        cheader::parse(&text).map_err(|error| TailError::Settings(format!("{file}: {error}")))?;
+    cheader::compile(&header, root, file)
+        .map_err(|error| TailError::Settings(format!("{file}: {error}")))
+}
+
+/// The IR a port can encode with, when its dissector is a C header.
+pub fn encoder_ir(port: &PortConfig) -> Option<DissectorIr> {
+    let specification = port.dissector.as_ref()?;
+    if specification.kind != "c_header" {
+        return None;
+    }
+    c_header_ir(specification).ok()
+}
+
 /// Build the framing machine and dissector a configured port asks for.
 pub fn tail_config(port: &PortConfig) -> Result<TailConfig, TailError> {
     let framing = &port.framing;
@@ -465,23 +492,13 @@ pub fn tail_config(port: &PortConfig) -> Result<TailConfig, TailError> {
             Some(Decoder::Pack(pack))
         }
         Some(specification) if specification.kind == "c_header" => {
-            let file = specification
-                .file
-                .as_deref()
-                .ok_or_else(|| TailError::Settings("c_header needs a file".into()))?;
-            let root = specification
-                .root_struct
-                .as_deref()
-                .ok_or_else(|| TailError::Settings("c_header needs a root_struct".into()))?;
-            let text = std::fs::read_to_string(file)
-                .map_err(|error| TailError::Settings(format!("cannot read {file}: {error}")))?;
-            let header = cheader::parse(&text)
-                .map_err(|error| TailError::Settings(format!("{file}: {error}")))?;
-            let ir = cheader::compile(&header, root, file)
-                .map_err(|error| TailError::Settings(format!("{file}: {error}")))?;
+            let ir = c_header_ir(specification)?;
             Some(Decoder::Ir {
+                tag: format!(
+                    "C_STRUCT:{}",
+                    specification.root_struct.as_deref().unwrap_or("")
+                ),
                 ir: Box::new(ir),
-                tag: format!("C_STRUCT:{root}"),
             })
         }
         Some(specification) => {

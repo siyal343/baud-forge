@@ -40,6 +40,7 @@ state through one contract (F1.7).
 | S8b assert fields | D-15 | done | a 6 s recording from the board decodes to 122 frames and passes 5 field, protocol and count checks |
 | S9 sockets | F1.2.7 (TCP, UDP, config) | done | simulator over loopback: tail decodes, record stores 60 frames, assert passes 3 of 3, no hardware |
 | S10 native packs | F3.4 (CCSDS/PUS, CSP, Modbus; MAVLink deferred) | done | 12 pack tests on hand-built fixtures; a CCSDS packet in a vault decodes and passes assert rules with no schema file |
+| S25 typed encoding | FR-CMD-01 (a frame from named values) | done | 7 encoder tests, and a typed post that put 19 bytes on a device with bitfields and big endian in the right places |
 | S24 Lua scripts | FR-SCR-01 (a sandboxed hook per transmitted frame) | done | 6 runtime tests and one end-to-end: the device received `01 02 FC` for a posted `01 02 03`; mlua builds once a C compiler exists |
 | S23 bridge queue | D-72 (a wedged destination cannot stop the pump) | done | five posts returned in <150 ms against a port that sleeps 300 ms per write; 233 tests in 19 s |
 | S22 paired bus | FR-MITM-01 (one timeline for a bridged pair) | done | two simulators on one bus, frames merged by chunk time, one plot over the pair; found a memo-ordering fault before it shipped |
@@ -384,8 +385,19 @@ S24 notes:
   not. That asymmetry is deliberate.
 - Bytes, not fields (D-83), transmit only (D-84), no delay (D-66).
 
-Next action: live transmit rows (D-79), so a bridge's writes appear in the stream as they
-happen instead of only in a scrubbed window. `serve` is the only interface it needs, so the
+S25 notes:
+
+- The encoder walks the same IR the decoder reads, so a schema change cannot make the
+  two disagree.
+- Omitted fields stay zero; an unknown name is refused. A frame of zeros that looks
+  valid is the failure mode worth preventing.
+- Widths in the IR are bytes for integers and floats but bits for a bitfield. That cost
+  an hour: the first encoder wrote one byte of every integer.
+- The workbench still posts hex (D-85); the route, the script encoder and the CLI can
+  send a struct.
+
+Next action: the typed form in the workbench (D-85), which is the piece that makes the
+encoder visible to a person. `serve` is the only interface it needs, so the
 work can be done in Edge with hot reload, and the Tauri shell wraps the same files
 afterwards. The engine has published the contract since S4; this is the first phase
 where a change to a panel can be seen without a desktop build.
