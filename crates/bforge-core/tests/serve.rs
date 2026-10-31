@@ -578,3 +578,53 @@ dissector = {{ type = "c_header", file = "{header}", root_struct = "ImuPacket" }
     client.join().expect("client");
     assert!(stats.requests >= 2, "{stats:?}");
 }
+
+/// A client that cannot keep up is told that it is seeing a sample (D-81).
+#[test]
+fn a_slow_client_is_told_its_frames_were_sampled() {
+    let device = device();
+    let config = workspace(&device);
+    let ports = session_ports_from_config(&config, &[]).expect("ports");
+    let mut session = Session::start(ports, None, None).expect("session");
+    session.enable_decode(&config.ports).expect("decode");
+
+    let server = Server::bind("127.0.0.1:0".parse().unwrap()).expect("bind");
+    let address = server.local_addr().unwrap().to_string();
+
+    let client = std::thread::spawn(move || {
+        // Connect from a device that produces faster than this reader drains: the
+        // test client reads nothing for a moment, so batches are replaced.
+        let mut stream = TcpStream::connect(&address).unwrap();
+        stream
+            .set_read_timeout(Some(Duration::from_secs(5)))
+            .unwrap();
+        stream
+            .write_all(b"GET /api/events HTTP/1.1\r\nHost: test\r\n\r\n")
+            .unwrap();
+        std::thread::sleep(Duration::from_millis(900));
+
+        let mut seen = String::new();
+        let mut buffer = [0u8; 8192];
+        while !seen.contains("event: sampled") {
+            match stream.read(&mut buffer) {
+                Ok(0) => break,
+                Ok(read) => seen.push_str(&String::from_utf8_lossy(&buffer[..read])),
+                Err(_) => break,
+            }
+            if seen.len() > 512 * 1024 {
+                break;
+            }
+        }
+        assert!(
+            seen.contains("event: sampled"),
+            "the client is told it missed frames"
+        );
+        assert!(seen.contains("\"missed\":"), "{seen}");
+    });
+
+    let stats = server
+        .run(session, Some(Duration::from_secs(2)))
+        .expect("serve");
+    client.join().expect("client");
+    assert!(stats.clients_max >= 1, "{stats:?}");
+}

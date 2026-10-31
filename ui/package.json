@@ -1,7 +1,7 @@
 {
   "name": "ui",
   "private": true,
-  "version": "0.2.0",
+  "version": "0.2.1",
   "type": "module",
   "scripts": {
     "dev": "vite",
@@ -12,6 +12,7 @@
     "solid-js": "^1.9.17"
   },
   "devDependencies": {
+    "@tauri-apps/cli": "^2.12.4",
     "@types/node": "^24.19.2",
     "typescript": "~7.0.2",
     "vite": "^8.3.5",

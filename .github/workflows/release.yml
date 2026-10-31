@@ -91,3 +91,30 @@ jobs:
           gh release create "$tag" dist/* \
             --title "BaudForge $tag" \
             --generate-notes
+
+  desktop:
+    name: desktop installer (windows)
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+          cache-dependency-path: ui/package-lock.json
+      - name: Build the frontend
+        working-directory: ui
+        run: |
+          npm ci
+          npm run build
+      - uses: dtolnay/rust-toolchain@stable
+      - name: Build the installer
+        working-directory: crates/bforge-gui
+        run: ../../ui/node_modules/.bin/tauri build --target x86_64-pc-windows-msvc --bundles nsis
+      - name: Attach the installer to the release
+        shell: pwsh
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          $installer = Get-ChildItem target/x86_64-pc-windows-msvc/release/bundle/nsis/*.exe | Select-Object -First 1
+          gh release upload "${{ github.ref_name }}" $installer.FullName --clobber

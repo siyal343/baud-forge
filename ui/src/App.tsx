@@ -608,6 +608,11 @@ export default function App() {
         <span class="grow" />
         <span>frames kept {feed.frames().length}</span>
         <span>received {feed.received()}</span>
+        <Show when={feed.missed() > 0}>
+          <span class="sampled" title="the engine replaced batches this client had not read">
+            sampled: {feed.missed()} batch(es) not shown
+          </span>
+        </Show>
       </footer>
     </div>
   )

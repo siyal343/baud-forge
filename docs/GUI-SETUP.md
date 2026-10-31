@@ -55,6 +55,23 @@ by full path:
 & "$env:USERPROFILE\.cargo\bin\cargo.exe" build -p bforge-cli
 ```
 
+## The installer
+
+```sh
+cd ui && npm ci && npm run build && cd ..
+cd crates/bforge-gui
+../../ui/node_modules/.bin/tauri build --bundles nsis
+```
+
+The result is `target/x86_64-pc-windows-msvc/release/bundle/nsis/BaudForge_<version>_x64-setup.exe`:
+an NSIS installer that puts the window and the workbench in `%LOCALAPPDATA%` and adds a
+Start-menu entry. CI builds the same file on every push and attaches it to every release
+tag.
+
+The crate lives in the Tauri layout on purpose (`crates/bforge-gui/src-tauri`): the CLI
+looks for `src-tauri` next to the directory it is run from, and a crate anywhere else
+cannot be bundled without a second build configuration.
+
 ## What the install did, for the next machine
 
 1. **Build Tools for Visual Studio 2022** from

@@ -1,6 +1,6 @@
 [package]
 name = "baud-forge"
-version = "0.2.0"
+version = "0.2.1"
 edition = "2021"
 description = "Open-source serial monitor"
 license = "MIT OR Apache-2.0"
@@ -25,10 +25,10 @@ debug = 1
 debug = 1
 
 [workspace]
-members = ["crates/bforge-hal", "crates/bforge-storage", "crates/bforge-framer", "crates/bforge-dissect", "crates/bforge-elf", "crates/bforge-script", "crates/bforge-core", "crates/bforge-cli", "crates/bforge-gui"]
+members = ["crates/bforge-hal", "crates/bforge-storage", "crates/bforge-framer", "crates/bforge-dissect", "crates/bforge-elf", "crates/bforge-script", "crates/bforge-core", "crates/bforge-cli", "crates/bforge-gui/src-tauri"]
 
 [workspace.package]
-version = "0.2.0"
+version = "0.2.1"
 edition = "2024"
 license = "MIT OR Apache-2.0"
 repository = "https://github.com/siyal343/baud-forge"

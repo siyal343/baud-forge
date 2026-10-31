@@ -70,14 +70,16 @@ jobs:
           npm ci
           npm run build
       - uses: dtolnay/rust-toolchain@stable
-      - name: Build the desktop shell
-        run: cargo build -p bforge-gui --release --locked
-      - name: Stage the app
+      - name: Build the desktop shell and its installer
+        working-directory: crates/bforge-gui
+        run: ../../ui/node_modules/.bin/tauri build --target x86_64-pc-windows-msvc --bundles nsis
+      - name: Stage the app and the installer
         shell: pwsh
         run: |
           New-Item -ItemType Directory -Force -Path dist-app | Out-Null
-          Copy-Item target/release/bforge-gui.exe dist-app/
+          Copy-Item target/x86_64-pc-windows-msvc/release/bforge-gui.exe dist-app/
           Copy-Item ui/dist -Destination dist-app/ui -Recurse
+          Copy-Item target/x86_64-pc-windows-msvc/release/bundle/nsis/*.exe dist-app/
       - name: Upload the desktop app
         uses: actions/upload-artifact@v4
         with:

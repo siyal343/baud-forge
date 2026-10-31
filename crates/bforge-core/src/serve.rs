@@ -120,6 +120,9 @@ struct Shared {
     vault: Mutex<Option<VaultSource>>,
     /// Set by `with_ui`: the built frontend to serve instead of the placeholder.
     ui: Mutex<Option<std::path::PathBuf>>,
+    /// Frame batches replaced before a client read them, so the workbench can say
+    /// that what it shows is a sample (D-81).
+    sampled: AtomicU64,
 }
 
 impl Shared {
@@ -146,9 +149,18 @@ impl Shared {
         let count = clients.len() as u64;
         self.clients_max.fetch_max(count, Ordering::Relaxed);
         clients.retain(|client| {
-            *client.frames.lock().unwrap() = Some(frame.to_string());
+            let mut slot = client.frames.lock().unwrap();
+            if slot.is_some() {
+                // This client had not read the last batch, so that batch is lost.
+                self.sampled.fetch_add(1, Ordering::Relaxed);
+            }
+            *slot = Some(frame.to_string());
             true
         });
+    }
+
+    fn sampled(&self) -> u64 {
+        self.sampled.load(Ordering::Relaxed)
     }
 }
 
@@ -218,6 +230,7 @@ impl Server {
         *shared.fault.lock().unwrap() = Some(fault_tx);
 
         let events = session.subscribe();
+        let mut reported_sampled = 0u64;
         let started = Instant::now();
         let mut published = Instant::now();
         loop {
@@ -244,6 +257,12 @@ impl Server {
             let frames = session.take_frames();
             if !frames.is_empty() {
                 shared.broadcast_frames(&sse("frames", &frames_json(&frames)));
+                // Say so when a client could not keep up: a sample is not a stream.
+                let sampled = shared.sampled();
+                if sampled != reported_sampled {
+                    reported_sampled = sampled;
+                    shared.broadcast(&sse("sampled", &format!("{{\"missed\":{sampled}}}")));
+                }
             }
             while let Ok(event) = events.try_recv() {
                 shared.broadcast(&sse("ui", &event_json(&event)));

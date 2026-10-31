@@ -220,6 +220,7 @@ tbody tr.faulty td:last-child { color: var(--fault); }
   font-size: 11px;
 }
 
+.sampled { color: var(--yield); }
 .empty { color: var(--dim); padding: 10px 12px; margin: 0; }
 
 .band-head { display: flex; gap: 40px; }

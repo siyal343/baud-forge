@@ -19,7 +19,7 @@ fn ui_directory() -> Option<PathBuf> {
     if beside.join("index.html").exists() {
         return Some(beside);
     }
-    let repository = PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../../ui/dist");
+    let repository = PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../../../ui/dist");
     repository.join("index.html").exists().then_some(repository)
 }
 
@@ -30,7 +30,7 @@ fn workspace_path() -> Option<PathBuf> {
         .map(PathBuf::from)
         .find(|argument| !argument.to_string_lossy().starts_with("--"))
         .or_else(|| {
-            let example = PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../../.bforge.toml");
+            let example = PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../../../.bforge.toml");
             example.exists().then_some(example)
         })
 }

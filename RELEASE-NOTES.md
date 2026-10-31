@@ -1,3 +1,31 @@
+# BaudForge 0.2.1
+
+Polish release. Everything in 0.2.0, plus an installer and a fix to one dishonest
+silence. Released 31 October 2026.
+
+## New since 0.2.0
+
+- **A Windows installer.** `BaudForge_0.2.1_x64-setup.exe`, built by Tauri's NSIS
+  bundler: it installs the window and the workbench into `%LOCALAPPDATA%` and adds a
+  Start-menu entry. CI builds it on every push (`desktop (windows)`) and attaches it to
+  every release tag.
+- **The workbench says when it is showing a sample.** The engine drops a frame batch
+  that a client has not read, because a slow client must not stall the pump. That was
+  silent: a 200 Hz capture showed about two frames per second in the browser while the
+  vault held all 164 073. The footer now says `sampled: N batch(es) not shown` in the
+  warning colour (D-81).
+- **The desktop crate moved into the Tauri layout** (`crates/bforge-gui/src-tauri`), so
+  `tauri build` and `tauri bundle` work from a clean checkout. That was the only thing
+  standing between the project and an installer.
+
+## Measured
+
+| Claim | Figure |
+| --- | --- |
+| Installer | `BaudForge_0.2.1_x64-setup.exe`, 2.40 MiB, `FileVersion 0.2.1` |
+| Release build | 8 min from clean, 1 min 50 s incremental |
+| Test suite | 256 tests |
+
 # BaudForge 0.2.0
 
 Second release. Everything in 0.1.0, plus a programmable fault path and a typed command

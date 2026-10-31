@@ -19,6 +19,8 @@ export function createFeed() {
   const [link, setLink] = createSignal<Link>('connecting')
   const [received, setReceived] = createSignal(0)
   const [series, setSeries] = createSignal<Record<string, number[]>>({})
+  // Batches the engine had to replace because this client was too far behind.
+  const [missed, setMissed] = createSignal(0)
 
   const source = new EventSource('/api/events')
 
@@ -64,6 +66,11 @@ export function createFeed() {
     })
   })
 
+  source.addEventListener('sampled', (message) => {
+    const update = JSON.parse((message as MessageEvent<string>).data) as { missed: number }
+    setMissed(update.missed)
+  })
+
   source.addEventListener('ui', (message) => {
     const event = JSON.parse((message as MessageEvent<string>).data) as UiEvent
     const { event: name, at_ms, ...rest } = event
@@ -75,5 +82,5 @@ export function createFeed() {
 
   onCleanup(() => source.close())
 
-  return { snapshot, frames, events, link, received, series }
+  return { snapshot, frames, events, link, received, series, missed }
 }
