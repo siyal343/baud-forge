@@ -1,137 +1,93 @@
 # BaudForge status
 
-Written 29 October 2026, measured from the repository at commit `8b5ee82`; updated 30 October 2026 during the release pass.
+Written 31 October 2026 at `v0.5.2`, measured from the repository.
+
+## Where it is
+
+A serial monitor, protocol dissector and fault-injection rig that a stranger can install
+today. Engine, command line, workbench in a browser, and a Windows desktop window with an
+installer. Ten releases, all published. Signing is deferred by the user (D-95), so the
+installer asks for "more info → run anyway" on first launch.
 
 ## Numbers
 
 | Figure | Value | How |
 | --- | --- | --- |
-| Commits | 57 | `git rev-list --count HEAD` |
-| Rust | 18 323 lines across 9 crates | `wc -l` over `crates/**/*.rs` |
-| Frontend | 1 010 lines, SolidJS + TypeScript | `wc -l` over `ui/src` |
-| Tests | 241 passing, ~25 s, workspace | `cargo test --workspace --exclude bforge-gui` |
-| Feature specs | 30 written before the code | `specs/0001` … `specs/0030` |
-| CI | 9 jobs green, 6 targets | GitHub Actions |
-| Open gaps | 71 entries | `DEFERRED.md` |
+| Releases | 10 tags, `v0.1.0` … `v0.5.2` | `git tag` |
+| Commits | 67 | `git rev-list --count HEAD` |
+| Rust | 20 665 lines, 9 crates | `wc -l` over `crates/**/*.rs` |
+| Frontend | 1 151 lines, SolidJS + TypeScript | `wc -l` over `ui/src` |
+| Tests | 268 passing, ~25 s | `cargo test --workspace --exclude bforge-gui` |
+| Feature specs | 35, written before the code | `specs/` |
+| CI | 9 jobs green: 5 test targets, lint, UI, desktop+installer, macOS cross-build | GitHub Actions |
+| Recorded gaps | 77 entries | `DEFERRED.md` |
 
-## What works end to end
+## What works, and the evidence
 
-Proof is a run, not a claim. Each line was measured in this project.
+Each line was measured on this machine; the figures are in `RELEASE-NOTES.md`.
 
 | Capability | Evidence |
 | --- | --- |
-| Ring-buffer pipeline, no gaps | 4 ports × 1.2 MB/s for 60 s, 288 MB, 0 gaps, 11.9 MiB peak |
-| `.bflog` vault, constant memory | 512 MiB read at 21.5 MiB peak (4.2 %) |
-| Serial, TCP client/server, UDP transports | 190 + tests, a device simulator for CI |
-| Six framing modes | 2000 COBS frames at 156 MB/s, 0 invalid |
-| C header dissector | 180 422 frames/s |
-| Native packs: CCSDS+PUS, CSP, Modbus RTU | 12 fixture tests, one end-to-end vault test |
-| DWARF symbols | address → `std/src/env.rs:228`, 1.2 µs per lookup |
-| Hotplug | unplug detected in 16.8–47.1 ms, reopened in 1 ms, same session |
-| Yield to a flash tool | `arduino-cli upload` wrote 298 880 bytes while the session reported `yielded` |
-| Record, replay, tail, assert, vault repair | CLI commands, on hardware and on sockets |
-| UI contract over HTTP + SSE | 40 snapshot and 32 ui frames in an 8 s capture |
-| Workbench | live stream, decoded fields, field→byte highlight, plot, forge, fault row, scrubber, bus view |
-| Send path | device received 10 bytes in order, with a CRC-32C appended |
-| Fault injection | bit flip, drop, truncate, corrupt CRC; reproducible by seed |
-| Bridge and tap | bytes forwarded both ways; vault records `Tx`; a posted write never blocks the pump |
-| Desktop shell | `MainWindowTitle "BaudForge"`, engine on a random loopback port, records a vault |
+| Pipeline with no gaps | 4 ports × 1.2 MB/s for 60 s: 288 MB, 0 gaps, 11.9 MiB peak |
+| Vault with constant memory | 512 MiB read at 21.5 MiB peak (4.2 % of the file) |
+| Serial, TCP client/server, UDP | 190+ tests, socket simulator for CI |
+| Six framing modes, three checksums | 2000 COBS frames at 156 MB/s, 0 invalid |
+| C header dissection | 180 422 frames/s; enums by label, typedefs, nested structs |
+| Native packs | CCSDS with PUS, CSP v1, Modbus RTU |
+| DWARF symbols, demangled names | address → `std::env::var::<&str>` at `env.rs:228`, 1.2 µs |
+| Hotplug | unplug seen in 16.8–47.1 ms, reopened in 1 ms, same session |
+| Yield to a flash tool | `arduino-cli upload` wrote 298 880 bytes during a `yielded` window |
+| Record, replay, tail, assert, repair | CLI, on hardware and on sockets |
+| Type send from fields | `{"v_batt_mv":7400}` → 19 bytes, device read them back |
+| Fault profiles | flips, drops, truncation, CRC, delay, jitter, all seeded |
+| Lua scripts | sandboxed, fields by name, CRC recompute, transmit and receive |
+| Bridge and tap | bytes both ways, vault records `Tx`, sends never block the pump |
+| Workbench | stream, fields with byte highlight, plot, scrubber, forge, faults, bus view |
+| Desktop | NSIS installer, records a vault, 9/9 CI |
 
-## What is missing
+## Against the SRS
 
-### Blocks a person from using it daily
+Estimates from the requirement lists, not measurements.
 
-| Gap | Why it matters | Cost estimate |
-| --- | --- | --- |
-| Installer, signing (D-74) | today it is a folder with an exe | deferred by you to release |
-| Typed command entry (D-64) | the forge takes hex, not fields | 2–3 sessions |
-| Live transmit rows (D-79) | a bridge's writes only show in a scrubbed window | 1 session |
-| Vault picker in the window (D-78) | the window records to a temp path | half session |
-| Hardware soak on the ESP32-C3 (D-14) | hours, not minutes, under load | 1 session of babysitting |
-
-### Polish that the plan promised
-
-| Gap | Note |
+| Requirement | State |
 | --- | --- |
-| WebGL plots at 60 FPS (D-63) | today SVG, one series |
-| Virtualized hex viewport | today 120 rows |
-| Dissector tree in the inspector (D-69) | today a flat field list |
-| Demangling (D-44) | Rust names are unreadable |
-| Time-axis scrubbing (D-68) | record ordinals only |
+| FR-FLT-01 fault primitives | **complete** — bit errors, drops, truncation, CRC, latency, jitter, scripted |
+| FR-MITM-01 tap and bridge | **complete** — passive tap, forwarding bridge, direction on rows, paired bus view |
+| FR-SCR-01 Lua HIL API | **complete** for the SRS example — `on_frame`, fields by name, CRC, log |
+| Storage, framing, transports | complete for the first release scope |
+| UI bands | six bands present; plots are SVG not WebGL, inspector flat, no time axis |
+| Protobuf, Kaitai, defmt, MAVLink | not started |
+| Installer and signing | installer ships; signing deferred (D-95) |
 
-### Scope in the SRS that was never started
+## What a person cannot do yet
 
-| Item | Size |
-| --- | --- |
-| Lua fault scripts and the sandbox (FR-SCR-01, D-67) | large: a runtime, a sandbox, an API |
-| Protobuf and Kaitai front ends | medium each |
-| MAVLink dialect table (D-56) | medium, needs a dialect |
-| Jitter and latency injection (D-66) | medium |
-| Session diff, hardware triggers, MITM at 50 µs | large |
+Recorded in `DEFERRED.md` with a reason each. The ones a user would notice:
 
-## Against the SRS milestones
+- Windows SmartScreen warns on first launch (D-95).
+- macOS binaries are neither signed nor notarised (D-96).
+- Plots redraw in SVG: one series, fine to a few thousand points, not the 60 FPS lane view
+  the UI guide describes (D-63).
+- The inspector lists fields flat, without the dissector's tree (D-69).
+- The scrubber seeks by record number, not by wall-clock time (D-68).
+- A bridge's writes are visible in a scrubbed window, not live (D-79).
+- Scripts use one schema for every port (D-94).
+- Jitter is uniform, not shaped (D-93).
+- No protobuf, Kaitai, defmt or MAVLink decoder.
+- No C++ demangling.
 
-These are estimates from the feature lists, not measurements.
+## Why the remaining items are not started
 
-| Milestone | State | Estimate |
-| --- | --- | --- |
-| 1. Iron core (weeks 1–4) | record, replay, hotplug, yield, hot path measured | ~95 % |
-| 2. GPU terminal (weeks 5–8) | window, stream, plot, scrubber exist; WebGL and virtualization do not | ~60 % |
-| 3. Dissectors (weeks 9–12) | C header, packs, DWARF done; protobuf, kaitai, defmt missing | ~55 % |
-| 4. MITM and faults (weeks 13–16) | bridge and fault profiles done; no Lua, no jitter, no triggers | ~35 % |
+Every one is depth on a working feature, not a missing capability. The three requirements
+that define the product — inject faults, sit between two devices, script the link — are
+done and released. What is left is polish that costs sessions (WebGL, tree inspector, time
+axis) or money (signing), and none of it blocks the tool from being used today.
 
-Weighted by the SRS work breakdown: **about 60 % of the planned scope**.
+## Next, when someone wants to continue
 
-## Why it feels like it drags
-
-Three reasons, and two are fixable.
-
-1. **The work went in small verified slices.** 48 commits, 30 specs, each with a
-   measurement. That is slow by design: every slice re-ran the suite and the CI, and
-   two slices were partly spent on browser tooling that stopped working.
-2. **The cheap work is done.** What remains is the expensive part: a Lua runtime, a
-   WebGL renderer, protobuf, installers. Each of those is a multi-session item with its
-   own design, and none can be finished inside one slice.
-3. **Scope crept past the first cut.** The plan recommended scope B (35 days) for a
-   first release. What was built is closer to scope A: bridge, faults, packs, symbols,
-   desktop shell. Good, but it also means the "first cut" is overdue.
-
-## Release pass, 30 October 2026
-
-The freeze was put into practice:
-
-- Two release blockers were found on real data and fixed: `assert` was quadratic on a
-  15-minute capture (over ten minutes, now 10 s) and a session truncated an existing
-  vault (now refused, with a test).
-- The hardware session ran on the ESP32-C3: 327 929 chunks, 164 073 decoded frames,
-  3 of 3 checks passed.
-- `docs/QUICKSTART.md`, `RELEASE-NOTES.md`, two demo workspaces and a rewritten README
-  first screen landed.
-- `bforge serve` now seals the vault when it stops, and can serve the built frontend
-  (`--ui`) instead of the placeholder page.
-- Lua fault scripts landed after the tag: a sandboxed hook on the transmit path
-  (spec 0031), which also unblocked the C-compiler problem behind D-35 and D-67.
-- **`v0.2.0` is tagged and published**: Lua scripts, typed encoding, enum labels,
-  typedef'd enums, nested structs, the typed forge mode.
-- **`v0.1.0` is tagged and published** with six binaries (`bforge-linux-x86_64`,
-  `bforge-linux-aarch64`, `bforge-macos-x86_64`, `bforge-macos-aarch64`,
-  `bforge-windows-x86_64.exe`, `bforge-windows-aarch64.exe`).
-
-## Recommendation: stop adding, cut a release
-
-The product is usable today by someone willing to run two commands. The next valuable
-step is not another feature; it is a release candidate.
-
-1. **Freeze features.** No new specs until `v0.1.0` is tagged.
-2. **One validation session.** ESP32-C3 on COM8: record 10 minutes with the test
-   firmware, tail it live, scrub it, send a command, arm a bit flip, run the bridge
-   between two sockets. Record the numbers in `RELEASE-NOTES.md`.
-3. **One documentation pass.** README first screen, `docs/QUICKSTART.md` with a demo
-   workspace, and a note that says exactly what is and is not in 0.1.
-4. **Tag `v0.1.0`.** CI already produces artefacts per target and a Windows desktop
-   folder. The installer waits for the release you planned (D-74).
-
-Then decide, with the release in hand, whether the Lua runtime and the WebGL plots are
-worth the next month — or whether 0.1 is enough to show people.
-
-Estimated as three to four working sessions, most of it the hardware session.
+1. **Signing** — apply to SignPath Foundation (free for OSI projects); the workflow is
+   already gated on secrets. A human must submit the form (D-95).
+2. **WebGL plots** — the one band that does not meet the UI guide; needs a renderer and a
+   downsampling policy (D-63).
+3. **Time-axis scrubbing** — a timestamp index in the vault, then a slider in seconds
+   (D-68).
+4. **Another decoder** — protobuf or MAVLink, whichever a user asks for first.

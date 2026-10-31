@@ -11,11 +11,13 @@ errors, delays and truncation into a live link.
 
 Binary name: `bforge`.
 
-## Status: 0.1.0 release candidate
+## Status: 0.5.2, usable today
 
-The engine, the command line and the workbench are built and measured. What is
-missing is listed in [`RELEASE-NOTES.md`](RELEASE-NOTES.md) and, with reasons, in
-[`DEFERRED.md`](DEFERRED.md). Progress and remaining scope: [`STATUS.md`](STATUS.md).
+Ten releases in, and a stranger can install it: the Windows installer is on the
+[releases page](https://github.com/siyal343/baud-forge/releases/latest), every release
+carries `SHA256SUMS.txt`, and the command line runs on Windows, macOS and Linux. What a
+person cannot do yet, with reasons: [`DEFERRED.md`](DEFERRED.md). Current state and
+remaining scope: [`STATUS.md`](STATUS.md).
 Downloads come with `SHA256SUMS.txt`; signing status and cost: [`docs/SIGNING.md`](docs/SIGNING.md).
 
 **Start here: [`docs/QUICKSTART.md`](docs/QUICKSTART.md)** — two simulated devices,
