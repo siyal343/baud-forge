@@ -14,7 +14,9 @@
         "height": 900,
         "minWidth": 640,
         "minHeight": 480,
-        "url": "desktop.html"
+        "url": "desktop.html",
+        "decorations": false,
+        "titleBarStyle": "Overlay"
       }
     ],
     "security": {

@@ -401,6 +401,13 @@ fn handle(mut stream: TcpStream, shared: Arc<Shared>, stop: Arc<AtomicBool>) {
     let method = parts.next().unwrap_or("");
     let target = parts.next().unwrap_or("/");
     let path = target.split(['?', '#']).next().unwrap_or("/");
+    // A page served from the desktop bundle is another origin, so a JSON POST is
+    // preceded by a preflight. Answer it here rather than in every route.
+    if method == "OPTIONS" {
+        respond_preflight(&mut stream);
+        return;
+    }
+
     // Writes take a body, so a POST is answered before the read-only guard.
     if method == "POST" && path == "/api/send" {
         let body = read_body(&mut reader, content_length);
@@ -1054,6 +1061,23 @@ fn yield_port(stream: &mut TcpStream, shared: &Arc<Shared>, body: &[u8]) {
     }
 }
 
+/// The reply a cross-origin JSON request needs before it is allowed to happen.
+fn respond_preflight(stream: &mut TcpStream) {
+    for header in [
+        "HTTP/1.1 204 No Content",
+        "Access-Control-Allow-Origin: *",
+        "Access-Control-Allow-Methods: GET, POST, OPTIONS",
+        "Access-Control-Allow-Headers: content-type",
+        "Access-Control-Max-Age: 600",
+        "Content-Length: 0",
+        "Connection: close",
+    ] {
+        let _ = stream.write_all(header.as_bytes());
+        let _ = stream.write_all(b"\r\n");
+    }
+    let _ = stream.write_all(b"\r\n");
+    let _ = stream.flush();
+}
 fn respond(stream: &mut TcpStream, status: &str, content_type: &str, body: &[u8]) {
     let head = format!(
         "HTTP/1.1 {status}\r\n\

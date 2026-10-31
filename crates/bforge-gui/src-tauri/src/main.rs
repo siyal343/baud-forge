@@ -59,6 +59,102 @@ fn default_vault() -> PathBuf {
     std::env::temp_dir().join(format!("bforge-gui-{stamp}.bflog"))
 }
 
+/// Window geometry, kept beside the workspace list so a launch looks like the last one.
+fn geometry_path() -> Option<PathBuf> {
+    recent_path().and_then(|path| path.parent().map(|parent| parent.join("window.json")))
+}
+
+/// The window bits the geometry code needs, from either handle type Tauri hands out.
+trait GeometryWindow {
+    fn outer_position(&self) -> tauri::Result<tauri::PhysicalPosition<i32>>;
+    fn inner_size(&self) -> tauri::Result<tauri::PhysicalSize<u32>>;
+    fn set_size(&self, size: tauri::PhysicalSize<u32>) -> tauri::Result<()>;
+    fn set_position(&self, position: tauri::PhysicalPosition<i32>) -> tauri::Result<()>;
+}
+
+impl GeometryWindow for &tauri::WebviewWindow {
+    fn outer_position(&self) -> tauri::Result<tauri::PhysicalPosition<i32>> {
+        tauri::WebviewWindow::outer_position(self)
+    }
+    fn inner_size(&self) -> tauri::Result<tauri::PhysicalSize<u32>> {
+        tauri::WebviewWindow::inner_size(self)
+    }
+    fn set_size(&self, size: tauri::PhysicalSize<u32>) -> tauri::Result<()> {
+        tauri::WebviewWindow::set_size(self, size)
+    }
+    fn set_position(&self, position: tauri::PhysicalPosition<i32>) -> tauri::Result<()> {
+        tauri::WebviewWindow::set_position(self, position)
+    }
+}
+
+impl GeometryWindow for &tauri::Window {
+    fn outer_position(&self) -> tauri::Result<tauri::PhysicalPosition<i32>> {
+        tauri::Window::outer_position(self)
+    }
+    fn inner_size(&self) -> tauri::Result<tauri::PhysicalSize<u32>> {
+        tauri::Window::inner_size(self)
+    }
+    fn set_size(&self, size: tauri::PhysicalSize<u32>) -> tauri::Result<()> {
+        tauri::Window::set_size(self, size)
+    }
+    fn set_position(&self, position: tauri::PhysicalPosition<i32>) -> tauri::Result<()> {
+        tauri::Window::set_position(self, position)
+    }
+}
+
+#[derive(serde::Serialize, serde::Deserialize)]
+struct Geometry {
+    x: i32,
+    y: i32,
+    width: u32,
+    height: u32,
+}
+
+fn save_geometry(window: impl GeometryWindow) {
+    // Resize and move events arrive in bursts: write at most once a second.
+    static LAST: Mutex<Option<std::time::Instant>> = Mutex::new(None);
+    {
+        let mut last = LAST.lock().unwrap();
+        if let Some(at) = *last
+            && at.elapsed() < std::time::Duration::from_millis(800)
+        {
+            return;
+        }
+        *last = Some(std::time::Instant::now());
+    }
+    let (Ok(position), Ok(size)) = (window.outer_position(), window.inner_size()) else {
+        return;
+    };
+    let geometry = Geometry {
+        x: position.x,
+        y: position.y,
+        width: size.width,
+        height: size.height,
+    };
+    let Some(path) = geometry_path() else { return };
+    if let Some(parent) = path.parent() {
+        let _ = std::fs::create_dir_all(parent);
+    }
+    if let Ok(text) = serde_json::to_string_pretty(&geometry) {
+        let _ = std::fs::write(path, text);
+    }
+}
+
+fn restore_geometry(window: impl GeometryWindow) {
+    let Some(path) = geometry_path() else { return };
+    let Ok(text) = std::fs::read_to_string(path) else {
+        return;
+    };
+    let Ok(geometry) = serde_json::from_str::<Geometry>(&text) else {
+        return;
+    };
+    let _ = window.set_size(tauri::PhysicalSize::new(
+        geometry.width.max(640),
+        geometry.height.max(480),
+    ));
+    let _ = window.set_position(tauri::PhysicalPosition::new(geometry.x, geometry.y));
+}
+
 /// The workspace list, kept beside the application's other settings.
 fn recent_path() -> Option<PathBuf> {
     let base = std::env::var_os("APPDATA")
@@ -158,7 +254,7 @@ fn start(app: &tauri::AppHandle, path: &Path) -> Result<String, String> {
         workspace: path.to_path_buf(),
     });
     remember(path);
-    Ok(format!("http://127.0.0.1:{port}/"))
+    Ok(format!("http://127.0.0.1:{port}"))
 }
 
 #[tauri::command]
@@ -205,6 +301,12 @@ fn start_workspace(app: tauri::AppHandle, path: String) -> Result<String, String
     start(&app, Path::new(&path))
 }
 
+/// Load the bundled workbench, pointed at an engine.
+fn open_workbench(window: &tauri::WebviewWindow, base: &str) -> Result<(), String> {
+    let script = format!("location.replace('index.html?api={base}')");
+    window.eval(&script).map_err(|error| error.to_string())
+}
+
 #[tauri::command]
 fn stop_workspace(app: tauri::AppHandle) {
     app.state::<Engine>().stop();
@@ -238,6 +340,9 @@ fn main() {
             engine_state
         ])
         .setup(|app| {
+            if let Some(window) = app.get_webview_window("main") {
+                restore_geometry(&window);
+            }
             // A workspace on the command line still works, which is what a script or a
             // shortcut with an argument does.
             let from_args = std::env::args_os()
@@ -247,15 +352,22 @@ fn main() {
             if let Some(path) = from_args {
                 let handle = app.handle().clone();
                 match start(&handle, &path) {
-                    Ok(url) => {
+                    Ok(base) => {
                         if let Some(window) = app.get_webview_window("main") {
-                            let _ = window.navigate(url.parse().expect("a URL"));
+                            let _ = open_workbench(&window, &base);
                         }
                     }
                     Err(error) => eprintln!("bforge-gui: {error}"),
                 }
             }
             Ok(())
+        })
+        .on_window_event(|window, event| match event {
+            tauri::WindowEvent::Resized(_) | tauri::WindowEvent::Moved(_) => {
+                save_geometry(window);
+            }
+            tauri::WindowEvent::CloseRequested { .. } => save_geometry(window),
+            _ => {}
         })
         .run(tauri::generate_context!())
         .expect("the window failed to start");

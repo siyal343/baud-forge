@@ -1,6 +1,8 @@
 import { For, Show, createMemo, createSignal, onCleanup, onMount } from 'solid-js'
 import { Telemetry, SERIES_COLOURS } from './components/Telemetry'
+import { WindowControls } from './components/WindowControls'
 import { createFeed } from './lib/feed'
+import { api, inShell, stopSession, toPicker } from './lib/shell'
 import type { FieldRow, SymbolHit, TailRow } from './lib/types'
 import './index.css'
 
@@ -46,6 +48,94 @@ function HexDump(props: { row: TailRow; field: FieldRow | null }) {
   )
 }
 
+
+
+/** A node of the inspector's field tree, built from the dotted field names. */
+interface FieldNode {
+  name: string
+  path: string
+  field?: FieldRow
+  children: FieldNode[]
+}
+
+/** Group `gains.proportional` under `gains`, keeping array siblings distinct. */
+function buildTree(fields: FieldRow[]): FieldNode[] {
+  const root: FieldNode[] = []
+  const seen = new Map<string, number>()
+  for (const field of fields) {
+    const parts = field.name.split('.')
+    let level = root
+    let path = ''
+    parts.forEach((part, index) => {
+      path = path ? `${path}.${part}` : part
+      const last = index === parts.length - 1
+      let node = level.find((candidate) => candidate.name === part)
+      if (!node) {
+        // Repeated names are array elements: keep each one addressable.
+        const count = seen.get(path) ?? 0
+        seen.set(path, count + 1)
+        node = { name: count > 0 ? `${part}[${count}]` : part, path, children: [] }
+        level.push(node)
+      }
+      if (last) node.field = field
+      level = node.children
+    })
+  }
+  return root
+}
+
+/** One field of the tree: name, value, and a plot button on the numerics. */
+function FieldNodeRow(props: { node: FieldNode; port: string; onHover: (field: FieldRow | null) => void; onPlot: (key: string) => void }) {
+  const [open, setOpen] = createSignal(true)
+  const field = () => props.node.field
+  return (
+    <div class="node">
+      <div
+        class="field"
+        onMouseEnter={() => props.onHover(field() ?? null)}
+        onMouseLeave={() => props.onHover(null)}
+      >
+        <button
+          type="button"
+          class="twisty"
+          classList={{ leaf: props.node.children.length === 0 }}
+          onClick={() => setOpen(!open())}
+          aria-label={open() ? 'collapse' : 'expand'}
+        >
+          {props.node.children.length === 0 ? '·' : open() ? '▾' : '▸'}
+        </button>
+        <span class="name">{props.node.name}</span>
+        <Show when={field()}>
+          {(leaf) => (
+            <>
+              <span class="value">{leaf().value}</span>
+              <span class="at">@{leaf().offset}+{leaf().len}</span>
+              <Show when={leaf().value_num !== null}>
+                <button
+                  type="button"
+                  class="plot-this"
+                  title="plot this field"
+                  onClick={() => props.onPlot(`${props.port}.${leaf().name}`)}
+                >
+                  plot
+                </button>
+              </Show>
+            </>
+          )}
+        </Show>
+      </div>
+      <Show when={open() && props.node.children.length > 0}>
+        <div class="children">
+          <For each={props.node.children}>
+            {(child) => (
+              <FieldNodeRow node={child} port={props.port} onHover={props.onHover} onPlot={props.onPlot} />
+            )}
+          </For>
+        </div>
+      </Show>
+    </div>
+  )
+}
 
 export default function App() {
   const feed = createFeed()
@@ -131,7 +221,7 @@ export default function App() {
   async function loadWindow(record: number) {
     setAt(record)
     try {
-      const response = await fetch(`/api/vault/frames?at=${record}&count=400`)
+      const response = await fetch(api(`/api/vault/frames?at=${record}&count=400`))
       if (!response.ok) {
         setScrubNote(`${response.status} ${await response.text()}`)
         return
@@ -154,7 +244,7 @@ export default function App() {
     // with a headless browser.
     if (params.get('typed') === '1') chooseTyped(true)
     try {
-      const response = await fetch('/api/vault')
+      const response = await fetch(api('/api/vault'))
       if (response.ok) {
         const body = (await response.json()) as { records: number }
         setRecords(body.records)
@@ -203,7 +293,7 @@ export default function App() {
       values[name] = Number.isFinite(value) && trimmed !== '' ? value : trimmed
     }
     try {
-      const response = await fetch('/api/send', {
+      const response = await fetch(api('/api/send'), {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ port, values }),
@@ -237,7 +327,7 @@ export default function App() {
     if (faultKind() === 'truncate') body.truncate = Number.isFinite(value) ? value : 2
     if (faultKind() === 'corrupt_crc') body.corrupt_crc = Number.isFinite(value) ? value : 4
     try {
-      const response = await fetch('/api/fault', {
+      const response = await fetch(api('/api/fault'), {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify(body),
@@ -257,7 +347,7 @@ export default function App() {
       return
     }
     try {
-      const response = await fetch('/api/yield', {
+      const response = await fetch(api('/api/yield'), {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ port, seconds: 30 }),
@@ -300,7 +390,7 @@ export default function App() {
     const body: { port: string; hex: string; crc?: string } = { port, hex: hex() }
     if (crc()) body.crc = crc()
     try {
-      const response = await fetch('/api/send', {
+      const response = await fetch(api('/api/send'), {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify(body),
@@ -320,12 +410,36 @@ export default function App() {
 
   return (
     <div class="shell">
-      <header class="ribbon" data-zone="ribbon" tabindex="-1">
+      <header class="ribbon" data-zone="ribbon" tabindex="-1" data-tauri-drag-region>
         <h1>BaudForge</h1>
         <span class="chip">contract {feed.snapshot()?.contract ?? '?'}</span>
         <span class={`chip ${feed.link()}`}>{feed.link()}</span>
         <span class="chip">{session()?.mode ?? 'idle'}</span>
         <span class="chip">ports {openPorts()}/{ports().length}</span>
+        <Show when={inShell()}>
+          <button
+            type="button"
+            class="chip action"
+            title="stop this session and choose another workspace"
+            onClick={async () => {
+              await stopSession()
+              toPicker()
+            }}
+          >
+            session: switch
+          </button>
+          <button
+            type="button"
+            class="chip action"
+            title="stop recording and keep the window open"
+            onClick={async () => {
+              await stopSession()
+              setYieldNote('session stopped')
+            }}
+          >
+            stop
+          </button>
+        </Show>
         <button
           type="button"
           class="chip action yield"
@@ -352,6 +466,7 @@ export default function App() {
         <span class="chip">elapsed {session() ? seconds(session()!.elapsed_ms) : '-'}</span>
         <span class="chip">chunks {session()?.chunks ?? 0}</span>
         <span class="chip">payload {session() ? bytes(session()!.payload_bytes) : '-'}</span>
+        <WindowControls />
       </header>
 
       <aside class="sidebar" data-zone="sidebar" tabindex="-1">
@@ -537,33 +652,23 @@ export default function App() {
                   </For>
                 </dl>
               </Show>
-              <dl class="fields">
-                <For each={row().fields} fallback={<p class="empty">No schema on this port.</p>}>
-                  {(field) => (
-                    <div
-                      class="field"
-                      onMouseEnter={() => setHovered(field)}
-                      onMouseLeave={() => setHovered(null)}
-                    >
-                      <dt>{field.name}</dt>
-                      <dd>
-                        <span class="value">{field.value}</span>
-                        <span class="at">@{field.offset}+{field.len}</span>
-                        <Show when={field.value_num !== null}>
-                          <button
-                            type="button"
-                            class="plot-this"
-                            title="plot this field"
-                            onClick={() => plotField(`${row().port}.${field.name}`)}
-                          >
-                            plot
-                          </button>
-                        </Show>
-                      </dd>
-                    </div>
-                  )}
-                </For>
-              </dl>
+              <Show
+                when={detail()!.fields.length > 0}
+                fallback={<p class="empty">No schema on this port.</p>}
+              >
+                <div class="fields">
+                  <For each={buildTree(detail()!.fields)}>
+                    {(node) => (
+                      <FieldNodeRow
+                        node={node}
+                        port={detail()!.port}
+                        onHover={setHovered}
+                        onPlot={plotField}
+                      />
+                    )}
+                  </For>
+                </div>
+              </Show>
             </>
           )}
         </Show>

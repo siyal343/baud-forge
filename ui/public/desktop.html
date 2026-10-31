@@ -17,7 +17,39 @@
       }
       * { box-sizing: border-box; }
       html, body { height: 100%; margin: 0; }
+      .titlebar {
+        position: fixed;
+        top: 0;
+        left: 0;
+        right: 0;
+        height: 32px;
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+        padding: 0 8px 0 14px;
+        border-bottom: 1px solid var(--line);
+        background: var(--panel);
+        -webkit-app-region: drag;
+        font-size: 11px;
+        letter-spacing: .14em;
+        text-transform: uppercase;
+        color: var(--dim);
+      }
+      .titlebar .controls { display: flex; gap: 2px; -webkit-app-region: no-drag; }
+      .titlebar button {
+        width: 26px;
+        height: 22px;
+        background: transparent;
+        border: 1px solid transparent;
+        border-radius: 4px;
+        color: var(--dim);
+        font: inherit;
+        cursor: pointer;
+      }
+      .titlebar button:hover { color: var(--text); border-color: var(--line); }
+      .titlebar button.close:hover { color: var(--fault); border-color: var(--fault); }
       body {
+        padding-top: 32px;
         background: var(--bg);
         color: var(--text);
         font: 13px/1.5 "JetBrains Mono", ui-monospace, Consolas, monospace;
@@ -59,6 +91,14 @@
     </style>
   </head>
   <body>
+    <div class="titlebar" data-tauri-drag-region>
+      <span>BaudForge</span>
+      <span class="controls">
+        <button type="button" id="min" title="minimise">–</button>
+        <button type="button" id="max" title="maximise">□</button>
+        <button type="button" id="close" class="close" title="close">×</button>
+      </span>
+    </div>
     <main>
       <h1>BaudForge</h1>
       <p class="lead">Open a workspace to start the engine, or pick one you used before.</p>
@@ -94,10 +134,10 @@
         }
         say('starting ' + path + ' …');
         try {
-          const url = await invoke('start_workspace', { path });
-          say('engine on ' + url, 'ok');
-          // The workbench is served by the engine, so the window moves there.
-          window.location.replace(url);
+          const base = await invoke('start_workspace', { path });
+          say('engine on ' + base, 'ok');
+          // The workbench is bundled with the app; the engine is only its API.
+          window.location.replace('index.html?api=' + encodeURIComponent(base));
         } catch (error) {
           say(String(error), 'err');
         }
@@ -147,6 +187,11 @@
           say(String(error), 'err');
         }
       };
+
+      const shellWindow = window.__TAURI__?.window?.getCurrentWindow?.();
+      document.getElementById('min').onclick = () => shellWindow?.minimize();
+      document.getElementById('max').onclick = () => shellWindow?.toggleMaximize();
+      document.getElementById('close').onclick = () => shellWindow?.close();
 
       loadRecent();
     </script>

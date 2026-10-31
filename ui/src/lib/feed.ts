@@ -3,6 +3,7 @@
 
 import { createSignal, onCleanup } from 'solid-js'
 import type { SeriesUpdate, TailRow, UiEvent, UiSnapshot } from './types'
+import { api } from './shell'
 
 /** Frames kept in the viewport. The engine caps its own queue at 4096. */
 const FRAME_WINDOW = 500
@@ -22,7 +23,7 @@ export function createFeed() {
   // Batches the engine had to replace because this client was too far behind.
   const [missed, setMissed] = createSignal(0)
 
-  const source = new EventSource('/api/events')
+  const source = new EventSource(api('/api/events'))
 
   source.addEventListener('open', () => setLink('live'))
   // A proxy in front of the engine can fire one error while it flushes, so the

@@ -347,6 +347,7 @@ version = "0.7.0"
 dependencies = [
  "bforge-core",
  "rfd",
+ "serde",
  "serde_json",
  "tauri",
  "tauri-build",
