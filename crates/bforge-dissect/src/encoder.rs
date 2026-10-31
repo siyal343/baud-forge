@@ -87,6 +87,31 @@ pub fn encode(ir: &DissectorIr, values: &BTreeMap<String, Value>) -> Result<Vec<
     Ok(frame)
 }
 
+/// Write named fields into bytes that already exist.
+///
+/// This is what a script needs: it changes one field and leaves the rest of the frame
+/// alone, including fields the schema does not name. A name the schema does not have is
+/// still an error, so a typo cannot silently do nothing.
+pub fn patch(
+    ir: &DissectorIr,
+    frame: &mut [u8],
+    values: &BTreeMap<String, Value>,
+) -> Result<(), EncodeError> {
+    if ir.ops.is_empty() {
+        return Err(EncodeError::Empty);
+    }
+    let mut used = Vec::new();
+    for op in &ir.ops {
+        write_op(op, frame, values, "", &mut used)?;
+    }
+    for name in values.keys() {
+        if !used.iter().any(|used| used == name) {
+            return Err(EncodeError::UnknownField(name.clone()));
+        }
+    }
+    Ok(())
+}
+
 /// Last byte an operation touches, so the frame is long enough.
 fn op_span(op: &IrOp) -> usize {
     match op {

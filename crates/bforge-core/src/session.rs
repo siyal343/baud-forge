@@ -355,15 +355,29 @@ impl Session {
     pub fn enable_script(&mut self, path: &Path) -> Result<(), SessionError> {
         let runtime = ScriptRuntime::load(path)
             .map_err(|error| SessionError::Settings(format!("script: {error}")))?;
-        self.script = Some(runtime);
+        // A script may read and write fields when a port has a schema. One schema is
+        // used for every port, which is honest for a bridge and wrong for a workspace
+        // with two different packet formats (D-94).
+        self.script = Some(match self.schema() {
+            Some(ir) => runtime.with_schema(ir),
+            None => runtime,
+        });
         Ok(())
+    }
+
+    /// The first schema any port decodes with, for scripts that use fields.
+    fn schema(&self) -> Option<bforge_dissect::DissectorIr> {
+        self.encoders.iter().find_map(|ir| ir.clone())
     }
 
     /// Load the script that runs on what arrives, before framing.
     pub fn enable_rx_script(&mut self, path: &Path) -> Result<(), SessionError> {
         let runtime = ScriptRuntime::load(path)
             .map_err(|error| SessionError::Settings(format!("rx script: {error}")))?;
-        self.rx_script = Some(runtime);
+        self.rx_script = Some(match self.schema() {
+            Some(ir) => runtime.with_schema(ir),
+            None => runtime,
+        });
         Ok(())
     }
 

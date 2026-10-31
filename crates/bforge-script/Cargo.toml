@@ -8,4 +8,5 @@ description = "Fault injection primitives and embedded LuaJIT HIL runtime for Ba
 
 [dependencies]
 bforge-dissect.workspace = true
+bforge-framer.workspace = true
 mlua = { version = "0.10", features = ["lua54", "vendored", "send"] }

@@ -815,3 +815,87 @@ fn a_jitter_span_varies_the_delay_the_engine_reports() {
     client.join().expect("client");
     assert!(stats.requests >= 8, "{stats:?}");
 }
+
+/// A script can change one field of a typed frame and keep the rest (D-83).
+#[test]
+fn a_script_changes_a_field_and_the_device_sees_it() {
+    let (device, received) = chatty_device();
+    let script = std::env::temp_dir().join(format!("bforge-fields-{}.lua", std::process::id()));
+    std::fs::write(
+        &script,
+        r#"
+        bforge.on_frame(function(frame)
+          frame:set("v_batt_mv", 7500)
+          frame:recalc_crc("crc32c")
+          return frame
+        end)
+        "#,
+    )
+    .unwrap();
+
+    let workspace = format!(
+        r#"
+[workspace]
+name = "fields"
+version = "1.0"
+script_path = "{}"
+
+[[ports]]
+id = "sim"
+transport = "tcp-client"
+address = "{device}"
+baud_rate = 115200
+framing = {{ mode = "delimiter", delimiter = 10 }}
+dissector = {{ type = "c_header", file = "{header}", root_struct = "ImuPacket" }}
+"#,
+        script.display().to_string().replace('\\', "/"),
+        header = std::path::Path::new(env!("CARGO_MANIFEST_DIR"))
+            .join("../bforge-dissect/tests/fixtures/imu_packet.h")
+            .display()
+            .to_string()
+            .replace('\\', "/")
+    );
+    let config: bforge_core::ProjectConfig = toml::from_str(&workspace).expect("workspace");
+    let ports = session_ports_from_config(&config, &[]).expect("ports");
+    let mut session = Session::start(ports, None, None).expect("session");
+    session.enable_decode(&config.ports).expect("decode");
+    session.enable_script(&script).expect("script loads");
+
+    let server = Server::bind("127.0.0.1:0".parse().unwrap()).expect("bind");
+    let address = server.local_addr().unwrap().to_string();
+
+    let client = std::thread::spawn(move || {
+        std::thread::sleep(Duration::from_millis(400));
+        let heard = received;
+        let (status, body) = post(
+            &address,
+            "/api/send",
+            r#"{"port":"sim","values":{"sync":43605,"version":3,"v_batt_mv":7400,"mode":1}}"#,
+        );
+        assert!(status.contains("200"), "{status} {body}");
+
+        let deadline = Instant::now() + Duration::from_secs(3);
+        let mut seen = Vec::new();
+        while Instant::now() < deadline {
+            seen = heard.lock().unwrap().clone();
+            if seen.len() >= 19 {
+                break;
+            }
+            std::thread::sleep(Duration::from_millis(20));
+        }
+        assert!(seen.len() >= 19, "{seen:02X?}");
+        assert_eq!(
+            u16::from_be_bytes([seen[8], seen[9]]),
+            7500,
+            "the script set the battery: {seen:02X?}"
+        );
+        assert_eq!(&seen[0..2], &[0x55, 0xAA], "the sync word is untouched");
+    });
+
+    let stats = server
+        .run(session, Some(Duration::from_secs(2)))
+        .expect("serve");
+    client.join().expect("client");
+    let _ = std::fs::remove_file(&script);
+    assert!(stats.requests >= 1, "{stats:?}");
+}

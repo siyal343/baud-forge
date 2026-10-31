@@ -12,6 +12,7 @@
 use std::sync::Arc;
 use std::sync::atomic::{AtomicU32, Ordering};
 
+use bforge_dissect::DissectorIr;
 use mlua::{HookTriggers, Lua, Value, VmState};
 
 /// Instructions one frame may spend before the call is abandoned.
@@ -44,6 +45,8 @@ pub struct ScriptRuntime {
     pub failures: u64,
     /// The last failure, for the UI and the log.
     pub last_error: Option<String>,
+    /// The port's schema, when it has one: a script may then read and write fields.
+    ir: Option<DissectorIr>,
 }
 
 impl std::fmt::Debug for ScriptRuntime {
@@ -128,7 +131,14 @@ impl ScriptRuntime {
             dropped: 0,
             failures: 0,
             last_error: None,
+            ir: None,
         })
+    }
+
+    /// Give the runtime a schema, so a script can read and write fields by name.
+    pub fn with_schema(mut self, ir: DissectorIr) -> Self {
+        self.ir = Some(ir);
+        self
     }
 
     pub fn path(&self) -> &str {
@@ -149,7 +159,40 @@ impl ScriptRuntime {
         };
 
         self.ticks.store(0, Ordering::Relaxed);
-        let answer: Result<Value, mlua::Error> = function.call(hex_of(bytes));
+        // With a schema the hook gets a `frame` it can read and patch field by field;
+        // without one it gets spaced hex, as before.
+        let Some(ir) = self.ir.clone() else {
+            return self.judge(function.call(hex_of(bytes)), bytes);
+        };
+        let state = std::sync::Arc::new(std::sync::Mutex::new(crate::frame::FrameState::new(
+            ir, bytes,
+        )));
+        let frame = match crate::frame::frame_table(&self.lua, std::sync::Arc::clone(&state)) {
+            Ok(frame) => frame,
+            Err(error) => {
+                self.fail(error.to_string());
+                return FrameVerdict::Send(bytes.to_vec());
+            }
+        };
+        let answer: Result<Value, mlua::Error> = function.call(frame);
+        match answer {
+            // Returning the frame sends the patched bytes.
+            Ok(Value::Table(_)) => {
+                let next = state
+                    .lock()
+                    .map(|state| state.patched_bytes())
+                    .unwrap_or_else(|_| bytes.to_vec());
+                if next != bytes {
+                    self.changed += 1;
+                }
+                FrameVerdict::Send(next)
+            }
+            other => self.judge(other, bytes),
+        }
+    }
+
+    /// Turn the hook's answer into a verdict, for the hex form and for errors.
+    fn judge(&mut self, answer: Result<Value, mlua::Error>, bytes: &[u8]) -> FrameVerdict {
         match answer {
             Ok(Value::Nil) => {
                 self.dropped += 1;
@@ -341,6 +384,83 @@ mod tests {
             "the frame still goes out"
         );
         assert_eq!(runtime.failures, 1);
+    }
+
+    #[test]
+    fn a_script_reads_and_writes_a_field_by_name() {
+        let ir = {
+            let path = concat!(
+                env!("CARGO_MANIFEST_DIR"),
+                "/../bforge-dissect/tests/fixtures/imu_packet.h"
+            );
+            let text = std::fs::read_to_string(path).expect("fixture");
+            let header = bforge_dissect::cheader::parse(&text).expect("parses");
+            bforge_dissect::cheader::compile(&header, "ImuPacket", path).expect("compiles")
+        };
+        let mut runtime = ScriptRuntime::compile(
+            r#"
+            bforge.on_frame(function(frame)
+              -- The SRS example, in one line: change a field and keep the frame.
+              frame:set("v_batt_mv", frame:get("v_batt_mv") + 100)
+              return frame
+            end)
+            "#,
+            "field.lua",
+        )
+        .expect("loads")
+        .with_schema(ir);
+
+        // A frame whose battery reads 0x1CE8 = 7400 mV.
+        let mut bytes = vec![0u8; 19];
+        bytes[8] = 0x1C;
+        bytes[9] = 0xE8;
+        match runtime.run(&bytes) {
+            FrameVerdict::Send(next) => {
+                assert_eq!(u16::from_be_bytes([next[8], next[9]]), 7500);
+                assert_eq!(&next[0..8], &bytes[0..8], "the rest is untouched");
+            }
+            FrameVerdict::Drop => panic!("the frame was dropped"),
+        }
+        assert_eq!(runtime.changed, 1);
+    }
+
+    #[test]
+    fn a_script_can_recalc_the_crc_after_a_change() {
+        let mut runtime = ScriptRuntime::compile(
+            r#"
+            bforge.on_frame(function(frame)
+              frame:set("version", 4)
+              frame:recalc_crc("crc32c")
+              return frame
+            end)
+            "#,
+            "crc.lua",
+        )
+        .expect("loads")
+        .with_schema({
+            let path = concat!(
+                env!("CARGO_MANIFEST_DIR"),
+                "/../bforge-dissect/tests/fixtures/imu_packet.h"
+            );
+            let text = std::fs::read_to_string(path).expect("fixture");
+            let header = bforge_dissect::cheader::parse(&text).expect("parses");
+            bforge_dissect::cheader::compile(&header, "ImuPacket", path).expect("compiles")
+        });
+
+        // 19 bytes of packet plus 4 bytes of CRC, as the firmware sends them.
+        let mut bytes = vec![0u8; 23];
+        bytes[2] = 3;
+        let next = match runtime.run(&bytes) {
+            FrameVerdict::Send(next) => next,
+            FrameVerdict::Drop => panic!("dropped"),
+        };
+        assert_eq!(next[2], 4, "the field changed");
+        let expected = bforge_framer::checksum::crc32c(&next[..19]);
+        assert_eq!(
+            &next[19..23],
+            &expected.to_le_bytes(),
+            "the CRC was recomputed"
+        );
     }
 
     #[test]

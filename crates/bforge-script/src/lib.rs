@@ -5,6 +5,7 @@
 
 use bforge_dissect::DissectedFrame;
 
+pub mod frame;
 pub mod runtime;
 
 pub use runtime::{FrameVerdict, ScriptError, ScriptRuntime};

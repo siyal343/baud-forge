@@ -1,3 +1,50 @@
+# BaudForge 0.4.0
+
+Scripts that work in fields. Everything in 0.3.1, plus the API the SRS's own Lua example
+is written in. Released 31 October 2026.
+
+## New since 0.3.1
+
+- **`frame:get(name)` and `frame:set(name, value)`** (spec 0034): a script reads and writes
+  a decoded field by name, using its port's C header schema.
+- **`frame:recalc_crc("crc32c")`** folds the changes in first, so the checksum covers what
+  will actually leave.
+- **A patch, not a re-encode**: fields the script does not touch keep their bytes, including
+  fields the schema does not name.
+- Old scripts keep working: a hook may still take spaced hex and return it.
+
+The SRS example now runs as written:
+
+```lua
+bforge.on_frame(function(frame)
+  if frame:get("mode") == "MODE_RUN" then
+    frame:set("v_batt_mv", frame:get("v_batt_mv") + 100)
+    frame:recalc_crc("crc32c")
+  end
+  return frame
+end)
+```
+
+## Measured
+
+| Claim | Figure |
+| --- | --- |
+| Field write | `frame:set("v_batt_mv", 7500)` reached the device as `1D 4C`, sync untouched, CRC recomputed |
+| Field read | an enum field returns its label, a number its number |
+| Tests | 266, ten of them in the script runtime |
+
+## A fault worth recording
+
+The first version returned the **unpatched** bytes: the Lua closures hold their own
+reference to the frame state, so unwrapping it after the call always failed and a fallback
+quietly used the original. A fallback that returns the input hides a broken feature; it is
+now a `&self` method and the story is in the spec.
+
+## Recorded
+
+One schema per script (D-94), so a bridge between two packet formats uses fields on one
+side only.
+
 # BaudForge 0.3.1
 
 A jitter span, which completes FR-FLT-01's latency requirement. Released 31 October 2026.
