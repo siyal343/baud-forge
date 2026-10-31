@@ -130,10 +130,14 @@ pub struct Session {
     outboxes: Vec<Outbox>,
     /// The HIL script, when the workspace names one.
     script: Option<ScriptRuntime>,
+    /// The script applied to what arrives, before framing (D-84).
+    rx_script: Option<ScriptRuntime>,
     /// One IR per port that can encode a typed frame, built with the decoders.
     encoders: Vec<Option<bforge_dissect::DissectorIr>>,
     frames: std::collections::VecDeque<TailRow>,
     frames_dropped: u64,
+    /// Chunks the receive script dropped.
+    chunks_received_dropped: u64,
     series: SeriesSet,
 }
 
@@ -298,9 +302,11 @@ impl Session {
                 .take(port_count)
                 .collect(),
             script: None,
+            rx_script: None,
             encoders: Vec::new(),
             frames: std::collections::VecDeque::new(),
             frames_dropped: 0,
+            chunks_received_dropped: 0,
             series: SeriesSet::new(),
         };
         session.bus.publish(UiEvent::Started {
@@ -350,6 +356,14 @@ impl Session {
         let runtime = ScriptRuntime::load(path)
             .map_err(|error| SessionError::Settings(format!("script: {error}")))?;
         self.script = Some(runtime);
+        Ok(())
+    }
+
+    /// Load the script that runs on what arrives, before framing.
+    pub fn enable_rx_script(&mut self, path: &Path) -> Result<(), SessionError> {
+        let runtime = ScriptRuntime::load(path)
+            .map_err(|error| SessionError::Settings(format!("rx script: {error}")))?;
+        self.rx_script = Some(runtime);
         Ok(())
     }
 
@@ -459,6 +473,7 @@ impl Session {
                         bytes,
                         FaultOutcome {
                             sent,
+                            delay: None,
                             bytes: 0,
                             dropped: false,
                         },
@@ -469,6 +484,7 @@ impl Session {
         let Some((bytes, mut outcome)) = prepared else {
             return Ok(FaultOutcome {
                 sent: 0,
+                delay: None,
                 bytes: 0,
                 dropped: true,
             });
@@ -482,6 +498,7 @@ impl Session {
                 FrameVerdict::Drop => {
                     return Ok(FaultOutcome {
                         sent: 0,
+                        delay: None,
                         bytes: 0,
                         dropped: true,
                     });
@@ -489,10 +506,23 @@ impl Session {
             },
             None => bytes,
         };
-        outcome.sent = running
-            .pipeline
-            .write(bytes, wait)
-            .map_err(SessionError::Write)?;
+
+        let pipeline = &running.pipeline;
+        match outcome.delay {
+            // A delayed frame is held by the reader, so the caller is told it was
+            // accepted instead of waiting for it to leave.
+            Some(delay) => {
+                let settled = Arc::new(std::sync::atomic::AtomicU64::new(0));
+                let failed = Arc::new(std::sync::atomic::AtomicU64::new(0));
+                outcome.sent = bytes.len();
+                pipeline
+                    .post_after(bytes, settled, failed, Some(delay))
+                    .map_err(SessionError::Write)?;
+            }
+            None => {
+                outcome.sent = pipeline.write(bytes, wait).map_err(SessionError::Write)?;
+            }
+        }
         Ok(outcome)
     }
 
@@ -536,6 +566,19 @@ impl Session {
                     break;
                 };
                 taken += 1;
+
+                // A receive script sees the bytes before the vault and the decoder,
+                // so a test can prove the host rejects what is corrupted (D-84).
+                let payload = match self.rx_script.as_mut() {
+                    Some(script) => match script.run(slab.bytes()) {
+                        FrameVerdict::Send(next) => next,
+                        FrameVerdict::Drop => {
+                            self.chunks_received_dropped += 1;
+                            continue;
+                        }
+                    },
+                    None => slab.bytes().to_vec(),
+                };
                 let meta = slab.meta;
                 if let Some(writer) = self.writer.as_mut() {
                     let chunk = RawChunk {
@@ -545,9 +588,9 @@ impl Session {
                         direction: meta.direction,
                         line_state: meta.line_state,
                         payload_offset: 0,
-                        payload_len: meta.len,
+                        payload_len: payload.len() as u32,
                     };
-                    writer.append(&chunk, slab.bytes())?;
+                    writer.append(&chunk, &payload)?;
                 }
                 if let Some(bridge) = self
                     .bridges
@@ -558,7 +601,7 @@ impl Session {
                     crossed[index].extend_from_slice(slab.bytes());
                 }
                 if let Some(Some(stream)) = self.streams.get_mut(index) {
-                    for mut row in stream.feed(meta.timestamp_ns, slab.bytes()) {
+                    for mut row in stream.feed(meta.timestamp_ns, &payload) {
                         if let Some(image) = &self.image {
                             row.symbols = symbolize_for(image, &row);
                         }
@@ -571,7 +614,7 @@ impl Session {
                     }
                 }
                 self.chunks += 1;
-                self.payload_bytes += u64::from(meta.len);
+                self.payload_bytes += payload.len() as u64;
                 moved += 1;
             }
         }

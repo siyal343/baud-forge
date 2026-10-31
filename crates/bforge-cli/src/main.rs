@@ -530,6 +530,12 @@ fn serve(args: &[String]) -> ExitCode {
             return ExitCode::FAILURE;
         }
     }
+    if let Some(path) = config.workspace.rx_script_path.as_deref()
+        && let Err(error) = session.enable_rx_script(std::path::Path::new(path))
+    {
+        eprintln!("error: {error}");
+        return ExitCode::FAILURE;
+    }
     if let Some(directory) = ui {
         server = server.with_ui(directory);
     }

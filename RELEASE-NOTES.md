@@ -1,3 +1,34 @@
+# BaudForge 0.3.0
+
+Deferred-link faults. Everything in 0.2.1, plus latency on the wire and scripts on what
+arrives — the two halves of a rig that FR-FLT-01 and FR-SCR-01 ask for. Released
+31 October 2026.
+
+## New since 0.2.1
+
+- **Latency as a fault** (spec 0033). `{"kind":"delay","delay_ms":300}` holds every
+  transmitted frame 0–5000 ms. The reader holds it, so the deadline never blocks a read,
+  and the send answers at once with `delay_ms` — accepted is not delivered.
+- **Receive-side scripts** (spec 0033). `rx_script_path` runs a Lua hook on arriving bytes
+  **before** the vault and the decoder, so a host can be made to see what a test needs it
+  to see. `examples/uppercase-on-receive.lua` is the worked example.
+- **The same sandbox both ways**: no `io`, no `os`, no clock, 200 000 instructions per
+  call, and a failing call passes bytes through rather than stopping the session.
+
+## Measured
+
+| Claim | Figure |
+| --- | --- |
+| Delay | a 300 ms hold answered the send in < 150 ms and the device received `01 02 03` ≥ 250 ms later |
+| Receive script | device sent `hello 7`, the decoder saw `HELLO 7` |
+| Tests | 259, 10 of them in the serve path |
+
+## Recorded, not hidden
+
+A delayed frame does not survive a reconnect (D-92), the delay is fixed rather than a
+random span (D-91), and a vault recorded under a receive script is a record of what the
+engine *decoded*, not what the device sent.
+
 # BaudForge 0.2.1
 
 Polish release. Everything in 0.2.0, plus an installer and a fix to one dishonest

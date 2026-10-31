@@ -50,6 +50,8 @@ pub struct WorkspaceMeta {
     pub watch_elf: bool,
     /// Lua script run on every transmitted frame (FR-SCR-01, spec 0031).
     pub script_path: Option<String>,
+    /// Lua script run on what arrives, before framing (D-84).
+    pub rx_script_path: Option<String>,
 }
 
 /// One `[[ports]]` entry.

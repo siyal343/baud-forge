@@ -153,6 +153,8 @@ struct ReaderContext {
 /// One queued write and where to report the result.
 pub struct WriteRequest {
     pub bytes: Vec<u8>,
+    /// Hold the bytes until this moment, so a fault can add latency (D-66).
+    pub due: Option<Instant>,
     /// Some when the caller waits for the result, as a person's send does.
     pub reply: Option<std::sync::mpsc::Sender<Result<usize, String>>>,
     /// Some when the caller only wants to know how much has landed, as a bridge
@@ -286,6 +288,7 @@ impl Pipeline {
         self.writes
             .send(WriteRequest {
                 bytes,
+                due: None,
                 reply: Some(reply),
                 settled: None,
                 failed: None,
@@ -304,9 +307,22 @@ impl Pipeline {
         settled: Arc<AtomicU64>,
         failed: Arc<AtomicU64>,
     ) -> Result<(), String> {
+        self.post_after(bytes, settled, failed, None)
+    }
+
+    /// Post bytes that must leave at `due`, so a fault can add latency without
+    /// blocking the reader: it holds them until the deadline and keeps reading.
+    pub fn post_after(
+        &self,
+        bytes: Vec<u8>,
+        settled: Arc<AtomicU64>,
+        failed: Arc<AtomicU64>,
+        due: Option<Duration>,
+    ) -> Result<(), String> {
         self.writes
             .send(WriteRequest {
                 bytes,
+                due: due.map(|delay| Instant::now() + delay),
                 reply: None,
                 settled: Some(settled),
                 failed: Some(failed),
@@ -387,31 +403,30 @@ fn read_loop(
     // Failed reopen attempts since the port last delivered a byte. A port that
     // opens and fails again immediately must not reset its own budget.
     let mut failed_reopens = 0u32;
+    // Writes a fault asked to delay, oldest deadline first.
+    let mut held: Vec<(Instant, WriteRequest)> = Vec::new();
 
     // On stop, a slab that is still waiting for the logger ring is abandoned.
     // Nobody is left to read it, and the wait must not outlive the session.
     'read: while !stop.load(Ordering::Relaxed) {
+        // Delayed writes wait here, so a deadline never blocks the read path.
         while let Ok(request) = writes.try_recv() {
-            let written = request.bytes.len();
-            match transport.write_frame(&request.bytes) {
-                Ok(()) => {
-                    if let Some(settled) = &request.settled {
-                        settled.fetch_add(written as u64, Ordering::Relaxed);
-                    }
-                    if let Some(reply) = request.reply {
-                        let _ = reply.send(Ok(written));
-                    }
-                }
-                Err(error) => {
-                    counters.read_errors.fetch_add(1, Ordering::Relaxed);
-                    if let Some(failed) = &request.failed {
-                        failed.fetch_add(written as u64, Ordering::Relaxed);
-                    }
-                    if let Some(reply) = request.reply {
-                        let _ = reply.send(Err(error.to_string()));
-                    }
+            match request.due {
+                Some(due) if due > Instant::now() => held.push((due, request)),
+                _ => write_one(&mut *transport, &counters, request),
+            }
+        }
+        if !held.is_empty() {
+            let now = Instant::now();
+            let mut still = Vec::with_capacity(held.len());
+            for (due, request) in held.drain(..) {
+                if due <= now {
+                    write_one(&mut *transport, &counters, request);
+                } else {
+                    still.push((due, request));
                 }
             }
+            held = still;
         }
         if let Some(window) = yield_request.take() {
             counters.state.store(STATE_YIELDED, Ordering::Relaxed);
@@ -504,8 +519,44 @@ fn read_loop(
         drop(slab);
     }
 
+    for (_, request) in held.drain(..) {
+        if let Some(failed) = &request.failed {
+            failed.fetch_add(request.bytes.len() as u64, Ordering::Relaxed);
+        }
+        if let Some(reply) = request.reply {
+            let _ = reply.send(Err("the session stopped before the delay ended".to_string()));
+        }
+    }
     transport.close();
     counters.state.store(STATE_CLOSED, Ordering::Relaxed);
+}
+
+/// Write one queued frame and report it, whoever asked.
+fn write_one(
+    transport: &mut (dyn TransportDriver + Send),
+    counters: &Counters,
+    request: WriteRequest,
+) {
+    let written = request.bytes.len();
+    match transport.write_frame(&request.bytes) {
+        Ok(()) => {
+            if let Some(settled) = &request.settled {
+                settled.fetch_add(written as u64, Ordering::Relaxed);
+            }
+            if let Some(reply) = request.reply {
+                let _ = reply.send(Ok(written));
+            }
+        }
+        Err(error) => {
+            counters.read_errors.fetch_add(1, Ordering::Relaxed);
+            if let Some(failed) = &request.failed {
+                failed.fetch_add(written as u64, Ordering::Relaxed);
+            }
+            if let Some(reply) = request.reply {
+                let _ = reply.send(Err(error.to_string()));
+            }
+        }
+    }
 }
 
 /// Release the port for the whole window, then take it back.

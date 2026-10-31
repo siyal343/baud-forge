@@ -40,6 +40,7 @@ state through one contract (F1.7).
 | S8b assert fields | D-15 | done | a 6 s recording from the board decodes to 122 frames and passes 5 field, protocol and count checks |
 | S9 sockets | F1.2.7 (TCP, UDP, config) | done | simulator over loopback: tail decodes, record stores 60 frames, assert passes 3 of 3, no hardware |
 | S10 native packs | F3.4 (CCSDS/PUS, CSP, Modbus; MAVLink deferred) | done | 12 pack tests on hand-built fixtures; a CCSDS packet in a vault decodes and passes assert rules with no schema file |
+| S30 delay and rx scripts | FR-FLT-01, FR-SCR-01 (latency; receive-side script) | done | a 300 ms delay answers at once and lands late; a receive script uppercased `hello 7` before the decoder saw it |
 | S29 nested structs | FR-CMD-01 (a member of a member by name) | done | `gains.proportional` encodes and decodes; an unknown dotted name is refused; the parser accepts a struct member in both spellings |
 | S28 enum typedefs | FR-CMD-01 (a real header works unedited) | done | `state_t state;` resolves as an enum field; `STATE_ON` encodes and decodes; an unknown label is refused |
 | S27 enum labels | FR-CMD-01 (a label instead of a number) | done | `MODE_FAULT` and `mode_fault` both encode to 2; an unknown label is refused with both names; the parser now accepts an enum as a field type |
@@ -442,8 +443,19 @@ S29 notes:
   `struct Gains gains;`, and requires the inner struct to be declared first.
 - An array of structs still is not expanded (D-90).
 
-Next action: another release, `v0.2.0`: scripts, typed sends, enum labels, typedefs and
-nested structs are all in since 0.1.0, and the installer is still deliberately deferred. `serve` is the only interface it needs, so the
+S30 notes:
+
+- The delay lives in the reader's hold list, so a deadline never blocks reads. The send
+  answers immediately and says `delay_ms`, because "accepted" and "delivered" are
+  different promises.
+- A receive script runs before the vault and the decoder, which makes the vault a record
+  of what the engine decoded. That is stated where the setting is documented, because a
+  tap with an rx script is not a faithful tap.
+- Adding the delay broke the send path for a moment: a patch of mine dropped the actual
+  write while keeping the "sent" count, and five tests failed at once. The tests are what
+  caught it, which is the argument for a test per behaviour.
+
+Next action: a random jitter span (D-91), then the release that carries all of this. `serve` is the only interface it needs, so the
 work can be done in Edge with hot reload, and the Tauri shell wraps the same files
 afterwards. The engine has published the contract since S4; this is the first phase
 where a change to a panel can be seen without a desktop build.

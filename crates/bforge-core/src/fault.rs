@@ -22,6 +22,8 @@ pub struct FaultProfile {
     pub truncate: u8,
     /// Corrupt this many bytes at the end, which is where a CRC lives.
     pub corrupt_crc: u8,
+    /// Hold the write this long before it leaves, 0 to 5000 ms (D-66).
+    pub delay_ms: u16,
     /// Seed for every random choice, so a run reproduces.
     pub seed: u64,
 }
@@ -34,6 +36,7 @@ impl Default for FaultProfile {
             drop_every: 0,
             truncate: 0,
             corrupt_crc: 0,
+            delay_ms: 0,
             seed: 0x5EED_1234_ABCD_0001,
         }
     }
@@ -51,7 +54,11 @@ impl FaultProfile {
 
     /// True when the profile cannot change a byte.
     pub fn is_off(&self) -> bool {
-        self.flip_rate <= 0.0 && self.drop_every == 0 && self.truncate == 0 && self.corrupt_crc == 0
+        self.flip_rate <= 0.0
+            && self.drop_every == 0
+            && self.truncate == 0
+            && self.corrupt_crc == 0
+            && self.delay_ms == 0
     }
 }
 
@@ -60,6 +67,8 @@ impl FaultProfile {
 pub struct FaultOutcome {
     /// Bytes actually written.
     pub sent: usize,
+    /// The engine should hold the write this long (D-66).
+    pub delay: Option<std::time::Duration>,
     /// Bytes changed by this profile.
     pub bytes: usize,
     /// The write was dropped entirely.
@@ -119,6 +128,8 @@ impl Injector {
                 bytes,
                 FaultOutcome {
                     sent,
+                    delay: (profile.delay_ms > 0)
+                        .then(|| std::time::Duration::from_millis(u64::from(profile.delay_ms))),
                     bytes: 0,
                     dropped: false,
                 },
@@ -170,6 +181,8 @@ impl Injector {
             out,
             FaultOutcome {
                 sent,
+                delay: (profile.delay_ms > 0)
+                    .then(|| std::time::Duration::from_millis(u64::from(profile.delay_ms))),
                 bytes: changed,
                 dropped: false,
             },

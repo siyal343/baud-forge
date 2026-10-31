@@ -647,8 +647,11 @@ fn send(stream: &mut TcpStream, shared: &Arc<Shared>, body: &[u8]) {
     match answer.recv_timeout(Duration::from_secs(5)) {
         Ok(Ok(outcome)) => {
             let body = format!(
-                "{{\"port\":\"{port}\",\"sent\":{},\"fault_bytes\":{},\"dropped\":{}}}",
-                outcome.sent, outcome.bytes, outcome.dropped
+                "{{\"port\":\"{port}\",\"sent\":{},\"fault_bytes\":{},\"dropped\":{},\"delay_ms\":{}}}",
+                outcome.sent,
+                outcome.bytes,
+                outcome.dropped,
+                outcome.delay.map(|delay| delay.as_millis()).unwrap_or(0)
             );
             respond(stream, "200 OK", "application/json", body.as_bytes());
         }
@@ -689,6 +692,8 @@ struct FaultRequest {
     #[serde(default)]
     corrupt_crc: Option<u8>,
     #[serde(default)]
+    delay_ms: Option<u16>,
+    #[serde(default)]
     seed: Option<u64>,
 }
 
@@ -723,9 +728,14 @@ fn fault(stream: &mut TcpStream, shared: &Arc<Shared>, body: &[u8]) {
                 corrupt_crc: request.corrupt_crc.unwrap_or(4),
                 ..defaults
             },
+            "delay" => crate::fault::FaultProfile {
+                // 5 s is the top of the range FR-FLT-01 asks for.
+                delay_ms: request.delay_ms.unwrap_or(12).min(5_000),
+                ..defaults
+            },
             other => {
                 let body = format!(
-                    "{{\"error\":\"`{other}` is not a fault kind; use bit_flip, drop, truncate, corrupt_crc or off\"}}"
+                    "{{\"error\":\"`{other}` is not a fault kind; use bit_flip, drop, truncate, corrupt_crc, delay or off\"}}"
                 );
                 return respond(
                     stream,

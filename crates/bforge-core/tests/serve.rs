@@ -628,3 +628,144 @@ fn a_slow_client_is_told_its_frames_were_sampled() {
     client.join().expect("client");
     assert!(stats.clients_max >= 1, "{stats:?}");
 }
+
+/// A delayed write is held by the reader and lands late, without blocking anything.
+#[test]
+fn a_delay_fault_holds_the_frame_and_still_reports_it() {
+    let (device, received) = chatty_device();
+    let config = workspace(&device);
+    let ports = session_ports_from_config(&config, &[]).expect("ports");
+    let mut session = Session::start(ports, None, None).expect("session");
+    session.enable_decode(&config.ports).expect("decode");
+
+    let server = Server::bind("127.0.0.1:0".parse().unwrap()).expect("bind");
+    let address = server.local_addr().unwrap().to_string();
+
+    let client = std::thread::spawn(move || {
+        std::thread::sleep(Duration::from_millis(400));
+        let heard = received;
+
+        let (status, body) = post(
+            &address,
+            "/api/fault",
+            r#"{"port":"sim","kind":"delay","delay_ms":300}"#,
+        );
+        assert!(status.contains("200"), "{status} {body}");
+
+        let started = Instant::now();
+        let (status, body) = post(&address, "/api/send", r#"{"port":"sim","hex":"01 02 03"}"#);
+        let answering = started.elapsed();
+        assert!(status.contains("200"), "{status} {body}");
+        assert!(body.contains("\"delay_ms\":300"), "{body}");
+        assert!(
+            answering < Duration::from_millis(150),
+            "the send answered in {answering:?}, so it waited for the delay"
+        );
+
+        // Nothing has left yet, and then it does.
+        let early = heard.lock().unwrap().len();
+        assert!(early < 3, "bytes left before the delay ended: {early}");
+        let deadline = Instant::now() + Duration::from_secs(3);
+        let mut landed = Vec::new();
+        while Instant::now() < deadline {
+            landed = heard.lock().unwrap().clone();
+            if landed.len() >= 3 {
+                break;
+            }
+            std::thread::sleep(Duration::from_millis(20));
+        }
+        assert_eq!(
+            landed,
+            vec![0x01, 0x02, 0x03],
+            "the frame left after the delay"
+        );
+        assert!(
+            started.elapsed() >= Duration::from_millis(250),
+            "the frame left after {:?}",
+            started.elapsed()
+        );
+    });
+
+    let stats = server
+        .run(session, Some(Duration::from_secs(2)))
+        .expect("serve");
+    client.join().expect("client");
+    assert!(stats.requests >= 2, "{stats:?}");
+}
+
+/// A receive script changes what the host decodes, not what it sends.
+#[test]
+fn an_rx_script_changes_what_the_decoder_sees() {
+    // A device that sends lower-case text lines.
+    let listener = TcpListener::bind("127.0.0.1:0").unwrap();
+    let address = listener.local_addr().unwrap().to_string();
+    std::thread::spawn(move || {
+        let (mut stream, _) = listener.accept().unwrap();
+        for index in 0..200u32 {
+            if stream
+                .write_all(format!("hello {index}\n").as_bytes())
+                .is_err()
+            {
+                return;
+            }
+            std::thread::sleep(Duration::from_millis(5));
+        }
+        std::thread::sleep(Duration::from_millis(200));
+    });
+
+    let script = std::env::temp_dir().join(format!("bforge-rx-{}.lua", std::process::id()));
+    std::fs::write(
+        &script,
+        r#"
+        bforge.on_frame(function(frame)
+          local bytes = bforge.unhex(frame)
+          for index = 1, #bytes do
+            if bytes[index] >= 97 and bytes[index] <= 122 then
+              bytes[index] = bytes[index] - 32
+            end
+          end
+          return bforge.hex(bytes)
+        end)
+        "#,
+    )
+    .unwrap();
+
+    let workspace = format!(
+        r#"
+[workspace]
+name = "rx"
+version = "1.0"
+rx_script_path = "{}"
+
+[[ports]]
+id = "sim"
+transport = "tcp-client"
+address = "{address}"
+baud_rate = 115200
+framing = {{ mode = "delimiter", delimiter = 10 }}
+"#,
+        script.display().to_string().replace('\\', "/")
+    );
+    let config: bforge_core::ProjectConfig = toml::from_str(&workspace).expect("workspace");
+    let ports = session_ports_from_config(&config, &[]).expect("ports");
+    let mut session = Session::start(ports, None, None).expect("session");
+    session.enable_decode(&config.ports).expect("decode");
+    session.enable_rx_script(&script).expect("rx script loads");
+
+    let deadline = Instant::now() + Duration::from_secs(2);
+    while Instant::now() < deadline {
+        session.pump_once().expect("pump");
+        std::thread::sleep(Duration::from_millis(2));
+    }
+    let rows = session.take_frames();
+    session.seal().expect("seal");
+    let _ = std::fs::remove_file(&script);
+
+    assert!(!rows.is_empty(), "frames arrived");
+    let first = &rows[0];
+    assert!(
+        first.text.starts_with("HELLO"),
+        "the receive script uppercased it: {:?}",
+        first.text
+    );
+}
