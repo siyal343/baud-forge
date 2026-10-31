@@ -1,3 +1,58 @@
+# BaudForge 0.2.0
+
+Second release. Everything in 0.1.0, plus a programmable fault path and a typed command
+path. Released 31 October 2026; the figures below were measured on this machine.
+
+![the workbench](docs/screenshots/workbench.png)
+
+## New since 0.1.0
+
+- **Lua fault scripts** (spec 0031). A sandboxed Lua 5.4 hook runs on every transmitted
+  frame: it may change the bytes or drop the frame. No `io`, no `os`, no clock, and a
+  200 000-instruction budget per call, so an infinite loop costs one frame. Example
+  scripts ship in `examples/`.
+- **Typed encoding** (spec 0032). `POST /api/send` accepts `values` and encodes them with
+  the port's own C header schema — one table read and written, so a form and a decoder
+  cannot drift. Omitted fields stay zero; an unknown name is refused, never sent as zeros.
+- **The forge has a typed mode** (spec 0032). One row per numeric leaf of the last decoded
+  frame, seeded with the values that frame carried.
+- **Enums by label** (spec 0032). `MODE_FAULT`, `mode_fault` and `2` are the same frame; a
+  label the enum does not carry is refused with both names.
+- **Real headers work unedited** (spec 0032). A field may be an enum through a typedef
+  (`state_t state;`) and a struct inside a struct is addressable as `gains.proportional`.
+- **A bridge posts instead of waiting** (spec 0030), and rows carry a direction
+  (spec 0028) so a bridged pair reads as one bus (spec 0029).
+
+## What the C-compiler block cost, and why it is gone
+
+Tree-sitter (D-35) and the script runtime were both deferred because this machine had no C
+compiler. The MSVC toolchain installed for the desktop shell provides `cl.exe`, and the
+vendored Lua 5.4 builds with it. The GNU toolchain here still has no compiler, so a local
+GNU build needs `--exclude bforge-script`; every CI runner has one.
+
+## Measured for 0.2.0
+
+| Claim | Figure |
+| --- | --- |
+| Test suite | 255 tests, ~25 s |
+| Script runtime | 8 tests: flip, drop, nonsense return, infinite loop, no `io`, missing hook, label cases |
+| Typed send | `{"sync":43605,"mode":"MODE_FAULT"}` → `{"sent":7}`, device received the bytes the decoder reads back |
+| Nested struct | `gains.proportional` encoded and decoded through the same IR |
+| CI | 9 jobs green on 6 targets, including the Windows desktop build |
+
+## Still not in it
+
+The list from 0.1.0 stands, less what this release closed:
+
+- no installer or signing (D-74, deferred by decision);
+- no jitter or latency injection (D-66), no script on the receive path (D-84);
+- scripts work in bytes, not dissected fields (D-83);
+- plots are SVG, one series (D-63); the inspector is flat (D-69);
+- the scrubber seeks by record, not time (D-68); no live transmit rows (D-79);
+- enums are four bytes, so a short-enum firmware needs the width (D-89);
+- an array of structs is not expanded (D-90);
+- Windows is the only desktop platform that was built and run (D-77).
+
 # BaudForge 0.1.0
 
 First release candidate. A serial monitor, a protocol dissector and a fault-injection

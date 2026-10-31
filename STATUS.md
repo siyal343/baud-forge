@@ -6,7 +6,7 @@ Written 29 October 2026, measured from the repository at commit `8b5ee82`; updat
 
 | Figure | Value | How |
 | --- | --- | --- |
-| Commits | 48 | `git rev-list --count HEAD` |
+| Commits | 57 | `git rev-list --count HEAD` |
 | Rust | 18 323 lines across 9 crates | `wc -l` over `crates/**/*.rs` |
 | Frontend | 1 010 lines, SolidJS + TypeScript | `wc -l` over `ui/src` |
 | Tests | 241 passing, ~25 s, workspace | `cargo test --workspace --exclude bforge-gui` |
@@ -111,6 +111,8 @@ The freeze was put into practice:
   (`--ui`) instead of the placeholder page.
 - Lua fault scripts landed after the tag: a sandboxed hook on the transmit path
   (spec 0031), which also unblocked the C-compiler problem behind D-35 and D-67.
+- **`v0.2.0` is tagged and published**: Lua scripts, typed encoding, enum labels,
+  typedef'd enums, nested structs, the typed forge mode.
 - **`v0.1.0` is tagged and published** with six binaries (`bforge-linux-x86_64`,
   `bforge-linux-aarch64`, `bforge-macos-x86_64`, `bforge-macos-aarch64`,
   `bforge-windows-x86_64.exe`, `bforge-windows-aarch64.exe`).
