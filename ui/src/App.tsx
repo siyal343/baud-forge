@@ -1,4 +1,4 @@
-import { For, Show, createMemo, createSignal, onMount } from 'solid-js'
+import { For, Show, createMemo, createSignal, onCleanup, onMount } from 'solid-js'
 import { createFeed } from './lib/feed'
 import type { FieldRow, SymbolHit, TailRow } from './lib/types'
 import './index.css'
@@ -278,6 +278,48 @@ export default function App() {
     }
   }
 
+  const [yieldNote, setYieldNote] = createSignal<string | null>(null)
+
+  async function yieldPort() {
+    const port = ports().find((candidate) => candidate.state === 'open')?.id ?? ports()[0]?.id
+    if (!port) {
+      setYieldNote('no port to yield')
+      return
+    }
+    try {
+      const response = await fetch('/api/yield', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ port, seconds: 30 }),
+      })
+      const reply = await response.text()
+      setYieldNote(response.ok ? `${port} released for 30 s` : `${response.status} ${reply}`)
+    } catch (error) {
+      setYieldNote(String(error))
+    }
+  }
+
+  function focusZone(index: number) {
+    const zones = ['ribbon', 'sidebar', 'stage', 'inspector', 'forge']
+    document.querySelector<HTMLElement>(`[data-zone="${zones[index] ?? 'ribbon'}"]`)?.focus()
+  }
+
+  onMount(() => {
+    const onKey = (event: KeyboardEvent) => {
+      if (!event.ctrlKey || event.altKey) return
+      if (event.key >= '1' && event.key <= '5') {
+        event.preventDefault()
+        focusZone(Number(event.key) - 1)
+      }
+      if (event.key.toLowerCase() === 'y') {
+        event.preventDefault()
+        void yieldPort()
+      }
+    }
+    window.addEventListener('keydown', onKey)
+    onCleanup(() => window.removeEventListener('keydown', onKey))
+  })
+
   async function forgeSend(event: SubmitEvent) {
     event.preventDefault()
     const port = ports()[0]?.id
@@ -308,12 +350,22 @@ export default function App() {
 
   return (
     <div class="shell">
-      <header class="ribbon">
+      <header class="ribbon" data-zone="ribbon" tabindex="-1">
         <h1>BaudForge</h1>
         <span class="chip">contract {feed.snapshot()?.contract ?? '?'}</span>
         <span class={`chip ${feed.link()}`}>{feed.link()}</span>
         <span class="chip">{session()?.mode ?? 'idle'}</span>
         <span class="chip">ports {openPorts()}/{ports().length}</span>
+        <button
+          type="button"
+          class="chip action yield"
+          onClick={yieldPort}
+          disabled={ports().length === 0}
+          title="release the port so a flash tool can use it (Ctrl+Y)"
+        >
+          yield
+        </button>
+        <Show when={yieldNote()}>{(note) => <span class="chip">{note()}</span>}</Show>
         <For each={feed.snapshot()?.bridges ?? []}>
           {(bridge) => (
             <span class="chip bridge" classList={{ forward: bridge.forward }}>
@@ -332,7 +384,7 @@ export default function App() {
         <span class="chip">payload {session() ? bytes(session()!.payload_bytes) : '-'}</span>
       </header>
 
-      <aside class="sidebar">
+      <aside class="sidebar" data-zone="sidebar" tabindex="-1">
         <h2>Ports</h2>
         <Show when={ports().length > 0} fallback={<p class="empty">No ports in this workspace.</p>}>
           <For each={ports()}>
@@ -369,7 +421,7 @@ export default function App() {
         </ol>
       </aside>
 
-      <div class="stage">
+      <div class="stage" data-zone="stage" tabindex="-1">
         <main class="stream">
         <div class="stream-head">
           <h2>Stream</h2>
@@ -460,7 +512,7 @@ export default function App() {
         </section>
       </div>
 
-      <section class="inspector">
+      <section class="inspector" data-zone="inspector" tabindex="-1">
         <h2>Inspector</h2>
         <Show when={detail()} fallback={<p class="empty">Select a frame to read its bytes.</p>}>
           {(row) => (
@@ -511,7 +563,7 @@ export default function App() {
         </Show>
       </section>
 
-      <section class="forge">
+      <section class="forge" data-zone="forge" tabindex="-1">
         <div class="band-head">
           <h2>Command forge</h2>
           <h2>Fault injector</h2>

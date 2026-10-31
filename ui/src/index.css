@@ -1,16 +1,18 @@
 :root {
   color-scheme: dark;
-  --bg: #0d1015;
-  --panel: #14191f;
-  --panel-2: #181e26;
-  --line: #232b36;
-  --text: #d8dfe9;
-  --dim: #7b8598;
-  --valid: #3fb950;
-  --tx: #4aa3ff;
-  --yield: #d29922;
-  --fault: #f85149;
-  font: 12.5px/1.45 ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+  /* The palette from specs/UI-UX-Guide.md: obsidian ground, slate panels,
+     hairlines, and colour only for hardware or protocol state. */
+  --bg: #0b0e14;
+  --panel: #111621;
+  --panel-2: #151b28;
+  --line: #1e2638;
+  --text: #d5dceb;
+  --dim: #7c879c;
+  --valid: #10b981;
+  --tx: #06b6d4;
+  --yield: #f59e0b;
+  --fault: #ef4444;
+  font: 12px/1.45 "JetBrains Mono", ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
 }
 
 * { box-sizing: border-box; }
@@ -20,12 +22,13 @@ html, body, #root { height: 100%; margin: 0; }
 body {
   background: var(--bg);
   color: var(--text);
+  font-variant-numeric: tabular-nums;
 }
 
 .shell {
   display: grid;
   grid-template-columns: 260px minmax(0, 1fr) 340px;
-  grid-template-rows: 42px minmax(0, 1fr) 212px 30px;
+  grid-template-rows: 38px minmax(0, 1fr) 212px 28px;
   grid-template-areas:
     'ribbon ribbon ribbon'
     'sidebar stage inspector'
@@ -65,6 +68,10 @@ body {
 .chip.live { color: var(--valid); border-color: var(--valid); }
 .chip.bridge { color: var(--dim); }
 .chip.bridge.forward { color: var(--tx); border-color: var(--tx); }
+.chip.action { cursor: pointer; }
+.chip.action:hover { color: var(--text); border-color: var(--dim); }
+.chip.action.yield { color: var(--yield); border-color: var(--yield); }
+.chip.action:disabled { cursor: default; color: var(--dim); border-color: var(--line); }
 .chip.connecting { color: var(--yield); border-color: var(--yield); }
 .chip.down { color: var(--fault); border-color: var(--fault); }
 
@@ -75,6 +82,8 @@ body {
   overflow: auto;
   padding-bottom: 8px;
 }
+
+.zone:focus-visible { outline: 1px solid var(--tx); outline-offset: -1px; }
 
 .stage {
   grid-area: stage;
@@ -326,7 +335,7 @@ tbody tr.faulty td:last-child { color: var(--fault); }
 @media (max-width: 1100px) {
   .shell {
     grid-template-columns: 220px minmax(0, 1fr);
-    grid-template-rows: 42px minmax(0, 1fr) 180px 40vh 30px;
+    grid-template-rows: 38px minmax(0, 1fr) 180px 40vh 28px;
     grid-template-areas:
       'ribbon ribbon'
       'stage stage'

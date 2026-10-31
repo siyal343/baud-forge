@@ -1,3 +1,36 @@
+# BaudForge 0.6.0
+
+The window becomes an application. Released 1 November 2026.
+
+## New since 0.5.2
+
+- **A picker at launch** (spec 0036). Start BaudForge with no arguments and it offers
+  *Open workspace...*, *Try a demo*, and the last eight workspaces used on this machine.
+  No terminal, no path on the command line.
+- **The shell owns the engine.** Choosing a workspace starts a session inside the process
+  and moves the window to the workbench; a second choice stops the first and waits for the
+  vault to seal.
+- **A native file dialog**, filtered to `.bforge.toml`.
+- **Yield from the ribbon**: `POST /api/yield {"port":"obc","seconds":30}` releases a port
+  for a flash tool, and the ribbon binds it to a `yield` action and Ctrl+Y.
+- **The UI guide's palette**: obsidian #0B0E14, slate #111621, hairline #1E2638,
+  emerald/cyan/amber/crimson for state only, tabular numerals, a 38 px ribbon, and
+  Ctrl+1..5 to focus the five zones.
+
+## Measured
+
+| Claim | Figure |
+| --- | --- |
+| Launch with no arguments | window "BaudForge", no engine, picker shown |
+| Launch with a workspace | engine on 127.0.0.1:51891, both ports open, 1 bridge, workbench served |
+| Yield | {"port":"obc","yielded_seconds":5} for a 5 s window |
+| Tests | 269 |
+
+## Recorded
+
+Window geometry is not remembered (D-98), switching workspace means restarting the window
+(D-99), and one session runs at a time.
+
 # BaudForge 0.5.2
 
 The licence file the project claimed and did not have, and the free route to signing.

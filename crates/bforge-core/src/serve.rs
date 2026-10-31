@@ -89,6 +89,14 @@ struct SendJob {
     reply: std::sync::mpsc::SyncSender<Result<crate::fault::FaultOutcome, String>>,
 }
 
+/// One `POST /api/yield`: release a port for a window so a flash tool can use it.
+#[derive(Debug)]
+struct YieldJob {
+    port: String,
+    seconds: u64,
+    reply: std::sync::mpsc::SyncSender<bool>,
+}
+
 /// One `POST /api/fault`: arm a profile, or clear it with `None`.
 #[derive(Debug)]
 struct FaultJob {
@@ -116,6 +124,8 @@ struct Shared {
     send: Mutex<Option<std::sync::mpsc::Sender<SendJob>>>,
     /// Same for arming a fault profile.
     fault: Mutex<Option<std::sync::mpsc::Sender<FaultJob>>>,
+    /// Same for yielding a port.
+    yield_request: Mutex<Option<std::sync::mpsc::Sender<YieldJob>>>,
     /// Set by `with_vault`, before the server runs.
     vault: Mutex<Option<VaultSource>>,
     /// Set by `with_ui`: the built frontend to serve instead of the placeholder.
@@ -228,6 +238,8 @@ impl Server {
         *shared.send.lock().unwrap() = Some(send_tx);
         let (fault_tx, fault_rx) = std::sync::mpsc::channel::<FaultJob>();
         *shared.fault.lock().unwrap() = Some(fault_tx);
+        let (yield_tx, yield_rx) = std::sync::mpsc::channel::<YieldJob>();
+        *shared.yield_request.lock().unwrap() = Some(yield_tx);
 
         let events = session.subscribe();
         let mut reported_sampled = 0u64;
@@ -241,6 +253,10 @@ impl Server {
                 }
                 .map_err(|error| error.to_string());
                 let _ = job.reply.send(result);
+            }
+            while let Ok(job) = yield_rx.try_recv() {
+                let released = session.yield_port(&job.port, Duration::from_secs(job.seconds));
+                let _ = job.reply.send(released);
             }
             while let Ok(job) = fault_rx.try_recv() {
                 let result = match job.profile {
@@ -384,6 +400,11 @@ fn handle(mut stream: TcpStream, shared: Arc<Shared>, stop: Arc<AtomicBool>) {
     }
     if method == "GET" && path == "/api/vault/frames" {
         vault_frames(&mut stream, &shared, target);
+        return;
+    }
+    if method == "POST" && path == "/api/yield" {
+        let body = read_body(&mut reader, content_length);
+        yield_port(&mut stream, &shared, &body);
         return;
     }
     if method == "POST" && path == "/api/fault" {
@@ -941,6 +962,83 @@ fn content_type(path: &str) -> String {
         _ => "application/octet-stream",
     };
     kind.to_string()
+}
+
+#[derive(Debug, serde::Deserialize)]
+struct YieldBody {
+    port: String,
+    #[serde(default)]
+    seconds: Option<u64>,
+}
+
+/// Release a port for a window, so `esptool` or `arduino-cli` can take it.
+fn yield_port(stream: &mut TcpStream, shared: &Arc<Shared>, body: &[u8]) {
+    let request: YieldBody = match serde_json::from_slice(body) {
+        Ok(request) => request,
+        Err(error) => {
+            let body = format!("{{\"error\":\"bad request: {error}\"}}");
+            return respond(
+                stream,
+                "400 Bad Request",
+                "application/json",
+                body.as_bytes(),
+            );
+        }
+    };
+    // 30 s is the default a person waits for a flasher to take the port.
+    let seconds = request.seconds.unwrap_or(30).clamp(1, 600);
+    let sender = shared.yield_request.lock().unwrap().clone();
+    let Some(sender) = sender else {
+        let body = "{\"error\":\"the pump is not running\"}";
+        return respond(
+            stream,
+            "503 Service Unavailable",
+            "application/json",
+            body.as_bytes(),
+        );
+    };
+    let (reply, answer) = std::sync::mpsc::sync_channel(1);
+    if sender
+        .send(YieldJob {
+            port: request.port.clone(),
+            seconds,
+            reply,
+        })
+        .is_err()
+    {
+        let body = "{\"error\":\"the pump has stopped\"}";
+        return respond(
+            stream,
+            "503 Service Unavailable",
+            "application/json",
+            body.as_bytes(),
+        );
+    }
+    match answer.recv_timeout(Duration::from_secs(2)) {
+        Ok(true) => {
+            let body = format!(
+                "{{\"port\":\"{}\",\"yielded_seconds\":{seconds}}}",
+                request.port
+            );
+            respond(stream, "200 OK", "application/json", body.as_bytes());
+        }
+        Ok(false) => {
+            let body = format!(
+                "{{\"error\":\"port `{}` cannot be yielded\"}}",
+                request.port
+            );
+            respond(stream, "404 Not Found", "application/json", body.as_bytes());
+        }
+        Err(_) => {
+            let body = "{\"error\":\"no answer from the pump\"}";
+            respond(
+                stream,
+                "504 Gateway Timeout",
+                "application/json",
+                body.as_bytes(),
+            );
+        }
+    }
 }
 
 fn respond(stream: &mut TcpStream, status: &str, content_type: &str, body: &[u8]) {

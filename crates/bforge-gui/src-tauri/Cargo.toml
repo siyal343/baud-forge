@@ -9,6 +9,8 @@ description = "Tauri v2 desktop host for BaudForge (Milestone 2)"
 [dependencies]
 bforge-core.workspace = true
 toml.workspace = true
+serde_json.workspace = true
+rfd = "0.15"
 tauri = { version = "2", features = [] }
 
 [build-dependencies]

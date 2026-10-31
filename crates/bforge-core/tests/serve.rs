@@ -899,3 +899,31 @@ dissector = {{ type = "c_header", file = "{header}", root_struct = "ImuPacket" }
     let _ = std::fs::remove_file(&script);
     assert!(stats.requests >= 1, "{stats:?}");
 }
+
+/// The ribbon's Yield button has a route, and it releases the port.
+#[test]
+fn a_yield_request_releases_the_port() {
+    let (device, _received) = chatty_device();
+    let config = workspace(&device);
+    let ports = session_ports_from_config(&config, &[]).expect("ports");
+    let session = Session::start(ports, None, None).expect("session");
+
+    let server = Server::bind("127.0.0.1:0".parse().unwrap()).expect("bind");
+    let address = server.local_addr().unwrap().to_string();
+
+    let client = std::thread::spawn(move || {
+        std::thread::sleep(Duration::from_millis(300));
+        let (status, body) = post(&address, "/api/yield", r#"{"port":"sim","seconds":1}"#);
+        assert!(status.contains("200"), "{status} {body}");
+        assert!(body.contains("\"yielded_seconds\":1"), "{body}");
+
+        let (status, body) = post(&address, "/api/yield", r#"{"port":"nope"}"#);
+        assert!(status.contains("404"), "{status} {body}");
+    });
+
+    let stats = server
+        .run(session, Some(Duration::from_secs(2)))
+        .expect("serve");
+    client.join().expect("client");
+    assert!(stats.requests >= 2, "{stats:?}");
+}

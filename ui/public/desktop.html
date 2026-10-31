@@ -1,0 +1,154 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <title>BaudForge</title>
+    <style>
+      :root {
+        color-scheme: dark;
+        --bg: #0b0e14;
+        --panel: #111621;
+        --line: #1e2638;
+        --text: #d5dceb;
+        --dim: #7c879c;
+        --ok: #10b981;
+        --tx: #06b6d4;
+        --fault: #ef4444;
+      }
+      * { box-sizing: border-box; }
+      html, body { height: 100%; margin: 0; }
+      body {
+        background: var(--bg);
+        color: var(--text);
+        font: 13px/1.5 "JetBrains Mono", ui-monospace, Consolas, monospace;
+        display: grid;
+        place-items: center;
+        font-variant-numeric: tabular-nums;
+      }
+      main { width: min(620px, 90vw); }
+      h1 { font-size: 15px; letter-spacing: .14em; text-transform: uppercase; margin: 0 0 6px; }
+      p.lead { color: var(--dim); margin: 0 0 22px; }
+      .panel { background: var(--panel); border: 1px solid var(--line); border-radius: 8px; padding: 16px; }
+      button {
+        background: transparent;
+        color: var(--tx);
+        border: 1px solid var(--tx);
+        border-radius: 6px;
+        padding: 7px 14px;
+        font: inherit;
+        cursor: pointer;
+      }
+      button:hover { background: rgba(6, 182, 212, .08); }
+      button:disabled { color: var(--dim); border-color: var(--line); cursor: default; background: none; }
+      .row { display: flex; gap: 10px; align-items: center; flex-wrap: wrap; }
+      .path { color: var(--dim); word-break: break-all; }
+      ul { list-style: none; margin: 14px 0 0; padding: 0; display: grid; gap: 4px; }
+      li button {
+        border: 1px solid var(--line);
+        color: var(--text);
+        width: 100%;
+        text-align: left;
+        padding: 6px 10px;
+      }
+      li button:hover { border-color: var(--tx); }
+      .status { margin-top: 16px; color: var(--dim); min-height: 1.4em; }
+      .status.err { color: var(--fault); }
+      .status.ok { color: var(--ok); }
+      footer { margin-top: 18px; color: var(--dim); font-size: 11px; }
+      kbd { border: 1px solid var(--line); border-radius: 4px; padding: 0 5px; }
+    </style>
+  </head>
+  <body>
+    <main>
+      <h1>BaudForge</h1>
+      <p class="lead">Open a workspace to start the engine, or pick one you used before.</p>
+      <div class="panel">
+        <div class="row">
+          <button id="open" type="button">Open workspace…</button>
+          <button id="demo" type="button">Try a demo</button>
+        </div>
+        <div class="status" id="status"></div>
+        <ul id="recent"></ul>
+      </div>
+      <footer>
+        A workspace is a <code>.bforge.toml</code> file. The demo needs two simulators running,
+        see <code>docs/QUICKSTART.md</code>.
+      </footer>
+    </main>
+    <script>
+      const invoke = window.__TAURI__?.core?.invoke;
+      const status = document.getElementById('status');
+      const recentList = document.getElementById('recent');
+      const openButton = document.getElementById('open');
+      const demoButton = document.getElementById('demo');
+
+      function say(message, kind) {
+        status.textContent = message;
+        status.className = 'status' + (kind ? ' ' + kind : '');
+      }
+
+      async function start(path) {
+        if (!invoke) {
+          say('This page needs the desktop application.', 'err');
+          return;
+        }
+        say('starting ' + path + ' …');
+        try {
+          const url = await invoke('start_workspace', { path });
+          say('engine on ' + url, 'ok');
+          // The workbench is served by the engine, so the window moves there.
+          window.location.replace(url);
+        } catch (error) {
+          say(String(error), 'err');
+        }
+      }
+
+      async function loadRecent() {
+        if (!invoke) return;
+        try {
+          const items = await invoke('recent_workspaces');
+          recentList.innerHTML = '';
+          for (const path of items) {
+            const li = document.createElement('li');
+            const button = document.createElement('button');
+            button.type = 'button';
+            button.textContent = path;
+            button.onclick = () => start(path);
+            li.appendChild(button);
+            recentList.appendChild(li);
+          }
+        } catch (error) {
+          say(String(error), 'err');
+        }
+      }
+
+      openButton.onclick = async () => {
+        if (!invoke) {
+          say('This page needs the desktop application.', 'err');
+          return;
+        }
+        try {
+          const path = await invoke('pick_workspace');
+          if (path) await start(path);
+        } catch (error) {
+          say(String(error), 'err');
+        }
+      };
+
+      demoButton.onclick = async () => {
+        if (!invoke) {
+          say('This page needs the desktop application.', 'err');
+          return;
+        }
+        try {
+          const path = await invoke('demo_workspace');
+          if (path) await start(path);
+        } catch (error) {
+          say(String(error), 'err');
+        }
+      };
+
+      loadRecent();
+    </script>
+  </body>
+</html>

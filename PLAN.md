@@ -40,6 +40,7 @@ state through one contract (F1.7).
 | S8b assert fields | D-15 | done | a 6 s recording from the board decodes to 122 frames and passes 5 field, protocol and count checks |
 | S9 sockets | F1.2.7 (TCP, UDP, config) | done | simulator over loopback: tail decodes, record stores 60 frames, assert passes 3 of 3, no hardware |
 | S10 native packs | F3.4 (CCSDS/PUS, CSP, Modbus; MAVLink deferred) | done | 12 pack tests on hand-built fixtures; a CCSDS packet in a vault decodes and passes assert rules with no schema file |
+| S37 standalone shell | D-62 follow-on (the window stops needing a terminal) | done | picker with no arguments, engine started in-process from a native dialog, last eight workspaces kept, yield from the ribbon via POST /api/yield, guide palette |
 | S36 licence and OSS signing | D-95 (SignPath Foundation instead of a purchase) | done | verified Microsoft's own comparison and SignPath's criteria; found the repository had no `LICENSE` file at all, and added the dual licence verbatim |
 | S35 signing plumbing | D-95 (checksums now, a certificate when bought) | done | `SHA256SUMS.txt` on every release; Windows and macOS signing steps that run only when their secrets exist; `docs/SIGNING.md` with the cost of each route |
 | S34 demangling | D-44 (a name a person can read) | done | `_RINv…_13s8_device_sim` became `std::env::var::<&str>` on the same address |
@@ -519,7 +520,18 @@ S36 notes:
 - Applying is a human step: fill in the form with the repository, the licence and a release
   URL. After approval, their GitHub Action replaces our `signtool` step.
 
-Next action: apply to SignPath Foundation (a person must submit the form), or stop here. `serve` is the only interface it needs, so the
+S37 notes:
+
+- The shell now owns the engine: a picker page, start and stop commands, the recent list in
+  the app config directory, and a native file dialog from rfd.
+- The window loads the picker from the app bundle and then navigates to the engine, which
+  keeps every API path relative: one data path, as before.
+- The ribbon gained the Yield action the guide asks for, backed by a new route, and
+  Ctrl+1..5 now focuses the five zones.
+- Geometry is not remembered yet (D-98), and workspace switching means restarting (D-99).
+
+Next action: a session menu in the ribbon (D-99) and window geometry (D-98), then the plot
+band rewrite (D-63). `serve` is the only interface it needs, so the
 work can be done in Edge with hot reload, and the Tauri shell wraps the same files
 afterwards. The engine has published the contract since S4; this is the first phase
 where a change to a panel can be seen without a desktop build.
