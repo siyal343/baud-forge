@@ -1,7 +1,11 @@
 import { createEffect, createMemo, createSignal, onCleanup, onMount } from 'solid-js'
+import { SERIES_RGB, TraceRenderer } from '../lib/webgl'
 
 /** Colours in plot order: the guide's state colours, then quiet extensions. */
-export const SERIES_COLOURS = ['#10b981', '#06b6d4', '#f59e0b', '#ef4444', '#a78bfa', '#38bdf8']
+export const SERIES_COLOURS = SERIES_RGB.map(([r, g, b]) => {
+  const hex = (value: number) => Math.round(value * 255).toString(16).padStart(2, '0')
+  return `#${hex(r)}${hex(g)}${hex(b)}`
+})
 
 export interface SeriesLike {
   key: string
@@ -12,19 +16,35 @@ interface Props {
   series: SeriesLike[]
   /** Samples shown per trace; the engine keeps 600 per field. */
   window?: number
+  /** Told which renderer is live, so the header can say so. */
+  onRenderer?: (renderer: 'webgl' | 'canvas') => void
+}
+
+/** A trace whose values are whole and few is a state, not a measurement. */
+function isDiscrete(values: number[]): boolean {
+  const distinct = new Set<number>()
+  for (const value of values) {
+    if (!Number.isInteger(value)) return false
+    distinct.add(value)
+    if (distinct.size > 8) return false
+  }
+  return distinct.size > 0
 }
 
 /**
- * The telemetry band: one canvas, one animation frame at a time.
+ * The telemetry band: GPU traces on one canvas, grid, labels, cursor and state lanes on
+ * another above it.
  *
- * A canvas at device pixel ratio is what keeps this at 60 FPS with several traces;
- * SVG re-creates every node on each sample batch. Hovering reads the value under the
- * cursor, which is the other half of "plot this field" being useful.
+ * Two canvases rather than two contexts: a canvas owns exactly one, and mixing text and
+ * WebGL in one would mean drawing the labels as geometry. The overlay is cheap; the data
+ * is what needs the GPU.
  */
 export function Telemetry(props: Props) {
-  let canvas: HTMLCanvasElement | undefined
+  let tracesCanvas: HTMLCanvasElement | undefined
+  let overlayCanvas: HTMLCanvasElement | undefined
   const [size, setSize] = createSignal({ width: 800, height: 160 })
   const [hover, setHover] = createSignal<number | null>(null)
+  const [renderer, setRenderer] = createSignal<'webgl' | 'canvas'>('canvas')
 
   const windowSize = () => props.window ?? 600
   const visible = createMemo(() =>
@@ -33,11 +53,18 @@ export function Telemetry(props: Props) {
       values: trace.values.slice(-windowSize()),
     })),
   )
+  const longest = createMemo(() =>
+    visible().reduce((most, trace) => Math.max(most, trace.values.length), 0),
+  )
+
+  /** State lanes: discrete traces get a strip of their own instead of a line. */
+  const lanes = createMemo(() => visible().filter((trace) => isDiscrete(trace.values)))
 
   const bounds = createMemo(() => {
     let low = Number.POSITIVE_INFINITY
     let high = Number.NEGATIVE_INFINITY
     for (const trace of visible()) {
+      if (isDiscrete(trace.values)) continue
       for (const value of trace.values) {
         if (!Number.isFinite(value)) continue
         if (value < low) low = value
@@ -45,25 +72,24 @@ export function Telemetry(props: Props) {
       }
     }
     if (!Number.isFinite(low) || !Number.isFinite(high)) return { low: 0, high: 1 }
-    // A flat trace still needs a band to draw inside.
     if (high - low < 1e-9) return { low: low - 0.5, high: high + 0.5 }
     const pad = (high - low) * 0.08
     return { low: low - pad, high: high + pad }
   })
 
-  const longest = createMemo(() =>
-    visible().reduce((most, trace) => Math.max(most, trace.values.length), 0),
-  )
+  const padding = { left: 46, right: 10, top: 8, bottom: 18 }
+  const plotWidth = () => Math.max(1, size().width - padding.left - padding.right)
+  const plotHeight = () => Math.max(1, size().height - padding.top - padding.bottom)
 
   const format = (value: number) => {
-    const size = Math.abs(value)
-    if (size !== 0 && (size >= 100000 || size < 0.001)) return value.toExponential(2)
-    if (size >= 1000) return value.toFixed(0)
+    const magnitude = Math.abs(value)
+    if (magnitude !== 0 && (magnitude >= 100000 || magnitude < 0.001)) return value.toExponential(2)
+    if (magnitude >= 1000) return value.toFixed(0)
     return value.toFixed(2)
   }
 
-  function draw() {
-    const element = canvas
+  function drawOverlay() {
+    const element = overlayCanvas
     if (!element) return
     const ratio = globalThis.devicePixelRatio || 1
     const { width, height } = size()
@@ -73,20 +99,15 @@ export function Telemetry(props: Props) {
     }
     const context = element.getContext('2d')
     if (!context) return
-
     context.setTransform(ratio, 0, 0, ratio, 0, 0)
     context.clearRect(0, 0, width, height)
 
-    const padding = { left: 46, right: 10, top: 8, bottom: 18 }
-    const plotWidth = Math.max(1, width - padding.left - padding.right)
-    const plotHeight = Math.max(1, height - padding.top - padding.bottom)
     const { low, high } = bounds()
     const span = high - low || 1
+    const y = (value: number) => padding.top + plotHeight() - ((value - low) / span) * plotHeight()
     const x = (index: number, count: number) =>
-      padding.left + (count <= 1 ? plotWidth : (index / (count - 1)) * plotWidth)
-    const y = (value: number) => padding.top + plotHeight - ((value - low) / span) * plotHeight
+      padding.left + (count <= 1 ? plotWidth() : (index / (count - 1)) * plotWidth())
 
-    // Grid and labels, drawn in the hairline colour so data stays the brightest thing.
     context.strokeStyle = '#1e2638'
     context.fillStyle = '#7c879c'
     context.lineWidth = 1
@@ -103,26 +124,39 @@ export function Telemetry(props: Props) {
       context.fillText(format(value), padding.left - 6, at)
     }
 
-    context.textAlign = 'left'
-    context.textBaseline = 'alphabetic'
-    context.fillText(`${longest()} samples`, padding.left, height - 5)
-
-    // Traces.
-    context.lineWidth = 1.5
-    visible().forEach((trace, index) => {
-      if (trace.values.length < 2) return
-      context.strokeStyle = SERIES_COLOURS[index % SERIES_COLOURS.length]
-      context.beginPath()
-      trace.values.forEach((value, sample) => {
-        const pointX = x(sample, trace.values.length)
-        const pointY = y(value)
-        if (sample === 0) context.moveTo(pointX, pointY)
-        else context.lineTo(pointX, pointY)
+    // State lanes, under the traces: one row per discrete field, a block per change.
+    lanes().forEach((lane, laneIndex) => {
+      const laneHeight = 6
+      const laneY = padding.top + plotHeight() - 4 - laneIndex * (laneHeight + 3)
+      const distinct = [...new Set(lane.values)].sort((a, b) => a - b)
+      const colour = SERIES_COLOURS[(visible().findIndex((trace) => trace.key === lane.key)) % SERIES_COLOURS.length]
+      context.globalAlpha = 0.55
+      lane.values.forEach((value, index) => {
+        if (index === 0) return
+        if (value === lane.values[index - 1]) return
+        const level = distinct.indexOf(value)
+        context.fillStyle = colour
+        context.globalAlpha = 0.15 + (0.6 * (level + 1)) / distinct.length
+        context.fillRect(
+          x(index, lane.values.length),
+          laneY - laneHeight,
+          Math.max(1, plotWidth() / Math.max(1, lane.values.length - 1)),
+          laneHeight,
+        )
       })
-      context.stroke()
+      context.globalAlpha = 1
+      // The first stretch has no previous sample to change from, so it is drawn plainly.
+      context.fillStyle = colour
+      context.globalAlpha = 0.25
+      context.fillRect(padding.left, laneY - laneHeight, x(1, lane.values.length) - padding.left, laneHeight)
+      context.globalAlpha = 1
     })
 
-    // Cursor: a vertical line and a dot per trace, so a frame can be read exactly.
+    context.textAlign = 'left'
+    context.textBaseline = 'alphabetic'
+    context.fillStyle = '#7c879c'
+    context.fillText(`${longest()} samples`, padding.left, height - 5)
+
     const cursor = hover()
     if (cursor !== null && longest() > 1) {
       const at = x(cursor, longest())
@@ -130,12 +164,12 @@ export function Telemetry(props: Props) {
       context.setLineDash([3, 3])
       context.beginPath()
       context.moveTo(at, padding.top)
-      context.lineTo(at, padding.top + plotHeight)
+      context.lineTo(at, padding.top + plotHeight())
       context.stroke()
       context.setLineDash([])
       visible().forEach((trace, index) => {
         const value = trace.values[cursor]
-        if (value === undefined) return
+        if (value === undefined || isDiscrete(trace.values)) return
         context.fillStyle = SERIES_COLOURS[index % SERIES_COLOURS.length]
         context.beginPath()
         context.arc(at, y(value), 2.5, 0, Math.PI * 2)
@@ -144,21 +178,81 @@ export function Telemetry(props: Props) {
     }
   }
 
+  function drawTraces(renderer: TraceRenderer | null) {
+    const element = tracesCanvas
+    if (!element) return
+    const ratio = globalThis.devicePixelRatio || 1
+    const { width, height } = size()
+    const { low, high } = bounds()
+    const span = high - low || 1
+
+    if (renderer) {
+      renderer.resize(width, height, ratio)
+      // Normalise to clip space here, where the padding and the range are known: pixel y
+      // runs down the canvas, clip y runs up from the bottom edge.
+      const toClip = (value: number, index: number, count: number): [number, number] => {
+        const fraction = (value - low) / span
+        const pixelX = padding.left + (count <= 1 ? 0 : (index / (count - 1)) * plotWidth())
+        const pixelY = padding.top + plotHeight() * (1 - fraction)
+        return [(pixelX / width) * 2 - 1, 1 - (pixelY / height) * 2]
+      }
+      const traces = visible()
+        .map((trace, index) => {
+          if (isDiscrete(trace.values) || trace.values.length < 2) return null
+          const points: number[] = []
+          trace.values.forEach((value, sample) => {
+            const [x, y] = toClip(value, sample, trace.values.length)
+            points.push(x, y)
+          })
+          return { colour: SERIES_RGB[index % SERIES_RGB.length], points }
+        })
+        .filter((trace): trace is { colour: [number, number, number]; points: number[] } => trace !== null)
+      renderer.draw(traces)
+      return
+    }
+
+    // No WebGL2: draw the same traces with the 2D context.
+    const context = element.getContext('2d')
+    if (!context) return
+    if (element.width !== Math.round(width * ratio) || element.height !== Math.round(height * ratio)) {
+      element.width = Math.round(width * ratio)
+      element.height = Math.round(height * ratio)
+    }
+    context.setTransform(ratio, 0, 0, ratio, 0, 0)
+    context.clearRect(0, 0, width, height)
+    context.lineWidth = 1.5
+    visible().forEach((trace, index) => {
+      if (trace.values.length < 2 || isDiscrete(trace.values)) return
+      context.strokeStyle = SERIES_COLOURS[index % SERIES_COLOURS.length]
+      context.beginPath()
+      trace.values.forEach((value, sample) => {
+        const at =
+          padding.left +
+          (sample / (trace.values.length - 1)) * plotWidth()
+        const level = padding.top + plotHeight() - ((value - low) / span) * plotHeight()
+        if (sample === 0) context.moveTo(at, level)
+        else context.lineTo(at, level)
+      })
+      context.stroke()
+    })
+  }
+
   function onMove(event: PointerEvent) {
-    const element = canvas
+    const element = overlayCanvas
     if (!element) return
     const rect = element.getBoundingClientRect()
-    const padding = { left: 46, right: 10 }
-    const plotWidth = Math.max(1, rect.width - padding.left - padding.right)
-    const relative = (event.clientX - rect.left - padding.left) / plotWidth
+    const relative = (event.clientX - rect.left - padding.left) / plotWidth()
     const count = longest()
     if (count < 2) return setHover(null)
-    const index = Math.round(Math.min(1, Math.max(0, relative)) * (count - 1))
-    setHover(index)
+    setHover(Math.round(Math.min(1, Math.max(0, relative)) * (count - 1)))
   }
 
   onMount(() => {
-    const element = canvas
+    const gpu = tracesCanvas ? TraceRenderer.create(tracesCanvas) : null
+    setRenderer(gpu ? 'webgl' : 'canvas')
+    props.onRenderer?.(gpu ? 'webgl' : 'canvas')
+
+    const element = overlayCanvas
     if (!element) return
     const observer = new ResizeObserver(() => {
       setSize({ width: element.clientWidth, height: element.clientHeight })
@@ -169,36 +263,37 @@ export function Telemetry(props: Props) {
     let frame = 0
     let last = 0
     const tick = (time: number) => {
-      // Draw at most every 16 ms: the data arrives every 200 ms, but the cursor and the
-      // autoscale must follow a pointer without waiting for the next batch.
       if (time - last >= 16) {
         last = time
-        draw()
+        drawTraces(gpu)
+        drawOverlay()
       }
       frame = requestAnimationFrame(tick)
     }
     frame = requestAnimationFrame(tick)
+
     onCleanup(() => {
       cancelAnimationFrame(frame)
       observer.disconnect()
     })
   })
 
-  // Redraw once whenever the data or the selection changes, so a paused tab is correct.
+  // A redraw whenever the data or the selection changes, so a paused tab stays correct.
   createEffect(() => {
     visible()
     bounds()
-    draw()
   })
 
   return (
     <div class="telemetry">
+      <canvas class="traces" ref={tracesCanvas} aria-hidden="true" />
       <canvas
-        ref={canvas}
+        class="overlay"
+        ref={overlayCanvas}
         onPointerMove={onMove}
         onPointerLeave={() => setHover(null)}
-        aria-label="telemetry plot"
         role="img"
+        aria-label={`telemetry plot, ${renderer()} rendering`}
       />
     </div>
   )

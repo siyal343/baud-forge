@@ -40,6 +40,7 @@ state through one contract (F1.7).
 | S8b assert fields | D-15 | done | a 6 s recording from the board decodes to 122 frames and passes 5 field, protocol and count checks |
 | S9 sockets | F1.2.7 (TCP, UDP, config) | done | simulator over loopback: tail decodes, record stores 60 frames, assert passes 3 of 3, no hardware |
 | S10 native packs | F3.4 (CCSDS/PUS, CSP, Modbus; MAVLink deferred) | done | 12 pack tests on hand-built fixtures; a CCSDS packet in a vault decodes and passes assert rules with no schema file |
+| S40 GPU plots | D-63 (band 3B on the GPU) | done | the band reports `webgl`, draws traces on a GPU canvas with a 2D overlay, and turns discrete fields into state lanes; canvas remains the fallback |
 | S39 application polish | D-98, D-99, D-100, D-69 (the window becomes the app) | done | geometry saved and restored (1100x700 at 120,90 round trip), frameless window with controls in the ribbon, session menu, four layout tiers, field tree in the inspector |
 | S38 telemetry workspace | D-63 part one (several traces at 60 FPS, plot from the inspector) | done | canvas band with six traces and a hover cursor; dropped batches fell from 14 269 to 3, and the workbench received 8 988 frames in 25 s, matching the devices |
 | S37 standalone shell | D-62 follow-on (the window stops needing a terminal) | done | picker with no arguments, engine started in-process from a native dialog, last eight workspaces kept, yield from the ribbon via POST /api/yield, guide palette |
@@ -558,9 +559,19 @@ S39 notes:
 - The inspector now groups dotted names into a tree, so `samples` shows its four elements
   and every leaf keeps its plot button.
 
-Next action: hold here. Releases are paused by the user; the tree, the geometry and the
-session menu are pushed and tested locally, and D-63's WebGL band is the next large item
-when work resumes. `serve` is the only interface it needs, so the
+S40 notes:
+
+- Two canvases: GPU for data, 2D for grid, labels, cursor and lanes. One context per canvas
+  is a browser rule, and text as geometry would be a step backwards.
+- The renderer names itself in the band's header, which is how a capture can prove WebGL is
+  live rather than assumed.
+- A discrete trace becomes a lane: whole numbers with at most eight values are a state, not a
+  measurement.
+- `?plot=` joins `?at=` and `?bridge=` as a shareable view.
+- The DVR timeline is still missing because it needs time-based seeking (D-68).
+
+Next action: time-based seeking (D-68), which is the last item of band 3B and the one that
+makes the scrubber honest. `serve` is the only interface it needs, so the
 work can be done in Edge with hot reload, and the Tauri shell wraps the same files
 afterwards. The engine has published the contract since S4; this is the first phase
 where a change to a panel can be seen without a desktop build.

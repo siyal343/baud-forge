@@ -161,6 +161,8 @@ export default function App() {
   // A paired bus: one bridge's two ports, merged by time (spec 0029).
   // `null` follows the workspace: one bridge means one bus, no choice to make.
   const [bridge, setBridge] = createSignal<string | null>(null)
+  // Which renderer the band got: WebGL when the machine has it, canvas otherwise.
+  const [renderer, setRenderer] = createSignal<'webgl' | 'canvas'>('canvas')
   const bytesOf = (text: string) =>
     text.replace(/0x/gi, '').replace(/[\s:,]/g, '').length / 2
   const bridges = () => feed.snapshot()?.bridges ?? []
@@ -237,6 +239,8 @@ export default function App() {
 
   onMount(async () => {
     const params = new URLSearchParams(location.search)
+    const sharedPlot = params.get('plot')
+    if (sharedPlot) setPlotted(sharedPlot.split(',').map((item) => item.trim()).filter(Boolean))
     const shared = params.get('at')
     const sharedBridge = params.get('bridge')
     if (sharedBridge !== null) setBridge(sharedBridge)
@@ -559,6 +563,7 @@ export default function App() {
         <section class="plot-band">
           <div class="stream-head">
             <h2>Telemetry</h2>
+            <span class="hint" title="which renderer the band is using">{renderer()}</span>
             <Show when={plotKeys().length > 0} fallback={<span class="hint">No numeric fields yet.</span>}>
               <select
                 value=""
@@ -618,7 +623,7 @@ export default function App() {
             <span class="hint">{at() === null ? `record ${records()}` : scrubNote() ?? `record ${at()}`}</span>
           </div>
           <Show when={traces().length > 0} fallback={<span class="hint"></span>}>
-            <Telemetry series={traces()} />
+            <Telemetry series={traces()} onRenderer={setRenderer} />
           </Show>
         </section>
       </div>
