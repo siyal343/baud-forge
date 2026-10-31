@@ -40,6 +40,7 @@ state through one contract (F1.7).
 | S8b assert fields | D-15 | done | a 6 s recording from the board decodes to 122 frames and passes 5 field, protocol and count checks |
 | S9 sockets | F1.2.7 (TCP, UDP, config) | done | simulator over loopback: tail decodes, record stores 60 frames, assert passes 3 of 3, no hardware |
 | S10 native packs | F3.4 (CCSDS/PUS, CSP, Modbus; MAVLink deferred) | done | 12 pack tests on hand-built fixtures; a CCSDS packet in a vault decodes and passes assert rules with no schema file |
+| S41 time seek | D-68 (the scrubber speaks seconds) | done | `?t_ms=8000` resolved to record 5032 at 7 998 513 µs; the timeline reads "15.1 s recorded" and follows the growing recording |
 | S40 GPU plots | D-63 (band 3B on the GPU) | done | the band reports `webgl`, draws traces on a GPU canvas with a 2D overlay, and turns discrete fields into state lanes; canvas remains the fallback |
 | S39 application polish | D-98, D-99, D-100, D-69 (the window becomes the app) | done | geometry saved and restored (1100x700 at 120,90 round trip), frameless window with controls in the ribbon, session menu, four layout tiers, field tree in the inspector |
 | S38 telemetry workspace | D-63 part one (several traces at 60 FPS, plot from the inspector) | done | canvas band with six traces and a hover cursor; dropped batches fell from 14 269 to 3, and the workbench received 8 988 frames in 25 s, matching the devices |
@@ -570,8 +571,18 @@ S40 notes:
 - `?plot=` joins `?at=` and `?bridge=` as a shareable view.
 - The DVR timeline is still missing because it needs time-based seeking (D-68).
 
-Next action: time-based seeking (D-68), which is the last item of band 3B and the one that
-makes the scrubber honest. `serve` is the only interface it needs, so the
+S41 notes:
+
+- The sparse index already stored timestamps, so a time seek was a partition point plus a
+  forward walk of at most one stride. The catch was the *end*: a short session has no index
+  entries at all, so `last_timestamp_ns` reads the last record instead of the index.
+- The timeline started at "0.2 s recorded" because the span was fetched once when the page
+  opened; it now refreshes every three seconds while live.
+- `?at=` keeps its name and changes its unit to milliseconds. That is a small breaking change
+  to bookmarks, recorded in the spec.
+
+Next action: D-105 (playback) or the rails (D-63). Neither is needed for the tool to be
+honest; the band now measures in the unit a person uses. `serve` is the only interface it needs, so the
 work can be done in Edge with hot reload, and the Tauri shell wraps the same files
 afterwards. The engine has published the contract since S4; this is the first phase
 where a change to a panel can be seen without a desktop build.

@@ -156,8 +156,8 @@ export default function App() {
   // Scrubbing: null means live. A number is a record ordinal in the vault.
   const [at, setAt] = createSignal<number | null>(null)
   const [windowRows, setWindowRows] = createSignal<TailRow[]>([])
-  const [records, setRecords] = createSignal(0)
-  const [scrubNote, setScrubNote] = createSignal<string | null>(null)
+  // The vault's span, in milliseconds: what a timeline drags along.
+  const [spanMs, setSpanMs] = createSignal(0)
   // A paired bus: one bridge's two ports, merged by time (spec 0029).
   // `null` follows the workspace: one bridge means one bus, no choice to make.
   const [bridge, setBridge] = createSignal<string | null>(null)
@@ -220,24 +220,38 @@ export default function App() {
 
   const traces = createMemo(() => plottedKeys().map((key) => ({ key, values: seriesFor(key) })))
 
+  const [timelineNote, setTimelineNote] = createSignal<string | null>(null)
+
   async function loadWindow(record: number) {
     setAt(record)
     try {
-      const response = await fetch(api(`/api/vault/frames?at=${record}&count=400`))
+      // Minutes into the session, in milliseconds: the engine seeks with its index
+      // instead of walking records.
+      const response = await fetch(api(`/api/vault/frames?t_ms=${Math.round(record)}&count=400`))
       if (!response.ok) {
-        setScrubNote(`${response.status} ${await response.text()}`)
+        setTimelineNote(`${response.status} ${await response.text()}`)
         return
       }
       const body = (await response.json()) as { rows: TailRow[]; records: number; at: number }
-      setRecords(body.records)
       setWindowRows(body.rows)
-      setScrubNote(`${body.rows.length} frames from record ${body.at}`)
+      setSpanMs((current) => Math.max(current, record))
     } catch (error) {
-      setScrubNote(String(error))
+      setTimelineNote(String(error))
     }
   }
 
-  onMount(async () => {
+  async function refreshSpan() {
+    try {
+      const response = await fetch(api('/api/vault'))
+      if (!response.ok) return
+      const body = (await response.json()) as { records: number; duration_ms?: number }
+      setSpanMs(body.duration_ms ?? 0)
+    } catch {
+      // A session without a vault has nothing to scrub.
+    }
+  }
+
+  onMount(() => {
     const params = new URLSearchParams(location.search)
     const sharedPlot = params.get('plot')
     if (sharedPlot) setPlotted(sharedPlot.split(',').map((item) => item.trim()).filter(Boolean))
@@ -247,17 +261,16 @@ export default function App() {
     // `?typed=1` opens on the typed form, which is also the only way to capture it
     // with a headless browser.
     if (params.get('typed') === '1') chooseTyped(true)
-    try {
-      const response = await fetch(api('/api/vault'))
-      if (response.ok) {
-        const body = (await response.json()) as { records: number }
-        setRecords(body.records)
-        if (shared !== null) await loadWindow(Number(shared))
-      }
-    } catch {
-      // A session without a vault simply has nothing to scrub.
-    }
+
+    void refreshSpan()
+    if (shared !== null) void loadWindow(Number(shared))
+    // The recording grows while the window is open, so the timeline follows it.
+    const timer = setInterval(() => {
+      if (at() === null) void refreshSpan()
+    }, 3000)
+    onCleanup(() => clearInterval(timer))
   })
+
   const detail = () => selected() ?? rows().at(-1) ?? null
   const openPorts = () => ports().filter((port) => port.state === 'open').length
 
@@ -612,15 +625,21 @@ export default function App() {
             <input
               type="range"
               min="0"
-              max={Math.max(records() - 1, 0)}
-              value={at() ?? Math.max(records() - 1, 0)}
+              max={Math.max(spanMs(), 1)}
+              step={Math.max(1, Math.round(spanMs() / 2000))}
+              value={at() ?? Math.max(spanMs(), 0)}
               onInput={(event) => loadWindow(Number(event.currentTarget.value))}
-              aria-label="vault position"
+              aria-label="vault time in milliseconds"
             />
             <button type="button" onClick={() => { setAt(null); setWindowRows([]) }} classList={{ active: at() === null }}>
               live
             </button>
-            <span class="hint">{at() === null ? `record ${records()}` : scrubNote() ?? `record ${at()}`}</span>
+            <span class="hint">
+              {timelineNote() ??
+                (at() === null
+                  ? `${(spanMs() / 1000).toFixed(1)} s recorded`
+                  : `${(Number(at() ?? 0) / 1000).toFixed(3)} s / ${(spanMs() / 1000).toFixed(1)} s`)}
+            </span>
           </div>
           <Show when={traces().length > 0} fallback={<span class="hint"></span>}>
             <Telemetry series={traces()} onRenderer={setRenderer} />

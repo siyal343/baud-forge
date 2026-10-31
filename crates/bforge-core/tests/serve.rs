@@ -877,3 +877,52 @@ fn a_yield_request_releases_the_port() {
     client.join().expect("client");
     assert!(stats.requests >= 2, "{stats:?}");
 }
+
+/// The scrubber can seek by time, which is what a timeline in seconds needs.
+#[test]
+fn a_vault_window_can_be_seeked_by_time() {
+    let device = device();
+    let config = workspace(&device);
+    let ports = session_ports_from_config(&config, &[]).expect("ports");
+    let vault = std::env::temp_dir().join(format!("bforge-time-{}.bflog", std::process::id()));
+    let _ = std::fs::remove_file(&vault);
+    let _ = std::fs::remove_file(bforge_storage::index_path(&vault));
+
+    let mut session = Session::start(ports, Some(&vault), None).expect("session");
+    session.enable_decode(&config.ports).expect("decode");
+    let server = Server::bind("127.0.0.1:0".parse().unwrap())
+        .expect("bind")
+        .with_vault(bforge_core::serve::VaultSource {
+            path: vault.clone(),
+            ports: config.ports.clone(),
+        });
+    let address = server.local_addr().unwrap().to_string();
+
+    let client = std::thread::spawn(move || {
+        std::thread::sleep(Duration::from_millis(900));
+
+        let (status, body) = get(&address, "/api/vault");
+        assert!(status.contains("200"), "{status} {body}");
+        assert!(
+            body.contains("\"duration_ms\":"),
+            "a timeline needs the span: {body}"
+        );
+
+        let (status, body) = get(&address, "/api/vault/frames?t_ms=0&count=20");
+        assert!(status.contains("200"), "{status} {body}");
+        assert!(body.contains("\"rows\":["), "{body}");
+
+        // A time past the end lands on the last record rather than failing.
+        let (status, body) = get(&address, "/api/vault/frames?t_ms=99999999&count=5");
+        assert!(status.contains("200"), "{status} {body}");
+
+        let _ = std::fs::remove_file(&vault);
+        let _ = std::fs::remove_file(bforge_storage::index_path(&vault));
+    });
+
+    let stats = server
+        .run(session, Some(Duration::from_secs(2)))
+        .expect("serve");
+    client.join().expect("client");
+    assert!(stats.requests >= 3, "{stats:?}");
+}

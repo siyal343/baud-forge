@@ -343,3 +343,32 @@ fn a_reader_opens_a_vault_that_is_not_sealed() {
     let _ = std::fs::remove_file(&path);
     let _ = std::fs::remove_file(bforge_storage::index_path(&path));
 }
+
+/// A timeline in seconds seeks by time, not by record number.
+#[test]
+fn a_time_seek_lands_on_the_first_record_at_or_after_it() {
+    let path = temp_path("seek-time");
+    // One record every 10 ms, timestamps from the writer's clock.
+    let mut writer = LogWriter::create(&path, header()).unwrap();
+    for seq in 0..50u64 {
+        let mut chunk = chunk(seq, 8);
+        chunk.timestamp_ns = seq * 10_000_000;
+        writer.append(&chunk, &payload(seq, 8)).unwrap();
+    }
+    writer.seal().unwrap();
+
+    let mut reader = LogReader::open(&path).expect("opens");
+    assert_eq!(reader.last_timestamp_ns(), 49 * 10_000_000);
+
+    // Exactly on a record.
+    assert_eq!(reader.seek_time(10 * 10_000_000).unwrap(), Some(10));
+    // Between records: the next one.
+    assert_eq!(reader.seek_time(105_000_000).unwrap(), Some(11));
+    // Before the first: the first.
+    assert_eq!(reader.seek_time(0).unwrap(), Some(0));
+    // Past the end: the last record, so a slider stays usable.
+    assert_eq!(reader.seek_time(99_000_000_000).unwrap(), Some(49));
+
+    let _ = std::fs::remove_file(&path);
+    let _ = std::fs::remove_file(bforge_storage::index_path(&path));
+}

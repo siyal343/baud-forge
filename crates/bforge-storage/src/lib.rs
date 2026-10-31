@@ -105,6 +105,23 @@ impl SparseIndex {
             .partition_point(|entry| entry.frame_id <= frame_id);
         cut.checked_sub(1).map(|index| self.entries[index])
     }
+
+    /// The last entry at or before `timestamp_ns`, for seeking by time.
+    ///
+    /// Timestamps rise with the record number on one port; a bridged session can step
+    /// back a little between ports, so the caller walks forward from here rather than
+    /// assuming the next record is later.
+    pub fn seek_time(&self, timestamp_ns: u64) -> Option<IndexEntry> {
+        let cut = self
+            .entries
+            .partition_point(|entry| entry.timestamp_ns <= timestamp_ns);
+        cut.checked_sub(1).map(|index| self.entries[index])
+    }
+
+    /// The newest timestamp the index knows, which is the end of the recording.
+    pub fn last_timestamp(&self) -> Option<u64> {
+        self.entries.last().map(|entry| entry.timestamp_ns)
+    }
 }
 
 /// Export formats offered for a recorded session (FR-STO-02).

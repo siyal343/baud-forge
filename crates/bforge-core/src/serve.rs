@@ -880,19 +880,21 @@ fn vault_info(stream: &mut TcpStream, shared: &Arc<Shared>, _target: &str) {
             b"{\"error\":\"no vault\"}",
         );
     };
-    let reader = match bforge_storage::LogReader::open(&source.path) {
+    let mut reader = match bforge_storage::LogReader::open(&source.path) {
         Ok(reader) => reader,
         Err(error) => {
             let body = format!("{{\"error\":\"{error}\"}}");
             return respond(stream, "409 Conflict", "application/json", body.as_bytes());
         }
     };
+    let duration_ns = reader.last_timestamp_ns();
     let body = format!(
-        "{{\"path\":{},\"records\":{},\"bytes\":{},\"damaged_tail\":{}}}",
+        "{{\"path\":{},\"records\":{},\"bytes\":{},\"damaged_tail\":{},\"duration_ms\":{}}}",
         serde_json::json!(source.path.display().to_string()),
         reader.chunks(),
         reader.payload_bytes(),
-        reader.damaged_tail()
+        reader.damaged_tail(),
+        duration_ns / 1_000_000
     );
     respond(stream, "200 OK", "application/json", body.as_bytes());
 }
@@ -909,7 +911,7 @@ fn vault_frames(stream: &mut TcpStream, shared: &Arc<Shared>, target: &str) {
         );
     };
     let query = query(target);
-    let at: u64 = query
+    let mut at: u64 = query
         .get("at")
         .and_then(|value| value.parse().ok())
         .unwrap_or(0);
@@ -926,6 +928,21 @@ fn vault_frames(stream: &mut TcpStream, shared: &Arc<Shared>, target: &str) {
             return respond(stream, "409 Conflict", "application/json", body.as_bytes());
         }
     };
+    // A time in milliseconds wins over a record number: a timeline drags in seconds.
+    if let Some(time_ms) = query
+        .get("t_ms")
+        .and_then(|value| value.parse::<u64>().ok())
+    {
+        match reader.seek_time(time_ms.saturating_mul(1_000_000)) {
+            Ok(Some(record)) => at = record,
+            Ok(None) => at = 0,
+            Err(error) => {
+                let body = format!("{{\"error\":\"{error}\"}}");
+                return respond(stream, "409 Conflict", "application/json", body.as_bytes());
+            }
+        }
+    }
+
     let records = reader.chunks();
     let mut rows = Vec::new();
     for port in &source.ports {

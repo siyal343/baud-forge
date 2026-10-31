@@ -150,6 +150,42 @@ impl LogReader {
     /// The seek key is the record ordinal, not the chunk sequence: every port
     /// starts its own sequence at zero, so the sequence in a record is unique
     /// only within that port. `chunk.seq_id` is carried through untouched.
+    /// The first record at or after `timestamp_ns`, or the last record if the time is
+    /// past the end. This is what a timeline in seconds seeks with.
+    pub fn seek_time(&mut self, timestamp_ns: u64) -> Result<Option<u64>, StorageError> {
+        if self.chunks == 0 {
+            return Ok(None);
+        }
+        let (mut ordinal, mut position) = match self.index.seek_time(timestamp_ns) {
+            Some(entry) => (entry.frame_id, entry.file_offset),
+            None => (0, HEADER_LEN as u64),
+        };
+        while ordinal < self.chunks {
+            let chunk = self.read_record_at(position)?;
+            if chunk.timestamp_ns >= timestamp_ns {
+                return Ok(Some(ordinal));
+            }
+            position += RECORD_HEADER_LEN as u64 + chunk.payload_len as u64;
+            ordinal += 1;
+        }
+        Ok(Some(self.chunks.saturating_sub(1)))
+    }
+
+    /// The newest timestamp in the file, for the timeline's right edge.
+    ///
+    /// The sparse index only holds every stride-th record, and a short session has no
+    /// entries at all, so the last record is read directly rather than trusted to an
+    /// index that may not reach it.
+    pub fn last_timestamp_ns(&mut self) -> u64 {
+        if self.chunks == 0 {
+            return 0;
+        }
+        match self.read_at(self.chunks - 1) {
+            Ok(Some(record)) => record.chunk.timestamp_ns,
+            _ => 0,
+        }
+    }
+
     pub fn read_at(&mut self, frame_id: u64) -> Result<Option<LogRecord>, StorageError> {
         if frame_id >= self.chunks {
             return Ok(None);
