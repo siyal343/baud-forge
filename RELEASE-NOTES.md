@@ -1,3 +1,25 @@
+# BaudForge 0.5.0
+
+Crash names a person can read. Everything in 0.4.1, plus the demangling that had been
+deferred since the first ELF slice. Released 31 October 2026.
+
+## New since 0.4.1
+
+- **Rust symbols are demangled** (spec 0035). A crash badge now reads `std::env::var::<&str>`
+  instead of `_RINvNtCs59fwaEIuEkC_3std3env3varReECs8JtRkeDsMJy_13s8_device_sim`. The
+  compiler's own demangler, one small dependency, applied at load and at resolve.
+- C symbols are never touched by the attempt: a name the demangler does not know is
+  returned exactly as it was.
+
+## Measured
+
+| Address | Before | After |
+| --- | --- | --- |
+| `0x140001484` | `_RINvNtCs59fwaEIuEkC_3std3env3varReECs8…` | `var::<&str>` |
+| `0x140001434` | `_RINv…` | `string::String>` |
+
+266 tests; the ELF crate gained two of them.
+
 # BaudForge 0.4.1
 
 A test that timed a thread start, and nothing else. Released 31 October 2026.

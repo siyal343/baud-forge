@@ -1,13 +1,22 @@
 //! Loading a firmware image and resolving addresses into it.
 
 use crate::{SourceLocation, SymbolizeError};
+
+/// A symbol as a person reads it: Rust names demangled, C names unchanged.
+pub fn readable_name(name: &str) -> String {
+    match rustc_demangle::try_demangle(name) {
+        // The alternate form drops the trailing hash, which nobody reads.
+        Ok(demangled) => format!("{demangled:#}"),
+        Err(_) => name.to_string(),
+    }
+}
 use object::{Object, ObjectSymbol};
 use std::path::{Path, PathBuf};
 
 /// One function symbol from the image.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct Function {
-    /// Name as the image stores it. Rust names arrive mangled; demangling is D-44.
+    /// Name as a person reads it: Rust names demangled, C names unchanged.
     pub name: String,
     pub address: u64,
     /// Size as the image records it, or 0 when it does not.
@@ -58,7 +67,7 @@ impl ElfImage {
                 continue;
             }
             functions.push(Function {
-                name: name.to_string(),
+                name: readable_name(name),
                 address: symbol.address(),
                 size: symbol.size(),
             });
@@ -110,7 +119,7 @@ impl ElfImage {
             line: location.line.unwrap_or(0),
             function: self
                 .nearest_function(address)
-                .map(|function| function.name.clone())
+                .map(|function| readable_name(&function.name))
                 .unwrap_or_default(),
             address,
         })
@@ -251,5 +260,24 @@ mod tests {
         let error = ElfImage::load(&path).unwrap_err();
         assert!(matches!(error, SymbolizeError::Unreadable(_)), "{error}");
         let _ = std::fs::remove_file(path);
+    }
+}
+
+#[cfg(test)]
+mod name_tests {
+    use super::readable_name;
+
+    #[test]
+    fn a_mangled_rust_name_becomes_readable() {
+        let mangled = "_RINvNtCs59fwaEIuEkC_3std3env3varReECs8JtRkeDsMJy_13s8_device_sim";
+        let name = readable_name(mangled);
+        assert!(name.starts_with("std::env::var"), "{name}");
+        assert!(!name.contains("_R"), "the mangling prefix is gone: {name}");
+    }
+
+    #[test]
+    fn a_c_name_is_left_alone() {
+        assert_eq!(readable_name("app_main"), "app_main");
+        assert_eq!(readable_name("HAL_UART_IRQHandler"), "HAL_UART_IRQHandler");
     }
 }
