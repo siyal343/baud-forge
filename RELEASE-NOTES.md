@@ -1,3 +1,17 @@
+# BaudForge 0.4.1
+
+A test that timed a thread start, and nothing else. Released 31 October 2026.
+
+## Fixed
+
+`a_slow_logger_stalls_the_reader_instead_of_dropping` slept 50 ms and then sampled the
+stall counter once. On a loaded machine the reader thread can start later than that, so
+the sample was taken before the wait began and the suite went red about once in four
+runs. It now waits for the stall to appear, with a 5 s bound, and still asserts the
+reader did not run ahead.
+
+Two full runs after the change: 266 tests, zero failures.
+
 # BaudForge 0.4.0
 
 Scripts that work in fields. Everything in 0.3.1, plus the API the SRS's own Lua example

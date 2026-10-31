@@ -138,10 +138,17 @@ fn a_slow_logger_stalls_the_reader_instead_of_dropping() {
     let mut logger = consumers.remove(0);
     drop(consumers);
 
-    // Do not drain for a moment: the reader must wait, not drop.
-    thread::sleep(Duration::from_millis(50));
+    // Do not drain: the reader must wait, not drop. Wait for the wait to appear
+    // rather than for a fixed time, because a loaded machine may start the reader late.
+    let deadline = Instant::now() + Duration::from_secs(5);
+    while pipeline.stats().stalls_ns == 0 && Instant::now() < deadline {
+        thread::sleep(Duration::from_millis(1));
+    }
     let blocked = pipeline.stats();
-    assert!(blocked.stalls_ns > 0, "the reader must report its wait");
+    assert!(
+        blocked.stalls_ns > 0,
+        "the reader never reported its wait: {blocked:?}"
+    );
     assert!(
         blocked.chunks <= 8,
         "the reader must not run ahead: {}",

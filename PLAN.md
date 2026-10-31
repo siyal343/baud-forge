@@ -40,6 +40,7 @@ state through one contract (F1.7).
 | S8b assert fields | D-15 | done | a 6 s recording from the board decodes to 122 frames and passes 5 field, protocol and count checks |
 | S9 sockets | F1.2.7 (TCP, UDP, config) | done | simulator over loopback: tail decodes, record stores 60 frames, assert passes 3 of 3, no hardware |
 | S10 native packs | F3.4 (CCSDS/PUS, CSP, Modbus; MAVLink deferred) | done | 12 pack tests on hand-built fixtures; a CCSDS packet in a vault decodes and passes assert rules with no schema file |
+| S33 flake fix | — (a test that timed a thread start) | done | `a_slow_logger_stalls_the_reader_instead_of_dropping` waited 50 ms and sampled once; it now waits for the stall to appear. Five consecutive runs green. |
 | S32 script fields | FR-SCR-01 (read and write a field by name) | done | `frame:set("v_batt_mv", 7500)` reached the device with the sync word untouched and the CRC recomputed |
 | S31 jitter | FR-FLT-01 (a latency span, not one number) | done | eight sends with `jitter_ms: 40` reported eight holds inside the span and not all equal; the same seed replays the sequence |
 | S30 delay and rx scripts | FR-FLT-01, FR-SCR-01 (latency; receive-side script) | done | a 300 ms delay answers at once and lands late; a receive script uppercased `hello 7` before the decoder saw it |
@@ -476,7 +477,16 @@ S32 notes:
 - A fallback that silently returned the input bytes hid the feature for one test run. The
   method now takes `&self` and the mistake is written into the spec.
 
-Next action: a release, 0.4.0, which completes the SRS's Lua example end to end. `serve` is the only interface it needs, so the
+S33 notes:
+
+- The stall test asserted after a fixed 50 ms. On a loaded machine the reader thread can
+  start later than that, so the sample was taken before the wait began and the suite went
+  red once in about four runs. The test now waits for the stall to appear (with a 5 s
+  bound) and still asserts the reader did not run ahead.
+- Two full runs, 266 tests each, zero failures.
+
+Next action: 0.4.1 with this fix, or move on to the next gap. The release itself (0.4.0)
+is published and its CI was green; the flake shows up only under load. `serve` is the only interface it needs, so the
 work can be done in Edge with hot reload, and the Tauri shell wraps the same files
 afterwards. The engine has published the contract since S4; this is the first phase
 where a change to a panel can be seen without a desktop build.
