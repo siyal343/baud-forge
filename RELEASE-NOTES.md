@@ -1,3 +1,24 @@
+# BaudForge 0.5.1
+
+Trust plumbing. Everything in 0.5.0, plus a checksum file on every release and signing
+steps that turn on the day a certificate exists. Released 31 October 2026.
+
+## New since 0.5.0
+
+- **`SHA256SUMS.txt` on every release**, written by the publish job from the files it
+  uploads. A reader can check a download instead of trusting the transport.
+- **Windows signing is ready**: the release workflow signs the CLI binaries and the
+  installer with `signtool` when `WINDOWS_CERTIFICATE` exists, and skips the step when it
+  does not.
+- **macOS signing is ready** the same way: `codesign` with a Developer ID from a secret.
+- **`docs/SIGNING.md`** states what a certificate costs (OV ~200–400 USD/yr, EV, Azure
+  Trusted Signing at ~10 USD/month, SignPath free for OSS), which five secrets to set, and
+  the one command that proves it worked: `Get-AuthenticodeSignature`.
+
+Signing itself is a purchase, not a code change; the binaries in this release are still
+unsigned, which is recorded as D-95 (Windows) and D-96 (macOS, which also needs
+notarisation).
+
 # BaudForge 0.5.0
 
 Crash names a person can read. Everything in 0.4.1, plus the demangling that had been

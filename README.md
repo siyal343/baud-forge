@@ -16,6 +16,7 @@ Binary name: `bforge`.
 The engine, the command line and the workbench are built and measured. What is
 missing is listed in [`RELEASE-NOTES.md`](RELEASE-NOTES.md) and, with reasons, in
 [`DEFERRED.md`](DEFERRED.md). Progress and remaining scope: [`STATUS.md`](STATUS.md).
+Downloads come with `SHA256SUMS.txt`; signing status and cost: [`docs/SIGNING.md`](docs/SIGNING.md).
 
 **Start here: [`docs/QUICKSTART.md`](docs/QUICKSTART.md)** — two simulated devices,
 an ESP32-C3, or the desktop window.

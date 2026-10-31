@@ -40,6 +40,7 @@ state through one contract (F1.7).
 | S8b assert fields | D-15 | done | a 6 s recording from the board decodes to 122 frames and passes 5 field, protocol and count checks |
 | S9 sockets | F1.2.7 (TCP, UDP, config) | done | simulator over loopback: tail decodes, record stores 60 frames, assert passes 3 of 3, no hardware |
 | S10 native packs | F3.4 (CCSDS/PUS, CSP, Modbus; MAVLink deferred) | done | 12 pack tests on hand-built fixtures; a CCSDS packet in a vault decodes and passes assert rules with no schema file |
+| S35 signing plumbing | D-95 (checksums now, a certificate when bought) | done | `SHA256SUMS.txt` on every release; Windows and macOS signing steps that run only when their secrets exist; `docs/SIGNING.md` with the cost of each route |
 | S34 demangling | D-44 (a name a person can read) | done | `_RINv…_13s8_device_sim` became `std::env::var::<&str>` on the same address |
 | S33 flake fix | — (a test that timed a thread start) | done | `a_slow_logger_stalls_the_reader_instead_of_dropping` waited 50 ms and sampled once; it now waits for the stall to appear. Five consecutive runs green. |
 | S32 script fields | FR-SCR-01 (read and write a field by name) | done | `frame:set("v_batt_mv", 7500)` reached the device with the sync word untouched and the CRC recomputed |
@@ -494,7 +495,20 @@ S34 notes:
   default for C symbols.
 - D-44 was open since the first ELF slice; it was one small dependency and ten lines.
 
-Next action: 0.5.0 with the demangled names, then decide between signing and stopping. `serve` is the only interface it needs, so the
+S35 notes:
+
+- Checksums are the part of trust that needs no certificate, and they ship now.
+- The signing steps are real: `signtool` for Windows (binary and installer) and `codesign`
+  for macOS, gated on job-level env from secrets, because GitHub does not allow `secrets`
+  in a step `if`.
+- A certificate is a purchase, not a code change: `docs/SIGNING.md` gives the three routes,
+  the five secrets and the command that proves it worked.
+- D-74 split into D-95 (unsigned Windows binaries) and D-96 (macOS signing and
+  notarisation).
+
+Next action: stop shipping features until the certificate decision arrives. The tool now
+covers FR-FLT-01, FR-MITM-01 and FR-SCR-01, every release has an installer and checksums,
+and the remaining work is depth rather than direction. `serve` is the only interface it needs, so the
 work can be done in Edge with hot reload, and the Tauri shell wraps the same files
 afterwards. The engine has published the contract since S4; this is the first phase
 where a change to a panel can be seen without a desktop build.

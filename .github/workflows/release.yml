@@ -19,6 +19,13 @@ jobs:
   build:
     name: app (${{ matrix.name }})
     runs-on: ${{ matrix.os }}
+    env:
+      # Empty when the repository has no certificate, which skips the signing steps.
+      WINDOWS_CERTIFICATE: ${{ secrets.WINDOWS_CERTIFICATE }}
+      WINDOWS_CERTIFICATE_PASSWORD: ${{ secrets.WINDOWS_CERTIFICATE_PASSWORD }}
+      MACOS_CERTIFICATE: ${{ secrets.MACOS_CERTIFICATE }}
+      MACOS_CERTIFICATE_PASSWORD: ${{ secrets.MACOS_CERTIFICATE_PASSWORD }}
+      MACOS_IDENTITY: ${{ secrets.MACOS_IDENTITY }}
     strategy:
       fail-fast: false
       matrix:
@@ -62,6 +69,27 @@ jobs:
           else
             cp "$base" "dist/bforge-${{ matrix.name }}"
           fi
+      - name: Sign the Windows binary
+        if: runner.os == 'Windows' && env.WINDOWS_CERTIFICATE != ''
+        shell: pwsh
+        run: |
+          # `.pfx` as base64 in the secret; signtool ships with the runner's Windows SDK.
+          $pfx = Join-Path $env:RUNNER_TEMP 'cert.pfx'
+          [IO.File]::WriteAllBytes($pfx, [Convert]::FromBase64String($env:WINDOWS_CERTIFICATE))
+          $exe = Get-ChildItem dist/*.exe | Select-Object -First 1
+          & signtool sign /f $pfx /p $env:WINDOWS_CERTIFICATE_PASSWORD `
+            /fd SHA256 /tr http://timestamp.digicert.com /td SHA256 $exe.FullName
+          Remove-Item $pfx
+      - name: Sign the macOS binary
+        if: runner.os == 'macOS' && env.MACOS_CERTIFICATE != ''
+        run: |
+          echo "$MACOS_CERTIFICATE" | base64 --decode > cert.p12
+          security create-keychain -p build build.keychain
+          security import cert.p12 -k build.keychain -P "$MACOS_CERTIFICATE_PASSWORD" -T /usr/bin/codesign
+          security set-keychain-settings -lut 900 build.keychain
+          security unlock-keychain -p build build.keychain
+          codesign --force --options runtime --timestamp             --sign "$MACOS_IDENTITY" "dist/bforge-${{ matrix.name }}"
+          rm -f cert.p12
       - name: Upload the binary
         uses: actions/upload-artifact@v4
         with:
@@ -82,6 +110,13 @@ jobs:
           merge-multiple: true
       - name: List what will be published
         run: ls -l dist
+      - name: Write the checksums
+        working-directory: dist
+        run: |
+          # A reader can check a download without trusting the transport, which is the
+          # one part of trust that needs no certificate.
+          sha256sum * > SHA256SUMS.txt
+          cat SHA256SUMS.txt
       - name: Create the release
         env:
           GH_TOKEN: ${{ github.token }}
@@ -95,6 +130,9 @@ jobs:
   desktop:
     name: desktop installer (windows)
     runs-on: windows-latest
+    env:
+      WINDOWS_CERTIFICATE: ${{ secrets.WINDOWS_CERTIFICATE }}
+      WINDOWS_CERTIFICATE_PASSWORD: ${{ secrets.WINDOWS_CERTIFICATE_PASSWORD }}
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-node@v4
@@ -111,6 +149,16 @@ jobs:
       - name: Build the installer
         working-directory: crates/bforge-gui
         run: ../../ui/node_modules/.bin/tauri build --target x86_64-pc-windows-msvc --bundles nsis
+      - name: Sign the installer
+        if: env.WINDOWS_CERTIFICATE != ''
+        shell: pwsh
+        run: |
+          $pfx = Join-Path $env:RUNNER_TEMP 'cert.pfx'
+          [IO.File]::WriteAllBytes($pfx, [Convert]::FromBase64String($env:WINDOWS_CERTIFICATE))
+          $installer = Get-ChildItem target/x86_64-pc-windows-msvc/release/bundle/nsis/*.exe | Select-Object -First 1
+          & signtool sign /f $pfx /p $env:WINDOWS_CERTIFICATE_PASSWORD `
+            /fd SHA256 /tr http://timestamp.digicert.com /td SHA256 $installer.FullName
+          Remove-Item $pfx
       - name: Attach the installer to the release
         shell: pwsh
         env:
