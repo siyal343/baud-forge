@@ -24,6 +24,9 @@ pub struct FaultProfile {
     pub corrupt_crc: u8,
     /// Hold the write this long before it leaves, 0 to 5000 ms (D-66).
     pub delay_ms: u16,
+    /// Add up to this many milliseconds, drawn from the seed, so arrival times vary
+    /// instead of repeating exactly (D-91).
+    pub jitter_ms: u16,
     /// Seed for every random choice, so a run reproduces.
     pub seed: u64,
 }
@@ -37,6 +40,7 @@ impl Default for FaultProfile {
             truncate: 0,
             corrupt_crc: 0,
             delay_ms: 0,
+            jitter_ms: 0,
             seed: 0x5EED_1234_ABCD_0001,
         }
     }
@@ -59,6 +63,7 @@ impl FaultProfile {
             && self.truncate == 0
             && self.corrupt_crc == 0
             && self.delay_ms == 0
+            && self.jitter_ms == 0
     }
 }
 
@@ -117,19 +122,35 @@ impl Injector {
         (self.next() >> 11) as f64 / (1u64 << 53) as f64
     }
 
+    /// The hold for this frame: the base delay plus a draw inside the jitter span.
+    fn delay(&mut self) -> Option<std::time::Duration> {
+        let profile = self.profile;
+        if profile.delay_ms == 0 && profile.jitter_ms == 0 {
+            return None;
+        }
+        let extra = if profile.jitter_ms == 0 {
+            0
+        } else {
+            (self.next() % (u64::from(profile.jitter_ms) + 1)) as u16
+        };
+        Some(std::time::Duration::from_millis(u64::from(
+            profile.delay_ms + extra,
+        )))
+    }
+
     /// Apply the profile to what was meant to go out. `None` means the write is
     /// dropped and nothing leaves the port.
     pub fn apply(&mut self, bytes: Vec<u8>) -> Option<(Vec<u8>, FaultOutcome)> {
         self.writes += 1;
         let profile = self.profile;
+        let delay = self.delay();
         if profile.is_off() {
             let sent = bytes.len();
             return Some((
                 bytes,
                 FaultOutcome {
                     sent,
-                    delay: (profile.delay_ms > 0)
-                        .then(|| std::time::Duration::from_millis(u64::from(profile.delay_ms))),
+                    delay,
                     bytes: 0,
                     dropped: false,
                 },
@@ -181,8 +202,7 @@ impl Injector {
             out,
             FaultOutcome {
                 sent,
-                delay: (profile.delay_ms > 0)
-                    .then(|| std::time::Duration::from_millis(u64::from(profile.delay_ms))),
+                delay,
                 bytes: changed,
                 dropped: false,
             },
@@ -257,6 +277,52 @@ mod tests {
         });
         assert!(injector.apply(vec![1, 2, 3]).is_none());
         assert_eq!(injector.dropped, 1);
+    }
+
+    #[test]
+    fn a_jitter_span_varies_the_hold_but_stays_inside_it() {
+        let profile = FaultProfile {
+            delay_ms: 10,
+            jitter_ms: 5,
+            ..FaultProfile::default()
+        };
+        let mut injector = Injector::new(profile);
+        let mut seen = Vec::new();
+        for _ in 0..64 {
+            let (_, outcome) = injector.apply(vec![1, 2, 3]).expect("sent");
+            let delay = outcome.delay.expect("a hold is asked for").as_millis() as u64;
+            assert!((10..=15).contains(&delay), "delay {delay} outside the span");
+            seen.push(delay);
+        }
+        assert!(
+            seen.iter().any(|delay| *delay != seen[0]),
+            "every frame had the same hold: {seen:?}"
+        );
+    }
+
+    #[test]
+    fn the_same_seed_gives_the_same_jitter() {
+        let profile = FaultProfile {
+            delay_ms: 5,
+            jitter_ms: 20,
+            ..FaultProfile::default()
+        };
+        let draw = |seed| {
+            let mut injector = Injector::new(FaultProfile { seed, ..profile });
+            (0..16)
+                .map(|_| {
+                    injector
+                        .apply(vec![1])
+                        .expect("sent")
+                        .1
+                        .delay
+                        .expect("held")
+                        .as_millis() as u64
+                })
+                .collect::<Vec<_>>()
+        };
+        assert_eq!(draw(7), draw(7));
+        assert_ne!(draw(7), draw(8), "a different seed is a different run");
     }
 
     #[test]

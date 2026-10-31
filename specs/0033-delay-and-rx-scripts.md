@@ -22,6 +22,8 @@ survives a reconnect, and scripts that can read decoded fields on the receive si
 ### Delay
 
 1. `POST /api/fault {"kind":"delay","delay_ms":300}` arms a hold of 0 to 5000 ms.
+   `jitter_ms` adds a draw inside a span on top of the base, from the profile's seed, so
+   arrival times vary instead of repeating one number.
 2. The **reader** holds the write until its deadline, so a delayed frame never blocks
    the read path and never stalls the pump.
 3. The send answers at once with `"delay_ms"` in the reply: the frame was accepted, not
@@ -50,6 +52,13 @@ Option<Instant>`; `Session.rx_script`, `Session.chunks_received_dropped`.
 ## Measured
 
 ```text
+delay_ms 40, jitter_ms 0        -> every frame held 40 ms
+delay_ms 0, jitter_ms 40, seed 9 -> eight sends reported eight holds inside 0..=40,
+                                    not all the same
+same seed                        -> the same sequence of holds
+```
+
+```text
 delay 300 ms, POST /api/send "01 02 03"
   reply in < 150 ms, with {"sent":3,"delay_ms":300}
   device received 01 02 03 after >= 250 ms
@@ -68,7 +77,7 @@ cargo test -p bforge-core --test serve
 
 ## Limits, recorded
 
-- The delay is fixed, not a random span (D-91).
+- Jitter is a uniform draw inside the span, not a distribution a user can shape.
 - A held frame does not survive a reconnect: it is failed and counted.
 - A receive script makes the vault a record of what the engine decoded, not of what the
   device sent; a passive tap should not use one.

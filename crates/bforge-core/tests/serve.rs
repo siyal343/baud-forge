@@ -769,3 +769,49 @@ framing = {{ mode = "delimiter", delimiter = 10 }}
         first.text
     );
 }
+
+/// Jitter spreads the hold instead of repeating one number.
+#[test]
+fn a_jitter_span_varies_the_delay_the_engine_reports() {
+    let (device, _received) = chatty_device();
+    let config = workspace(&device);
+    let ports = session_ports_from_config(&config, &[]).expect("ports");
+    let session = Session::start(ports, None, None).expect("session");
+
+    let server = Server::bind("127.0.0.1:0".parse().unwrap()).expect("bind");
+    let address = server.local_addr().unwrap().to_string();
+
+    let client = std::thread::spawn(move || {
+        std::thread::sleep(Duration::from_millis(400));
+        let (status, body) = post(
+            &address,
+            "/api/fault",
+            r#"{"port":"sim","kind":"delay","delay_ms":0,"jitter_ms":40,"seed":9}"#,
+        );
+        assert!(status.contains("200"), "{status} {body}");
+
+        let mut delays = Vec::new();
+        for _ in 0..8 {
+            let (status, body) = post(&address, "/api/send", r#"{"port":"sim","hex":"00"}"#);
+            assert!(status.contains("200"), "{status} {body}");
+            let reported = body
+                .split("\"delay_ms\":")
+                .nth(1)
+                .and_then(|rest| rest.trim_end_matches('}').parse::<u64>().ok())
+                .expect("a delay in the reply");
+            assert!(reported <= 40, "delay {reported} outside the span");
+            delays.push(reported);
+        }
+        let distinct: std::collections::BTreeSet<_> = delays.iter().collect();
+        assert!(
+            distinct.len() > 1,
+            "every frame had the same hold: {delays:?}"
+        );
+    });
+
+    let stats = server
+        .run(session, Some(Duration::from_secs(2)))
+        .expect("serve");
+    client.join().expect("client");
+    assert!(stats.requests >= 8, "{stats:?}");
+}

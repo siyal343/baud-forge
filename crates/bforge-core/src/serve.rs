@@ -694,6 +694,8 @@ struct FaultRequest {
     #[serde(default)]
     delay_ms: Option<u16>,
     #[serde(default)]
+    jitter_ms: Option<u16>,
+    #[serde(default)]
     seed: Option<u64>,
 }
 
@@ -729,8 +731,9 @@ fn fault(stream: &mut TcpStream, shared: &Arc<Shared>, body: &[u8]) {
                 ..defaults
             },
             "delay" => crate::fault::FaultProfile {
-                // 5 s is the top of the range FR-FLT-01 asks for.
+                // 5 s is the top of the range FR-FLT-01 asks for, base plus jitter.
                 delay_ms: request.delay_ms.unwrap_or(12).min(5_000),
+                jitter_ms: request.jitter_ms.unwrap_or(0).min(5_000),
                 ..defaults
             },
             other => {

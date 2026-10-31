@@ -40,6 +40,7 @@ state through one contract (F1.7).
 | S8b assert fields | D-15 | done | a 6 s recording from the board decodes to 122 frames and passes 5 field, protocol and count checks |
 | S9 sockets | F1.2.7 (TCP, UDP, config) | done | simulator over loopback: tail decodes, record stores 60 frames, assert passes 3 of 3, no hardware |
 | S10 native packs | F3.4 (CCSDS/PUS, CSP, Modbus; MAVLink deferred) | done | 12 pack tests on hand-built fixtures; a CCSDS packet in a vault decodes and passes assert rules with no schema file |
+| S31 jitter | FR-FLT-01 (a latency span, not one number) | done | eight sends with `jitter_ms: 40` reported eight holds inside the span and not all equal; the same seed replays the sequence |
 | S30 delay and rx scripts | FR-FLT-01, FR-SCR-01 (latency; receive-side script) | done | a 300 ms delay answers at once and lands late; a receive script uppercased `hello 7` before the decoder saw it |
 | S29 nested structs | FR-CMD-01 (a member of a member by name) | done | `gains.proportional` encodes and decodes; an unknown dotted name is refused; the parser accepts a struct member in both spellings |
 | S28 enum typedefs | FR-CMD-01 (a real header works unedited) | done | `state_t state;` resolves as an enum field; `STATE_ON` encodes and decodes; an unknown label is refused |
@@ -455,7 +456,17 @@ S30 notes:
   write while keeping the "sent" count, and five tests failed at once. The tests are what
   caught it, which is the argument for a test per behaviour.
 
-Next action: a random jitter span (D-91), then the release that carries all of this. `serve` is the only interface it needs, so the
+S31 notes:
+
+- The draw uses the injector's own SplitMix64 stream, so a jittered run reproduces from
+  its seed like every other fault.
+- The reply reports the hold *this* frame got, not the span, because a person watching a
+  test needs to see the number that was applied.
+- FR-FLT-01's range is now covered: bit errors, drops, truncation, CRC corruption,
+  latency and jitter.
+
+Next action: the script field API (D-83), the last item of the SRS's Lua example, then a
+release. `serve` is the only interface it needs, so the
 work can be done in Edge with hot reload, and the Tauri shell wraps the same files
 afterwards. The engine has published the contract since S4; this is the first phase
 where a change to a panel can be seen without a desktop build.

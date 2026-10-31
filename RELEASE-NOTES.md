@@ -1,3 +1,28 @@
+# BaudForge 0.3.1
+
+A jitter span, which completes FR-FLT-01's latency requirement. Released 31 October 2026.
+
+## New since 0.3.0
+
+- **`jitter_ms`** on the delay profile: `{"kind":"delay","delay_ms":5,"jitter_ms":20}`
+  holds each frame the base plus a draw inside the span. The draw comes from the
+  injector's own seeded stream, so a jittered run reproduces from its seed.
+- The send reply reports the hold **that frame got**, not the span, because a person
+  watching a test needs the number that was applied.
+
+## Measured
+
+| Claim | Figure |
+| --- | --- |
+| Span | eight sends with `jitter_ms: 40` reported eight holds inside `0..=40`, not all equal |
+| Reproducible | the same seed replays the same sequence of holds; a different seed does not |
+| Tests | 261 |
+
+## Recorded
+
+The draw is uniform, not a shaped distribution (D-93); a held frame still does not survive
+a reconnect (D-92).
+
 # BaudForge 0.3.0
 
 Deferred-link faults. Everything in 0.2.1, plus latency on the wire and scripts on what
