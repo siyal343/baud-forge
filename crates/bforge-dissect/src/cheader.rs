@@ -32,6 +32,8 @@ pub struct CField {
     pub array: Option<u16>,
     /// Enum name when the field has one.
     pub enum_name: Option<String>,
+    /// Struct name when the field is itself a struct, so its members nest.
+    pub struct_name: Option<String>,
 }
 
 /// A parsed struct.
@@ -94,11 +96,7 @@ pub fn compile(
 
     let mut ops = Vec::with_capacity(definition.fields.len());
     for field in &definition.fields {
-        let inner = field_operation(header, field)?;
-        ops.push(IrOp::Label {
-            name: field.name.clone(),
-            op: Box::new(inner),
-        });
+        ops.extend(field_operations(header, field, "")?);
     }
 
     Ok(DissectorIr {
@@ -108,6 +106,41 @@ pub fn compile(
         },
         ops,
     })
+}
+
+/// Operations for one member, with a dotted prefix for a nested struct's fields.
+///
+/// A struct inside a struct is flattened into `inner.field` labels with absolute
+/// offsets. That keeps the decoder's field list flat, as it already is, while the
+/// encoder can still address `inner.field` by name.
+fn field_operations(
+    header: &CHeader,
+    field: &CField,
+    prefix: &str,
+) -> Result<Vec<IrOp>, CHeaderError> {
+    let name = format!("{prefix}{}", field.name);
+    if let Some(struct_name) = &field.struct_name {
+        let definition = header
+            .structs
+            .iter()
+            .find(|item| &item.name == struct_name)
+            .ok_or_else(|| CHeaderError {
+                line: 0,
+                message: format!("struct `{struct_name}` is not declared in the header"),
+            })?;
+        let mut ops = Vec::new();
+        for member in &definition.fields {
+            let mut shifted = member.clone();
+            shifted.offset += field.offset;
+            ops.extend(field_operations(header, &shifted, &format!("{name}."))?);
+        }
+        return Ok(ops);
+    }
+    let inner = field_operation(header, field)?;
+    Ok(vec![IrOp::Label {
+        name,
+        op: Box::new(inner),
+    }])
 }
 
 fn field_operation(header: &CHeader, field: &CField) -> Result<IrOp, CHeaderError> {
@@ -689,11 +722,24 @@ impl Parser {
         for member in split_members(body)? {
             let (type_words, declarators, line) = classify_member(&member)?;
             let written = type_words.join(" ");
+            // A member names its struct either `Gains gains;` or `struct Gains gains;`.
+            let nested_name = written.strip_prefix("struct ").unwrap_or(&written);
+            let nested = if self.resolve_type(&written).is_none() {
+                self.header
+                    .structs
+                    .iter()
+                    .find(|item| item.name == nested_name)
+                    .map(|item| (item.size, item.name.clone()))
+            } else {
+                None
+            };
             let type_name = match self.resolve_type(&written) {
                 Some(resolved) => resolved,
                 // An enum used as a field type is four bytes, which is what a C
                 // compiler gives it without `-fshort-enums`.
                 None if self.enum_for(&type_words).is_some() => "uint32_t".to_string(),
+                // A struct must be declared before it is used as a member.
+                None if nested.is_some() => "uint8_t".to_string(),
                 None => {
                     return Err(CHeaderError {
                         line,
@@ -701,7 +747,11 @@ impl Parser {
                     });
                 }
             };
-            let (size, _, _) = type_info(&type_name).unwrap_or((4, false, false));
+            let (default_size, _, _) = type_info(&type_name).unwrap_or((4, false, false));
+            let (size, struct_name): (u8, Option<String>) = match &nested {
+                Some((size, name)) => (u8::try_from(*size).unwrap_or(u8::MAX), Some(name.clone())),
+                None => (default_size, None),
+            };
             let enum_name = self.enum_for(&type_words);
 
             for declarator in declarators {
@@ -730,6 +780,7 @@ impl Parser {
                         bit: Some((bit_cursor, bits)),
                         array: None,
                         enum_name: enum_name.clone(),
+                        struct_name: struct_name.clone(),
                     });
                     bit_cursor += bits;
                     continue;
@@ -756,6 +807,7 @@ impl Parser {
                     bit: None,
                     array: count,
                     enum_name: enum_name.clone(),
+                    struct_name: struct_name.clone(),
                 });
                 offset += len;
             }

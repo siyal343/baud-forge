@@ -34,6 +34,9 @@ structs written by name (D-87).
 8. Both spellings a header uses work: `enum mode_e mode;` and, through the typedef,
    `state_t state;`. The typedef spelling names the enum after the alias, which is what a
    real header writes.
+9. A struct inside a struct is addressed by a dotted name: `gains.proportional`. The
+   parser flattens it into an `inner.field` label with an absolute offset, so decoding
+   stays a flat list while encoding can still name the member.
 
 ## Data
 
@@ -61,6 +64,8 @@ POST {"mode":"MODE_WOBBLE"}                        -> {"error":"`MODE_WOBBLE` is
 POST {"mode":2}                                     -> {"sent":7}
 POST {"state":"STATE_ON"} on a typedef'd enum        -> {"sent":7}
 POST {"state":"STATE_BROKEN"}                        -> {"error":"`STATE_BROKEN` is not a value of `state`"}
+POST {"gains.proportional":1234,"gains.integral":7}   -> {"sent":7}
+POST {"gains.derivative":1}                           -> {"error":"`gains.derivative` is not a field of this schema"}
 ```
 
 ## Test
@@ -92,5 +97,6 @@ measured above.
 
 - An enum is four bytes, which is what a C compiler gives it without `-fshort-enums`; a
   firmware built with short enums needs the width said out loud (not implemented).
-- Only the root struct: a nested struct is not addressable by name yet (D-87).
+- A struct member must be declared before it is used, and a member that is an array of
+  structs is not expanded.
 - Arrays take `name.0`, `name.1`, … and only when the element is named in the header.

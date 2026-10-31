@@ -530,6 +530,52 @@ mod tests {
     }
 
     #[test]
+    fn a_nested_struct_is_addressed_by_its_dotted_name() {
+        let path = concat!(
+            env!("CARGO_MANIFEST_DIR"),
+            "/tests/fixtures/nested_packet.h"
+        );
+        let text = std::fs::read_to_string(path).expect("fixture");
+        let header = cheader::parse(&text).expect("parses");
+        let ir = cheader::compile(&header, "NestedPacket", path).expect("compiles");
+
+        let mut given = values(&[("sync", 43605.0), ("mode", 2.0)]);
+        given.insert("gains.proportional".to_string(), Value::Number(1234.0));
+        given.insert("gains.integral".to_string(), Value::Number(7.0));
+        let frame = encode(&ir, &given).expect("encodes");
+        assert_eq!(frame.len(), 7);
+
+        let fields = crate::exec::execute(&ir, &frame).expect("decodes");
+        let value = |name: &str| {
+            fields
+                .iter()
+                .find(|field| field.name == name)
+                .and_then(|field| field.value_num)
+        };
+        assert_eq!(value("gains.proportional"), Some(1234.0));
+        assert_eq!(value("gains.integral"), Some(7.0));
+        assert_eq!(value("sync"), Some(43605.0));
+    }
+
+    #[test]
+    fn a_nested_name_that_does_not_exist_is_refused() {
+        let path = concat!(
+            env!("CARGO_MANIFEST_DIR"),
+            "/tests/fixtures/nested_packet.h"
+        );
+        let text = std::fs::read_to_string(path).expect("fixture");
+        let header = cheader::parse(&text).expect("parses");
+        let ir = cheader::compile(&header, "NestedPacket", path).expect("compiles");
+        let mut given = values(&[]);
+        given.insert("gains.derivative".to_string(), Value::Number(1.0));
+        let error = encode(&ir, &given).expect_err("unknown");
+        assert_eq!(
+            error,
+            EncodeError::UnknownField("gains.derivative".to_string())
+        );
+    }
+
+    #[test]
     fn the_schema_size_matches_the_decoder() {
         let ir = imu();
         let frame = encode(&ir, &BTreeMap::new()).expect("encodes");

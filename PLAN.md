@@ -40,6 +40,7 @@ state through one contract (F1.7).
 | S8b assert fields | D-15 | done | a 6 s recording from the board decodes to 122 frames and passes 5 field, protocol and count checks |
 | S9 sockets | F1.2.7 (TCP, UDP, config) | done | simulator over loopback: tail decodes, record stores 60 frames, assert passes 3 of 3, no hardware |
 | S10 native packs | F3.4 (CCSDS/PUS, CSP, Modbus; MAVLink deferred) | done | 12 pack tests on hand-built fixtures; a CCSDS packet in a vault decodes and passes assert rules with no schema file |
+| S29 nested structs | FR-CMD-01 (a member of a member by name) | done | `gains.proportional` encodes and decodes; an unknown dotted name is refused; the parser accepts a struct member in both spellings |
 | S28 enum typedefs | FR-CMD-01 (a real header works unedited) | done | `state_t state;` resolves as an enum field; `STATE_ON` encodes and decodes; an unknown label is refused |
 | S27 enum labels | FR-CMD-01 (a label instead of a number) | done | `MODE_FAULT` and `mode_fault` both encode to 2; an unknown label is refused with both names; the parser now accepts an enum as a field type |
 | S26 typed form | FR-CMD-01 (the forge sends named fields) | done | two modes in the forge; the typed row lists one box per decoded field and posts `values`; the route answered `{"sent":19}` for those values |
@@ -431,8 +432,18 @@ S28 notes:
 - Both spellings are in one fixture, `mode_packet.h`, so a regression shows up as a
   decode mismatch rather than a missing test.
 
-Next action: nested structs by name (D-87), the last encoder gap before the typed forge
-covers any header. `serve` is the only interface it needs, so the
+S29 notes:
+
+- A struct member is flattened at compile time into `inner.field` labels with absolute
+  offsets. The decoder's field list stays flat, and the encoder addresses the member by
+  its dotted name — the same string a person reads in the inspector.
+- The parser needed a struct-member branch before any of this could work: a member typed
+  as a struct was an unknown type. It now accepts both `Gains gains;` and
+  `struct Gains gains;`, and requires the inner struct to be declared first.
+- An array of structs still is not expanded (D-90).
+
+Next action: another release, `v0.2.0`: scripts, typed sends, enum labels, typedefs and
+nested structs are all in since 0.1.0, and the installer is still deliberately deferred. `serve` is the only interface it needs, so the
 work can be done in Edge with hot reload, and the Tauri shell wraps the same files
 afterwards. The engine has published the contract since S4; this is the first phase
 where a change to a panel can be seen without a desktop build.
