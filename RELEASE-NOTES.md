@@ -1,3 +1,28 @@
+# BaudForge 0.5.2
+
+The licence file the project claimed and did not have, and the free route to signing.
+Released 31 October 2026.
+
+## Fixed
+
+- **`LICENSE`, `LICENSE-APACHE` and `LICENSE-MIT`.** `Cargo.toml` declared
+  `MIT OR Apache-2.0`, but the repository had no licence file, which legally means all
+  rights reserved. Both texts are verbatim from their canonical sources.
+
+## Documented
+
+- `docs/SIGNING.md` now answers the question this project actually has: **how an
+  open-source project crosses the signing gate without buying a certificate**. SignPath
+  Foundation signs EXE and MSI free for OSI-licensed projects whose CI runs on
+  GitHub-hosted agents, with the certificate in the foundation's name. Microsoft's own
+  comparison lists it as the OSS option. The alternatives — a free Store account with
+  MSIX re-signing, or distribution through package managers with `SHA256SUMS.txt` — are
+  written down with what each costs and what each does not fix.
+
+Recorded: signing itself is D-95, waiting on an application. A self-signed certificate
+blocks installation, and EV no longer bypasses SmartScreen (removed in 2024), so neither
+is a shortcut.
+
 # BaudForge 0.5.1
 
 Trust plumbing. Everything in 0.5.0, plus a checksum file on every release and signing

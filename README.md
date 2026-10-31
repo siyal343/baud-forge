@@ -298,4 +298,5 @@ checks without setup.
 
 ## License
 
-Dual licensed under MIT or Apache-2.0, at your choice.
+Dual licensed under [Apache-2.0](LICENSE-APACHE) or [MIT](LICENSE-MIT), at your choice.
+See [LICENSE](LICENSE).

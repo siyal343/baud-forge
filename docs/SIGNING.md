@@ -32,6 +32,70 @@ An unsigned `.exe` shows *"Windows protected your PC"* — SmartScreen — until
 enough reputation. A signed binary shows the publisher's name, and an EV certificate skips
 the reputation wait. That warning is the whole reason to buy one.
 
+## How open-source projects cross this gate without paying
+
+The short answer: they rarely buy a certificate. Three routes, in order of how common
+they are, with the facts as Microsoft and SignPath state them today.
+
+### 1. SignPath Foundation — free signing for OSI-licensed projects
+
+SignPath issues the certificate in the foundation's name and vouches that the binary was
+built from the public repository by that repository's CI. The private key never leaves
+their HSM, and the signing step runs in the pipeline (a GitHub Action).
+
+Conditions, from <https://signpath.org/terms.html>:
+
+- OSI-approved licence, **without commercial dual-licensing**, for every component;
+- no proprietary component (system libraries excepted);
+- actively maintained, already released in the form to be signed, and documented;
+- the maintainers of the code own the signing request;
+- **all jobs up to the signing request run on GitHub-hosted agents** (this repository
+  does);
+- a Microsoft Learn page lists it as the OSS option for Windows signing.
+
+What this repository must have before applying, and now has:
+
+| Requirement | State |
+| --- | --- |
+| Public repository | ✅ |
+| OSI licence file | ✅ `LICENSE`, `LICENSE-APACHE`, `LICENSE-MIT` (MIT OR Apache-2.0) |
+| A release to sign | ✅ `v0.5.1` and earlier |
+| Documentation of what it does | ✅ `README.md`, `docs/QUICKSTART.md` |
+| CI on GitHub-hosted agents | ✅ all jobs |
+| Windows artefacts to sign | ✅ `bforge-windows-x86_64.exe`, `BaudForge_<v>_x64-setup.exe` |
+
+SignPath signs **EXE and MSI**, so the NSIS installer and the CLI binaries are both in
+scope. A macOS or Linux signature is not part of the programme.
+
+### 2. Microsoft Store, MSIX — signing is free because Microsoft re-signs
+
+Microsoft's own comparison table (<https://learn.microsoft.com/windows/apps/package-and-deploy/code-signing-options>)
+puts this first: publish an MSIX package to the Store and Microsoft re-signs it, so no
+certificate is bought and no SmartScreen prompt appears. A Windows desktop app packaged
+with Tauri can be bundled as MSIX (`--bundles appx` on the CLI is the path to check).
+The cost is a Store account (free for individuals, one-time for companies) and Store
+review.
+
+### 3. No signature, distribution instead of trust
+
+What this project does today, and what many CLI tools do:
+
+- `SHA256SUMS.txt` on every release;
+- install through a package manager (**winget**, Scoop, Chocolatey, Homebrew) where the
+  package manager, not the browser, fetches the file — the warning users complain about is
+  raised by SmartScreen on browser downloads;
+- publish to Linux distributions, where there is no such gate.
+
+It works, and it is what a developer expects. It is not what a stranger expects.
+
+### What does not work, and is worth saying
+
+- **A self-signed certificate**: blocks installation for everyone else.
+- **EV for the SmartScreen bypass**: Microsoft states EV no longer skips the warning;
+  that behaviour was removed in 2024.
+- **Azure Artifact Signing for this project**: ~10 USD/month, identity-validated, and the
+  individual tier is limited to the USA and Canada.
+
 ## The three routes
 
 | Route | Cost, estimate | Notes |
