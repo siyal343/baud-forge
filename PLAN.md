@@ -40,6 +40,7 @@ state through one contract (F1.7).
 | S8b assert fields | D-15 | done | a 6 s recording from the board decodes to 122 frames and passes 5 field, protocol and count checks |
 | S9 sockets | F1.2.7 (TCP, UDP, config) | done | simulator over loopback: tail decodes, record stores 60 frames, assert passes 3 of 3, no hardware |
 | S10 native packs | F3.4 (CCSDS/PUS, CSP, Modbus; MAVLink deferred) | done | 12 pack tests on hand-built fixtures; a CCSDS packet in a vault decodes and passes assert rules with no schema file |
+| S38 telemetry workspace | D-63 part one (several traces at 60 FPS, plot from the inspector) | done | canvas band with six traces and a hover cursor; dropped batches fell from 14 269 to 3, and the workbench received 8 988 frames in 25 s, matching the devices |
 | S37 standalone shell | D-62 follow-on (the window stops needing a terminal) | done | picker with no arguments, engine started in-process from a native dialog, last eight workspaces kept, yield from the ribbon via POST /api/yield, guide palette |
 | S36 licence and OSS signing | D-95 (SignPath Foundation instead of a purchase) | done | verified Microsoft's own comparison and SignPath's criteria; found the repository had no `LICENSE` file at all, and added the dual licence verbatim |
 | S35 signing plumbing | D-95 (checksums now, a certificate when bought) | done | `SHA256SUMS.txt` on every release; Windows and macOS signing steps that run only when their secrets exist; `docs/SIGNING.md` with the cost of each route |
@@ -530,8 +531,20 @@ S37 notes:
   Ctrl+1..5 now focuses the five zones.
 - Geometry is not remembered yet (D-98), and workspace switching means restarting (D-99).
 
-Next action: a session menu in the ribbon (D-99) and window geometry (D-98), then the plot
-band rewrite (D-63). `serve` is the only interface it needs, so the
+S38 notes:
+
+- The band is a canvas at device pixel ratio, redrawn at most every 16 ms. SVG rebuilt every
+  node on each batch and could not follow a cursor.
+- Each numeric leaf in the inspector has a `plot` button, which is the guide's signature
+  interaction and the reason the band is useful without configuration.
+- The `sampled` counter from 0.5.1 paid for itself: it showed that the engine broadcast
+  frames every 2 ms into a writer that slept 500 ms. Two numbers changed, and the workbench
+  went from seeing a sample to seeing the stream.
+- The window was captured with PrintWindow, which is now the reliable way to prove what the
+  desktop app draws.
+
+Next action: window geometry (D-98) and a session menu in the ribbon (D-99), then a frameless
+title bar (D-100). `serve` is the only interface it needs, so the
 work can be done in Edge with hot reload, and the Tauri shell wraps the same files
 afterwards. The engine has published the contract since S4; this is the first phase
 where a change to a panel can be seen without a desktop build.

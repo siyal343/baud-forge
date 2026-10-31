@@ -287,14 +287,14 @@ checksum = "ac07cdecf99051d9a5238b80f35af32cdeba5b336e55d957b318b50137e18da5"
 
 [[package]]
 name = "baud-forge"
-version = "0.6.0"
+version = "0.7.0"
 dependencies = [
  "serde",
 ]
 
 [[package]]
 name = "bforge-cli"
-version = "0.6.0"
+version = "0.7.0"
 dependencies = [
  "bforge-core",
  "bforge-hal",
@@ -304,7 +304,7 @@ dependencies = [
 
 [[package]]
 name = "bforge-core"
-version = "0.6.0"
+version = "0.7.0"
 dependencies = [
  "bforge-dissect",
  "bforge-elf",
@@ -321,7 +321,7 @@ dependencies = [
 
 [[package]]
 name = "bforge-dissect"
-version = "0.6.0"
+version = "0.7.0"
 dependencies = [
  "bforge-storage",
  "serde",
@@ -329,7 +329,7 @@ dependencies = [
 
 [[package]]
 name = "bforge-elf"
-version = "0.6.0"
+version = "0.7.0"
 dependencies = [
  "addr2line",
  "bforge-dissect",
@@ -339,11 +339,11 @@ dependencies = [
 
 [[package]]
 name = "bforge-framer"
-version = "0.6.0"
+version = "0.7.0"
 
 [[package]]
 name = "bforge-gui"
-version = "0.6.0"
+version = "0.7.0"
 dependencies = [
  "bforge-core",
  "rfd",
@@ -355,7 +355,7 @@ dependencies = [
 
 [[package]]
 name = "bforge-hal"
-version = "0.6.0"
+version = "0.7.0"
 dependencies = [
  "serde",
  "serialport",
@@ -363,7 +363,7 @@ dependencies = [
 
 [[package]]
 name = "bforge-script"
-version = "0.6.0"
+version = "0.7.0"
 dependencies = [
  "bforge-dissect",
  "bforge-framer",
@@ -372,7 +372,7 @@ dependencies = [
 
 [[package]]
 name = "bforge-storage"
-version = "0.6.0"
+version = "0.7.0"
 dependencies = [
  "bforge-hal",
  "serde",

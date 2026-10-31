@@ -1,4 +1,5 @@
 import { For, Show, createMemo, createSignal, onCleanup, onMount } from 'solid-js'
+import { Telemetry, SERIES_COLOURS } from './components/Telemetry'
 import { createFeed } from './lib/feed'
 import type { FieldRow, SymbolHit, TailRow } from './lib/types'
 import './index.css'
@@ -46,58 +47,13 @@ function HexDump(props: { row: TailRow; field: FieldRow | null }) {
 }
 
 
-/** A line plot of one series. Scales to its own min and max, like a scope. */
-function Plot(props: { values: number[] }) {
-  const box = { width: 1000, height: 100 }
-  const shape = createMemo(() => {
-    const values = props.values
-    if (values.length < 2) return ''
-    const low = Math.min(...values)
-    const high = Math.max(...values)
-    const span = high - low || 1
-    return values
-      .map((value, index) => {
-        const x = (index / (values.length - 1)) * box.width
-        const y = box.height - ((value - low) / span) * box.height
-        return `${index === 0 ? 'M' : 'L'}${x.toFixed(2)},${y.toFixed(2)}`
-      })
-      .join(' ')
-  })
-  const readout = createMemo(() => {
-    const values = props.values
-    if (values.length === 0) return { last: 0, low: 0, high: 0 }
-    return {
-      last: values[values.length - 1],
-      low: Math.min(...values),
-      high: Math.max(...values),
-    }
-  })
-  const number = (value: number) =>
-    Math.abs(value) >= 1000 || (Math.abs(value) < 0.01 && value !== 0)
-      ? value.toExponential(3)
-      : value.toFixed(3)
-
-  return (
-    <div class="plot">
-      <svg viewBox={`0 0 ${box.width} ${box.height}`} preserveAspectRatio="none" role="img" aria-label="series plot">
-        <line x1="0" y1={box.height / 2} x2={box.width} y2={box.height / 2} class="grid" />
-        <path d={shape()} class="trace" />
-      </svg>
-      <div class="plot-readout">
-        <span>last <b>{number(readout().last)}</b></span>
-        <span>min <b>{number(readout().low)}</b></span>
-        <span>max <b>{number(readout().high)}</b></span>
-        <span>{props.values.length} samples</span>
-      </div>
-    </div>
-  )
-}
-
 export default function App() {
   const feed = createFeed()
   const [selected, setSelected] = createSignal<TailRow | null>(null)
   const [hovered, setHovered] = createSignal<FieldRow | null>(null)
-  const [plotKey, setPlotKey] = createSignal<string | null>(null)
+  // The traces on screen, in order. A person chooses them, from the picker or the
+  // inspector's plot button (the guide's signature interaction).
+  const [plotted, setPlotted] = createSignal<string[]>([])
   const [hex, setHex] = createSignal('AA 55 03')
   const [crc, setCrc] = createSignal('')
   const [typed, setTyped] = createSignal(false)
@@ -133,7 +89,19 @@ export default function App() {
     const pair = bridgePorts()
     return pair ? keys.filter((key) => pair.includes(key.split('.')[0])) : keys
   })
-  const activePlot = createMemo(() => plotKey() ?? plotKeys()[0] ?? null)
+  const plottedKeys = createMemo(() => {
+    const chosen = plotted().filter((key) => plotKeys().includes(key))
+    if (chosen.length > 0) return chosen
+    return plotKeys().slice(0, 1)
+  })
+
+  function plotField(key: string) {
+    setPlotted((current) => (current.includes(key) ? current : [...current, key].slice(-6)))
+  }
+
+  function unplotField(key: string) {
+    setPlotted((current) => current.filter((item) => item !== key))
+  }
 
   const session = () => feed.snapshot()?.session
   const ports = () => feed.snapshot()?.ports ?? []
@@ -147,16 +115,18 @@ export default function App() {
     const window = rows().slice(-120).reverse()
     return bridgePorts() ? [...window].sort((left, right) => right.timestamp_us - left.timestamp_us) : window
   })
-  const plotValues = createMemo(() => {
-    const key = activePlot()
-    if (key === null) return []
+  const seriesFor = (key: string): number[] => {
     if (at() === null) return feed.series()[key] ?? []
     const [port, ...rest] = key.split('.')
     const field = rest.join('.')
     return windowRows()
-      .map((row) => (row.port === port ? row.fields.find((leaf) => leaf.name === field)?.value_num : null))
+      .map((row) =>
+        row.port === port ? row.fields.find((leaf) => leaf.name === field)?.value_num : null,
+      )
       .filter((value): value is number => value !== null && value !== undefined)
-  })
+  }
+
+  const traces = createMemo(() => plottedKeys().map((key) => ({ key, values: seriesFor(key) })))
 
   async function loadWindow(record: number) {
     setAt(record)
@@ -475,10 +445,36 @@ export default function App() {
           <div class="stream-head">
             <h2>Telemetry</h2>
             <Show when={plotKeys().length > 0} fallback={<span class="hint">No numeric fields yet.</span>}>
-              <select value={activePlot() ?? ''} onChange={(event) => setPlotKey(event.currentTarget.value)}>
-                <For each={plotKeys()}>{(key) => <option value={key}>{key}</option>}</For>
+              <select
+                value=""
+                onChange={(event) => {
+                  if (event.currentTarget.value) plotField(event.currentTarget.value)
+                  event.currentTarget.value = ''
+                }}
+                aria-label="add a trace"
+              >
+                <option value="">plot a field…</option>
+                <For each={plotKeys().filter((key) => !plottedKeys().includes(key))}>
+                  {(key) => <option value={key}>{key}</option>}
+                </For>
               </select>
             </Show>
+            <div class="traces">
+              <For each={plottedKeys()}>
+                {(key, index) => (
+                  <button
+                    type="button"
+                    class="trace-chip"
+                    style={{ '--trace': SERIES_COLOURS[index() % SERIES_COLOURS.length] }}
+                    onClick={() => unplotField(key)}
+                    title="remove this trace"
+                  >
+                    <span class="swatch" />
+                    {key}
+                  </button>
+                )}
+              </For>
+            </div>
           </div>
           <div class="scrubber">
             <Show when={(feed.snapshot()?.bridges ?? []).length > 0}>
@@ -506,8 +502,8 @@ export default function App() {
             </button>
             <span class="hint">{at() === null ? `record ${records()}` : scrubNote() ?? `record ${at()}`}</span>
           </div>
-          <Show when={plotValues().length > 1}>
-            <Plot values={plotValues()} />
+          <Show when={traces().length > 0} fallback={<span class="hint"></span>}>
+            <Telemetry series={traces()} />
           </Show>
         </section>
       </div>
@@ -553,6 +549,16 @@ export default function App() {
                       <dd>
                         <span class="value">{field.value}</span>
                         <span class="at">@{field.offset}+{field.len}</span>
+                        <Show when={field.value_num !== null}>
+                          <button
+                            type="button"
+                            class="plot-this"
+                            title="plot this field"
+                            onClick={() => plotField(`${row().port}.${field.name}`)}
+                          >
+                            plot
+                          </button>
+                        </Show>
                       </dd>
                     </div>
                   )}

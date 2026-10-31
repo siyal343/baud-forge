@@ -1,3 +1,35 @@
+# BaudForge 0.7.0
+
+The telemetry band becomes a workspace, and the stream stops under-reporting itself.
+Released 1 November 2026.
+
+## New since 0.6.0
+
+- **A canvas telemetry band** (spec 0037): several traces at once, hairline grid, axis
+  labels, a hover cursor that reads the value under the pointer, and trace chips in their
+  own colours.
+- **Plot this field**: every numeric leaf in the inspector has a `plot` button, which adds
+  the field as a trace. This is the interaction the UI guide calls out, in the place a
+  person is already looking.
+- **The workbench sees the whole stream.** Frame batches now leave the engine every 50 ms
+  and the event writer polls every 20 ms. On the loopback demo the dropped-batch count fell
+  from 14 269 to **3**, and the window received 8 988 frames in 25 s — the devices' own rate.
+
+## Measured
+
+| | Dropped batches | Frames the window saw |
+| --- | --- | --- |
+| before (2 ms broadcast, 500 ms poll) | 14 269 | ~200 in 60 s |
+| after (50 ms broadcast, 20 ms poll) | 3 | 8 988 in 25 s |
+
+`docs/screenshots/workbench.png` is now a capture of the real window (`PrintWindow`,
+1386×788), not a browser screenshot.
+
+## Recorded
+
+WebGL and the DVR timeline are still D-63, the system title bar is D-100, the per-client
+poll is D-101, and the inspector is still a flat list (D-69).
+
 # BaudForge 0.6.0
 
 The window becomes an application. Released 1 November 2026.

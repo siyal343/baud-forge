@@ -27,8 +27,15 @@ const SNAPSHOT_INTERVAL: Duration = Duration::from_millis(200);
 /// Control frames a client may fall behind before one is dropped for it.
 const CLIENT_BACKLOG: usize = 256;
 
-/// How long an event stream waits before it writes a keep-alive comment.
-const EVENT_TICK: Duration = Duration::from_millis(500);
+/// How long an event stream waits before it writes a keep-alive comment, and how often
+/// it checks for a frame batch. It must be shorter than `FRAME_TICK`, or the writer sleeps
+/// through batches and the client is told it missed frames it never saw.
+const EVENT_TICK: Duration = Duration::from_millis(20);
+
+/// How often frame batches are broadcast. A browser draws 60 times a second and shows a
+/// hundred rows; sending every 2 ms only filled the queue and made the client drop
+/// batches it never had a chance to read.
+const FRAME_TICK: Duration = Duration::from_millis(50);
 
 /// What one serve session did.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -243,6 +250,7 @@ impl Server {
 
         let events = session.subscribe();
         let mut reported_sampled = 0u64;
+        let mut frames_sent = Instant::now();
         let started = Instant::now();
         let mut published = Instant::now();
         loop {
@@ -270,7 +278,12 @@ impl Server {
                 let _ = job.reply.send(result);
             }
             session.pump_once()?;
-            let frames = session.take_frames();
+            let frames = if frames_sent.elapsed() >= FRAME_TICK {
+                frames_sent = Instant::now();
+                session.take_frames()
+            } else {
+                Vec::new()
+            };
             if !frames.is_empty() {
                 shared.broadcast_frames(&sse("frames", &frames_json(&frames)));
                 // Say so when a client could not keep up: a sample is not a stream.
@@ -1054,4 +1067,42 @@ fn respond(stream: &mut TcpStream, status: &str, content_type: &str, body: &[u8]
     let _ = stream.write_all(head.as_bytes());
     let _ = stream.write_all(body);
     let _ = stream.flush();
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    /// A client that does not read the frame slot is told, once per replaced batch.
+    ///
+    /// The end-to-end version of this needed a socket buffer to fill before a client fell
+    /// behind, which made it a test of the operating system. The rule is here.
+    #[test]
+    fn a_batch_replaced_before_it_is_read_is_counted() {
+        let shared = Shared::default();
+        let (sender, _receiver) = sync_channel(CLIENT_BACKLOG);
+        let client = Arc::new(Client {
+            control: sender,
+            frames: Mutex::new(None),
+        });
+        shared.clients.lock().unwrap().push(Arc::clone(&client));
+
+        shared.broadcast_frames("one");
+        assert_eq!(
+            shared.sampled(),
+            0,
+            "the first batch had nothing to replace"
+        );
+
+        shared.broadcast_frames("two");
+        assert_eq!(shared.sampled(), 1, "the unread batch was replaced");
+
+        shared.broadcast_frames("three");
+        assert_eq!(shared.sampled(), 2);
+
+        // Reading the slot clears the condition: the next batch replaces nothing.
+        let _ = client.frames.lock().unwrap().take();
+        shared.broadcast_frames("four");
+        assert_eq!(shared.sampled(), 2);
+    }
 }

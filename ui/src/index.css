@@ -28,7 +28,7 @@ body {
 .shell {
   display: grid;
   grid-template-columns: 260px minmax(0, 1fr) 340px;
-  grid-template-rows: 38px minmax(0, 1fr) 212px 28px;
+  grid-template-rows: 38px minmax(0, 1fr) 268px 28px;
   grid-template-areas:
     'ribbon ribbon ribbon'
     'sidebar stage inspector'
@@ -297,7 +297,12 @@ tbody tr.faulty td:last-child { color: var(--fault); }
 .forge .answer { margin: 0; padding: 0 12px 6px; color: var(--dim); font-size: 11px; word-break: break-all; }
 .forge .sent { list-style: none; margin: 0; padding: 0 12px 8px; font-size: 11px; color: var(--dim); display: grid; gap: 2px; }
 
-.plot-band { border-top: 1px solid var(--line); display: grid; grid-template-rows: auto minmax(0, 1fr); min-height: 0; }
+.plot-band {
+  border-top: 1px solid var(--line);
+  display: grid;
+  grid-template-rows: auto auto minmax(0, 1fr);
+  min-height: 0;
+}
 
 .plot-band select {
   background: var(--panel-2);
@@ -308,6 +313,44 @@ tbody tr.faulty td:last-child { color: var(--fault); }
   font: inherit;
   font-size: 11px;
 }
+
+.traces { display: flex; gap: 6px; flex-wrap: wrap; }
+
+.trace-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  background: var(--panel-2);
+  border: 1px solid var(--line);
+  border-radius: 999px;
+  color: var(--text);
+  font: inherit;
+  font-size: 11px;
+  padding: 2px 9px 2px 7px;
+  cursor: pointer;
+}
+.trace-chip:hover { border-color: var(--fault); }
+.trace-chip .swatch {
+  width: 8px;
+  height: 8px;
+  border-radius: 2px;
+  background: var(--trace, var(--tx));
+}
+
+.plot-this {
+  background: transparent;
+  border: 1px solid var(--line);
+  border-radius: 4px;
+  color: var(--dim);
+  font: inherit;
+  font-size: 10px;
+  padding: 0 5px;
+  cursor: pointer;
+}
+.plot-this:hover { color: var(--tx); border-color: var(--tx); }
+
+.telemetry { min-height: 0; padding: 0 12px 8px; }
+.telemetry canvas { width: 100%; height: 100%; display: block; }
 
 .scrubber { display: flex; align-items: center; gap: 10px; padding: 0 12px 6px; }
 .scrubber input[type='range'] { flex: 1; accent-color: var(--tx); }
@@ -335,7 +378,7 @@ tbody tr.faulty td:last-child { color: var(--fault); }
 @media (max-width: 1100px) {
   .shell {
     grid-template-columns: 220px minmax(0, 1fr);
-    grid-template-rows: 38px minmax(0, 1fr) 180px 40vh 28px;
+    grid-template-rows: 38px minmax(0, 1fr) 200px 40vh 28px;
     grid-template-areas:
       'ribbon ribbon'
       'stage stage'
