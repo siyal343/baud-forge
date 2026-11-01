@@ -205,6 +205,85 @@ function FieldNodeRow(props: { node: FieldNode; port: string; onHover: (field: F
   )
 }
 
+interface PinStep {
+  dtr?: boolean
+  rts?: boolean
+  wait_ms: number
+}
+
+const ESP32_BOOT_STEPS: PinStep[] = [
+  { dtr: false, rts: true, wait_ms: 50 },
+  { dtr: true, rts: false, wait_ms: 50 },
+  { dtr: false, rts: false, wait_ms: 0 },
+]
+
+function parsePinSteps(text: string): PinStep[] {
+  const trimmed = text.trim()
+  if (!trimmed) return ESP32_BOOT_STEPS
+  if (trimmed.startsWith('[')) {
+    try {
+      const parsed = JSON.parse(trimmed) as PinStep[]
+      if (Array.isArray(parsed) && parsed.length > 0) return parsed
+    } catch {
+      // Fall through to text step parser.
+    }
+  }
+  const segments = trimmed.split(/->|;/).map((s) => s.trim()).filter(Boolean)
+  const steps: PinStep[] = []
+  for (const seg of segments) {
+    const step: PinStep = { wait_ms: 0 }
+    const parts = seg.split(',').map((p) => p.trim())
+    for (const part of parts) {
+      const msMatch = part.match(/^(\d+)\s*(?:ms)?$/i)
+      if (msMatch) {
+        step.wait_ms = parseInt(msMatch[1], 10)
+        continue
+      }
+      const dtrMatch = part.match(/^dtr\s*=\s*(0|1|true|false)$/i)
+      if (dtrMatch) {
+        step.dtr = dtrMatch[1] === '1' || dtrMatch[1].toLowerCase() === 'true'
+        continue
+      }
+      const rtsMatch = part.match(/^rts\s*=\s*(0|1|true|false)$/i)
+      if (rtsMatch) {
+        step.rts = rtsMatch[1] === '1' || rtsMatch[1].toLowerCase() === 'true'
+        continue
+      }
+    }
+    steps.push(step)
+  }
+  return steps.length > 0 ? steps : ESP32_BOOT_STEPS
+}
+
+interface FieldDiff {
+  frame_index: number
+  port: string
+  field_name: string
+  value_a: string
+  value_b: string
+}
+
+interface Divergence {
+  index: number
+  timestamp_us_a: number
+  timestamp_us_b: number
+  port: string
+  reason: string
+  field_diffs: FieldDiff[]
+}
+
+interface DiffReport {
+  records_a: number
+  records_b: number
+  frames_a: number
+  frames_b: number
+  identical: boolean
+  first_divergence: Divergence | null
+  changed_fields: FieldDiff[]
+  missing_from_a: number
+  missing_from_b: number
+}
+
 export default function App() {
   const feed = createFeed()
   const [selected, setSelected] = createSignal<TailRow | null>(null)
@@ -216,10 +295,20 @@ export default function App() {
   const [plotted, setPlotted] = createSignal<{ key: string; mode: TraceMode }[]>([])
   const [hex, setHex] = createSignal('AA 55 03')
   const [crc, setCrc] = createSignal('')
+  const [chunkSize, setChunkSize] = createSignal('')
+  const [paceMs, setPaceMs] = createSignal('')
   const [typed, setTyped] = createSignal(false)
   const [typedValues, setTypedValues] = createSignal<Record<string, string>>({})
   const [answer, setAnswer] = createSignal<string | null>(null)
   const [sent, setSent] = createSignal<string[]>([])
+  const [seqPort, setSeqPort] = createSignal<string | null>(null)
+  const [customSeqText, setCustomSeqText] = createSignal('')
+  const [showDiff, setShowDiff] = createSignal(false)
+  const [diffPathA, setDiffPathA] = createSignal('')
+  const [diffPathB, setDiffPathB] = createSignal('')
+  const [diffLoading, setDiffLoading] = createSignal(false)
+  const [diffError, setDiffError] = createSignal<string | null>(null)
+  const [diffReport, setDiffReport] = createSignal<DiffReport | null>(null)
   const [faultKind, setFaultKind] = createSignal('off')
   const [faultValue, setFaultValue] = createSignal('1.0')
   const [faultLine, setFaultLine] = createSignal<string | null>(null)
@@ -581,18 +670,29 @@ export default function App() {
       const value = Number(trimmed)
       values[name] = Number.isFinite(value) && trimmed !== '' ? value : trimmed
     }
+    const body: {
+      port: string
+      values: Record<string, number | string>
+      chunk_size?: number
+      pace_ms?: number
+    } = { port, values }
+    const chunkVal = parseInt(chunkSize(), 10)
+    if (!isNaN(chunkVal) && chunkVal > 0) body.chunk_size = chunkVal
+    const paceVal = parseInt(paceMs(), 10)
+    if (!isNaN(paceVal) && paceVal > 0) body.pace_ms = paceVal
     try {
       const response = await fetch(api('/api/send'), {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ port, values }),
+        body: JSON.stringify(body),
       })
       const reply = await response.text()
       setAnswer(`${response.status} ${reply}`)
       if (response.ok) {
         const sentBytes = (JSON.parse(reply) as { sent: number }).sent
+        const paceSuffix = body.chunk_size ? ` (paced ${body.chunk_size}B/${body.pace_ms ?? 0}ms)` : ''
         setSent((current) =>
-          [`${new Date().toLocaleTimeString()}  ${port}  ${sentBytes} B  typed`]
+          [`${new Date().toLocaleTimeString()}  ${port}  ${sentBytes} B  typed${paceSuffix}`]
             .concat(current)
             .slice(0, 6),
         )
@@ -642,6 +742,56 @@ export default function App() {
       else setPinNote(pulseMs ? `${port} pulsed for ${pulseMs} ms` : `${port} dtr ${dtr ? 'on' : 'off'}`)
     } catch (error) {
       setPinNote(String(error))
+    }
+  }
+
+  async function drivePinSequence(port: string, steps: PinStep[]) {
+    try {
+      const response = await fetch(api('/api/pins'), {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ port, steps }),
+      })
+      if (!response.ok) {
+        setPinNote(`${response.status} ${await response.text()}`)
+      } else {
+        setPinNote(`${port} seq (${steps.length} steps) done`)
+      }
+    } catch (error) {
+      setPinNote(String(error))
+    }
+  }
+
+  async function runDiff(event?: SubmitEvent) {
+    if (event) event.preventDefault()
+    const b = diffPathB().trim()
+    if (!b) return
+    const a = diffPathA().trim()
+    setDiffLoading(true)
+    setDiffError(null)
+    setDiffReport(null)
+    try {
+      let url = `/api/diff?b=${encodeURIComponent(b)}`
+      if (a) {
+        url += `&a=${encodeURIComponent(a)}`
+      }
+      const response = await fetch(api(url))
+      if (!response.ok) {
+        const errText = await response.text()
+        try {
+          const parsed = JSON.parse(errText) as { error?: string }
+          setDiffError(parsed.error ?? `${response.status} ${errText}`)
+        } catch {
+          setDiffError(`${response.status} ${errText}`)
+        }
+      } else {
+        const report = (await response.json()) as DiffReport
+        setDiffReport(report)
+      }
+    } catch (error) {
+      setDiffError(String(error))
+    } finally {
+      setDiffLoading(false)
     }
   }
   const [exporting, setExporting] = createSignal(false)
@@ -708,8 +858,18 @@ export default function App() {
       setAnswer('no port in this workspace')
       return
     }
-    const body: { port: string; hex: string; crc?: string } = { port, hex: hex() }
+    const body: {
+      port: string
+      hex: string
+      crc?: string
+      chunk_size?: number
+      pace_ms?: number
+    } = { port, hex: hex() }
     if (crc()) body.crc = crc()
+    const chunkVal = parseInt(chunkSize(), 10)
+    if (!isNaN(chunkVal) && chunkVal > 0) body.chunk_size = chunkVal
+    const paceVal = parseInt(paceMs(), 10)
+    if (!isNaN(paceVal) && paceVal > 0) body.pace_ms = paceVal
     try {
       const response = await fetch(api('/api/send'), {
         method: 'POST',
@@ -720,8 +880,9 @@ export default function App() {
       setAnswer(`${response.status} ${reply}`)
       if (response.ok) {
         const sentBytes = (JSON.parse(reply) as { sent: number }).sent
+        const paceSuffix = body.chunk_size ? ` (paced ${body.chunk_size}B/${body.pace_ms ?? 0}ms)` : ''
         setSent((current) =>
-          [`${new Date().toLocaleTimeString()}  ${port}  ${sentBytes} B  ${hex()}`].concat(current).slice(0, 6),
+          [`${new Date().toLocaleTimeString()}  ${port}  ${sentBytes} B  ${hex()}${paceSuffix}`].concat(current).slice(0, 6),
         )
       }
     } catch (error) {
@@ -787,6 +948,15 @@ export default function App() {
           <option value="saleae">Saleae CSV</option>
           <option value="pcapng">PCAPNG</option>
         </select>
+        <button
+          type="button"
+          class="chip action diff-toggle"
+          classList={{ on: showDiff() }}
+          title="compare session vault against another recording"
+          onClick={() => setShowDiff((cur) => !cur)}
+        >
+          diff
+        </button>
         <Show when={yieldNote()}>{(note) => <span class="chip">{note()}</span>}</Show>
         <Show when={exportNote()}>{(note) => <span class="chip export-note">{note()}</span>}</Show>
         <Show when={pinNote()}>{(note) => <span class="chip">{note()}</span>}</Show>
@@ -807,6 +977,107 @@ export default function App() {
         <span class="chip">chunks {session()?.chunks ?? 0}</span>
         <span class="chip">payload {session() ? bytes(session()!.payload_bytes) : '-'}</span>
         <WindowControls />
+        <Show when={showDiff()}>
+          <div class="diff-panel">
+            <form class="diff-form" onSubmit={runDiff}>
+              <span class="diff-title">diff</span>
+              <input
+                class="diff-input"
+                value={diffPathA()}
+                onInput={(event) => setDiffPathA(event.currentTarget.value)}
+                placeholder={session()?.vault ? `a: ${session()!.vault}` : 'vault a (defaults to active)'}
+                title="vault a path (leave blank to use active session vault)"
+              />
+              <span class="diff-sep">vs</span>
+              <input
+                class="diff-input"
+                value={diffPathB()}
+                onInput={(event) => setDiffPathB(event.currentTarget.value)}
+                placeholder="vault b path (required)"
+                title="comparison vault b path"
+                required
+              />
+              <button type="submit" class="chip action" disabled={diffLoading() || !diffPathB().trim()}>
+                {diffLoading() ? 'comparing…' : 'compare'}
+              </button>
+              <button
+                type="button"
+                class="chip action close"
+                onClick={() => {
+                  setShowDiff(false)
+                  setDiffReport(null)
+                  setDiffError(null)
+                }}
+                title="close diff panel"
+              >
+                ✕
+              </button>
+            </form>
+            <Show when={diffError()}>
+              {(err) => <p class="diff-error">diff error: {err()}</p>}
+            </Show>
+            <Show when={diffReport()}>
+              {(report) => (
+                <div class="diff-report">
+                  <div class="diff-summary">
+                    <Show
+                      when={report().identical}
+                      fallback={<span class="chip fault">diverged</span>}
+                    >
+                      <span class="chip live">identical</span>
+                    </Show>
+                    <span class="hint">
+                      records: {report().records_a} vs {report().records_b} · frames: {report().frames_a} vs {report().frames_b}
+                      <Show when={report().missing_from_a > 0}>
+                        {` · missing in a: ${report().missing_from_a}`}
+                      </Show>
+                      <Show when={report().missing_from_b > 0}>
+                        {` · missing in b: ${report().missing_from_b}`}
+                      </Show>
+                    </span>
+                  </div>
+                  <Show when={!report().identical && report().first_divergence}>
+                    {(div) => (
+                      <div class="diff-first-divergence">
+                        <strong>first divergence:</strong> record #{div().index} on port {div().port}
+                        {' '}(t_a: {clock(div().timestamp_us_a)}, t_b: {clock(div().timestamp_us_b)})
+                        <span class="divergence-reason"> — {div().reason}</span>
+                      </div>
+                    )}
+                  </Show>
+                  <Show when={report().changed_fields.length > 0}>
+                    <div class="diff-table-wrap">
+                      <table class="diff-table">
+                        <thead>
+                          <tr>
+                            <th>frame</th>
+                            <th>port</th>
+                            <th>field</th>
+                            <th>value in a</th>
+                            <th>value in b</th>
+                          </tr>
+                        </thead>
+                        <tbody>
+                          <For each={report().changed_fields}>
+                            {(field) => (
+                              <tr>
+                                <td>{field.frame_index}</td>
+                                <td>{field.port}</td>
+                                <td class="field-name">{field.field_name}</td>
+                                <td class="val-a">{field.value_a}</td>
+                                <td class="val-b">{field.value_b}</td>
+                              </tr>
+                            )}
+                          </For>
+                        </tbody>
+                      </table>
+                    </div>
+                  </Show>
+                </div>
+              )}
+            </Show>
+          </div>
+        </Show>
       </header>
 
       <aside class="sidebar" data-zone="sidebar" tabindex="-1">
@@ -862,7 +1133,44 @@ export default function App() {
                   >
                     pulse
                   </button>
+                  <button
+                    type="button"
+                    class="pin seq"
+                    title="run standard ESP32/STM32 bootloader reset sequence"
+                    onClick={() => drivePinSequence(port.id, ESP32_BOOT_STEPS)}
+                  >
+                    boot seq
+                  </button>
+                  <button
+                    type="button"
+                    class="pin seq-toggle"
+                    classList={{ on: seqPort() === port.id }}
+                    title="toggle custom pin sequence editor"
+                    onClick={() => setSeqPort(seqPort() === port.id ? null : port.id)}
+                  >
+                    {seqPort() === port.id ? 'seq ▴' : 'seq ▾'}
+                  </button>
                 </div>
+                <Show when={seqPort() === port.id}>
+                  <div class="pin-seq-form">
+                    <input
+                      class="pin-seq-input"
+                      value={customSeqText()}
+                      onInput={(e) => setCustomSeqText(e.currentTarget.value)}
+                      placeholder="DTR=0,RTS=1,50ms -> DTR=1,RTS=0,50ms -> DTR=0,RTS=0"
+                      aria-label="custom pin sequence"
+                      title="Sequence steps: DTR=0,RTS=1,50ms -> DTR=1,RTS=0,50ms or JSON array"
+                    />
+                    <button
+                      type="button"
+                      class="pin pulse"
+                      title="execute custom pin sequence"
+                      onClick={() => drivePinSequence(port.id, parsePinSteps(customSeqText()))}
+                    >
+                      run
+                    </button>
+                  </div>
+                </Show>
               </article>
             )}
           </For>
@@ -1099,6 +1407,15 @@ export default function App() {
             <button type="button" onClick={() => { stopPlayback(); setAt(null); setWindowRows([]); jumpToLive() }} classList={{ active: at() === null }}>
               live
             </button>
+            <button
+              type="button"
+              class="transport diff-transport"
+              classList={{ active: showDiff() }}
+              title="compare session vault with another recording"
+              onClick={() => setShowDiff((cur) => !cur)}
+            >
+              diff
+            </button>
             <span class="hint">
               {timelineNote() ??
                 (at() === null
@@ -1223,6 +1540,22 @@ export default function App() {
             <option value="crc8">crc8</option>
           </select>
           </Show>
+          <input
+            class="narrow"
+            value={chunkSize()}
+            onInput={(event) => setChunkSize(event.currentTarget.value)}
+            placeholder="chunk B"
+            aria-label="chunk size in bytes"
+            title="chunk size in bytes for paced send"
+          />
+          <input
+            class="narrow"
+            value={paceMs()}
+            onInput={(event) => setPaceMs(event.currentTarget.value)}
+            placeholder="pace ms"
+            aria-label="delay between chunks in milliseconds"
+            title="delay between chunks in milliseconds"
+          />
           <button type="submit" disabled={ports().length === 0}>Send</button>
           <span class="hint">{Number.isFinite(bytesOf(hex())) ? bytesOf(hex()) : 0} B</span>
         </form>

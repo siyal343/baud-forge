@@ -40,6 +40,8 @@ Commands:
   vault repair <vault>          Truncate a killed session to its last record
   yield -c <file> --port <id>   Release the port so a flash tool can use it
          [--for 30s]
+  xfer --send|--recv <file>     Transfer a file via XMODEM or YMODEM
+         --to <device> [--baud 115200] [--mode xmodem-crc|xmodem-1k|ymodem]
 
 `record` runs until the duration ends, or until Enter is pressed when no
 duration is given.
@@ -76,6 +78,7 @@ fn main() -> ExitCode {
         Some("export") => export_vault(&args[1..]),
         Some("vault") => vault(&args[1..]),
         Some("yield") => yield_port(&args[1..]),
+        Some("xfer") => xfer(&args[1..]),
         Some(other) => usage_error(&format!("unknown command `{other}`")),
     }
 }
@@ -1118,5 +1121,147 @@ fn yield_port(args: &[String]) -> ExitCode {
             eprintln!("error: cannot reach the session at {address}: {error}");
             ExitCode::FAILURE
         }
+    }
+}
+
+struct TransportIo<'a>(std::cell::RefCell<&'a mut dyn TransportDriver>);
+
+impl std::io::Read for &TransportIo<'_> {
+    fn read(&mut self, buf: &mut [u8]) -> std::io::Result<usize> {
+        let mut waited = 0u32;
+        loop {
+            match self.0.borrow_mut().read_slab(buf) {
+                Ok(0) => {
+                    waited += 1;
+                    if waited > 500 {
+                        return Err(std::io::Error::new(
+                            std::io::ErrorKind::TimedOut,
+                            "transport read timed out",
+                        ));
+                    }
+                    std::thread::sleep(Duration::from_millis(5));
+                }
+                Ok(n) => return Ok(n),
+                Err(error) => return Err(std::io::Error::other(error.to_string())),
+            }
+        }
+    }
+}
+
+impl std::io::Write for &TransportIo<'_> {
+    fn write(&mut self, buf: &[u8]) -> std::io::Result<usize> {
+        self.0
+            .borrow_mut()
+            .write_frame(buf)
+            .map(|()| buf.len())
+            .map_err(|error| std::io::Error::other(error.to_string()))
+    }
+
+    fn flush(&mut self) -> std::io::Result<()> {
+        Ok(())
+    }
+}
+
+fn xfer(args: &[String]) -> ExitCode {
+    let mut args = Args::new(args);
+    let send_file = args.value("--send");
+    let recv_file = args.value("--recv");
+    let device = args.value("--to");
+    let baud: u32 = args
+        .value("--baud")
+        .and_then(|v| v.parse().ok())
+        .unwrap_or(115_200);
+    let mode_name = args
+        .value("--mode")
+        .unwrap_or_else(|| "xmodem-crc".to_string());
+    if let Some(unknown) = args.unknown() {
+        return usage_error(&format!("unknown option `{unknown}`"));
+    }
+    let mode = match mode_name.as_str() {
+        "xmodem" | "xmodem-checksum" => bforge_script::ModemMode::XmodemChecksum,
+        "xmodem-crc" => bforge_script::ModemMode::XmodemCrc,
+        "xmodem-1k" => bforge_script::ModemMode::Xmodem1K,
+        "ymodem" => bforge_script::ModemMode::Ymodem,
+        other => {
+            return usage_error(&format!(
+                "unknown modem mode `{other}`; use xmodem-checksum, xmodem-crc, xmodem-1k, or ymodem"
+            ));
+        }
+    };
+    let Some(device) = device else {
+        return usage_error("xfer needs --to <device> and either --send <file> or --recv <file>");
+    };
+    let mut transport = UartTransport::new(UartConfig {
+        device: device.clone(),
+        line: LineConfig {
+            baud_rate: baud,
+            ..Default::default()
+        },
+        read_timeout: Duration::from_millis(50),
+    });
+    if let Err(error) = transport.open() {
+        eprintln!("error: cannot open {device}: {error}");
+        return ExitCode::FAILURE;
+    }
+    let io = TransportIo(std::cell::RefCell::new(&mut transport));
+    let mut reader = &io;
+    let mut writer = &io;
+    match (send_file, recv_file) {
+        (Some(path), None) => {
+            let data = match std::fs::read(&path) {
+                Ok(bytes) => bytes,
+                Err(error) => {
+                    eprintln!("error: cannot read {path}: {error}");
+                    return ExitCode::FAILURE;
+                }
+            };
+            let filename = Path::new(&path)
+                .file_name()
+                .map(|n| n.to_string_lossy().to_string())
+                .unwrap_or_else(|| "payload.bin".to_string());
+            let mut sender = if mode == bforge_script::ModemMode::Ymodem {
+                bforge_script::XmodemSender::new_ymodem(filename, data)
+            } else {
+                bforge_script::XmodemSender::new(mode, data)
+            };
+            match bforge_script::send_stream(&mut sender, &mut reader, &mut writer) {
+                Ok(stats) => {
+                    println!(
+                        "sent {} bytes in {} block(s) ({} retries)",
+                        stats.bytes_transferred, stats.blocks_transferred, stats.retransmissions
+                    );
+                    ExitCode::SUCCESS
+                }
+                Err(error) => {
+                    eprintln!("error: transfer failed: {error}");
+                    ExitCode::FAILURE
+                }
+            }
+        }
+        (None, Some(path)) => {
+            let mut receiver = bforge_script::XmodemReceiver::new(mode);
+            match bforge_script::receive_stream(&mut receiver, &mut reader, &mut writer) {
+                Ok(stats) => {
+                    let data = receiver.into_data();
+                    if let Err(error) = std::fs::write(&path, &data) {
+                        eprintln!("error: cannot write {path}: {error}");
+                        return ExitCode::FAILURE;
+                    }
+                    println!(
+                        "received {} bytes in {} block(s) ({} retries) -> {}",
+                        stats.bytes_transferred,
+                        stats.blocks_transferred,
+                        stats.retransmissions,
+                        path
+                    );
+                    ExitCode::SUCCESS
+                }
+                Err(error) => {
+                    eprintln!("error: transfer failed: {error}");
+                    ExitCode::FAILURE
+                }
+            }
+        }
+        _ => usage_error("xfer needs either --send <file> or --recv <file>"),
     }
 }

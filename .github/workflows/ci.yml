@@ -87,6 +87,40 @@ jobs:
           path: dist-app
           if-no-files-found: error
 
+  desktop-unix:
+    name: desktop (${{ matrix.name }})
+    runs-on: ${{ matrix.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - name: linux-x86_64
+            os: ubuntu-latest
+          - name: macos-aarch64
+            os: macos-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+          cache-dependency-path: ui/package-lock.json
+      - name: Build the frontend
+        working-directory: ui
+        run: |
+          npm ci
+          npm run build
+      - uses: dtolnay/rust-toolchain@stable
+      - name: Install Linux GUI and serial dependencies
+        if: runner.os == 'Linux'
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y libwebkit2gtk-4.1-dev libappindicator3-dev librsvg2-dev patchelf libudev-dev pkg-config
+      - name: Check desktop shell
+        run: cargo check -p bforge-gui --locked
+      - name: Build desktop shell
+        run: cargo build -p bforge-gui --locked
+
   test:
     name: test (${{ matrix.name }})
     # A hung test used to block this job for as long as the runner allowed.

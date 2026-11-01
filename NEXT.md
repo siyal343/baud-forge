@@ -4,7 +4,9 @@
 > maps the code, the conventions, the traps and the remaining work for an agent or a person who
 > is new to the tree.
 
-Written 2 November 2026. The tree is at `v0.8.0` plus the fast-build wave: session diff (`specs/0050`), virtualized stream and paged hex dump (`specs/0051`), timed pin sequencer and flow-controlled paced sends (`specs/0052`), and `.proto` schema field naming (`specs/0053`).
+Written 2 November 2026. Both fast-build waves are complete and green:
+- **Wave 1:** Semantic session diff (`specs/0050`), virtualized 10,000-frame stream and paged hex dump (`specs/0051`), timed pin sequencer and flow-controlled paced sends (`specs/0052`), and `.proto` schema field naming (`specs/0053`).
+- **Wave 2:** MAVLink XML dialect loader with wire reordering and `CRC_EXTRA` validation (`specs/0054`), `defmt` and `pw_tokenizer` ELF token decoding (`specs/0055`), XMODEM/YMODEM file transfers (`bforge xfer`, `specs/0056`), and Workbench UI surfaces for Session Diff, Pin Sequences, and Paced Sends plus Linux/macOS desktop CI (`specs/0057`).
 
 ## Where the SRS stands
 
@@ -12,15 +14,13 @@ Written 2 November 2026. The tree is at `v0.8.0` plus the fast-build wave: sessi
 | --- | --- |
 | 1. Iron core | **done** — record, replay, assert, hotplug, yield, vault repair, forward export |
 | 2. GPU terminal and plotter | **done** — frameless shell, virtualized stream & hex viewport, WebGL traces with rows/lanes/rails, DVR seek and playback, typed command forge, paced sends |
-| 3. Dissectors and ELF | **done for core packs** — C header parser, CCSDS/CSP/Modbus/MAVLink, Protobuf wire + `.proto` schema, DWARF symbols with demangling, export. Optional depth: MAVLink XML dialect loader (`D-56`), `defmt`/`pw_tokenizer` (`D-42`) |
-| 4. MITM, faults, scripting | **done for core features** — bridge, all fault primitives, Lua on both directions with fields, semantic session diff (`specs/0050`), timed pin sequencer (`specs/0052`). Optional depth: X/Y/ZMODEM, 50 µs hardware scope rig (`D-11`) |
+| 3. Dissectors and ELF | **done** — C header parser, CCSDS/CSP/Modbus, MAVLink (built-in + XML dialects), Protobuf (wire + `.proto`), DWARF symbols with demangling, `defmt` & `pw_tokenizer` decoding, export |
+| 4. MITM, faults, scripting | **done** — bridge, all fault primitives, Lua on both directions with fields, semantic session diff (CLI + route + UI), timed pin sequencer (API + UI), XMODEM/YMODEM transfers (`bforge xfer`) |
 
-## Remaining optional items, by value
+## Remaining non-code / hardware items
 
-| Item | Why | Estimate |
+| Item | Why | Action required |
 | --- | --- | --- |
-| Signed builds (SignPath Foundation) | Free for OSI projects; the pipeline is ready, the application is a human step (`D-95`) | a form, then a CI secret |
-| macOS and Linux shells (`D-77`) | Only Windows is built and run locally; CI builds the Windows shell | 1 session on a Mac/Linux runner |
-| MAVLink dialect XML loader (`D-56`) | Decode arbitrary dialect messages beyond the common four (`specs/0048`) | 1 session once dialect XML is chosen |
-| Long soak on hardware (`D-05`) | Multi-hour hardware soak on a physical bench | a day of hardware soak |
-| X/Y/ZMODEM | File transfer state machine | 2–3 sessions |
+| Signed builds (SignPath Foundation) | Free for OSI projects; CI signing hooks are ready (`D-95`) | Submit the SignPath application form and add repository secrets |
+| Long soak on hardware (`D-05`) | Multi-hour hardware soak on a physical bench | Run on the provisioned VPS / physical UART bench |
+| 50 µs MITM latency (`D-11`) | Oscilloscope measurement between physical UART RX and TX pins | Measure with two UART adapters and a scope |

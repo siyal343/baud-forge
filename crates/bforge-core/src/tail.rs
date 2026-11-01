@@ -532,6 +532,14 @@ pub fn tail_config(port: &PortConfig) -> Result<TailConfig, TailError> {
                 )
                 .map_err(|error| TailError::Settings(format!("{file}: {error}")))?;
                 Some(Decoder::Pack(Pack::ProtobufSchema(schema)))
+            } else if name == "mavlink"
+                && let Some(file) = specification.file.as_deref()
+            {
+                let text = std::fs::read_to_string(file)
+                    .map_err(|error| TailError::Settings(format!("cannot read {file}: {error}")))?;
+                let dialect = bforge_dissect::packs::mavlink::parse_xml(&text)
+                    .map_err(|error| TailError::Settings(format!("{file}: {error}")))?;
+                Some(Decoder::Pack(Pack::MavlinkDialect(dialect)))
             } else {
                 let pack = Pack::from_name(name).ok_or_else(|| {
                     TailError::Settings(format!(

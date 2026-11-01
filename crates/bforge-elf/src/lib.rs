@@ -11,11 +11,13 @@
 pub mod editor;
 pub mod image;
 pub mod scan;
+pub mod tokens;
 
 pub use bforge_dissect::SourceLocation;
 pub use editor::Editor;
 pub use image::{ElfImage, Function};
 pub use scan::{AddressHit, scan_pointers};
+pub use tokens::{DecodedTokenLog, TokenDatabase, TokenDecodeError};
 
 /// Symbolization failure.
 #[derive(Debug, Clone, PartialEq, Eq)]

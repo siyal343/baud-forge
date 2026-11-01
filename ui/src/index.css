@@ -391,6 +391,7 @@ tbody tr.spacer td {
 
 .fault-form { display: flex; gap: 8px; align-items: center; padding: 0 12px 8px; }
 .fault-form input.narrow { flex: 0 0 90px; }
+.forge input.narrow { flex: 0 0 68px; max-width: 78px; padding: 4px 6px; font-size: 11px; }
 
 .forge { grid-area: forge; border-top: 1px solid var(--line); background: var(--panel); overflow: auto; }
 
@@ -516,7 +517,7 @@ tbody tr.spacer td {
 }
 .ribbon select.chip.action:hover:not(:disabled) { border-color: var(--accent, #39d); color: #fff; }
 .ribbon .chip.export-note { color: var(--valid, #4ec9b0); }
-.port .pins { display: flex; gap: 6px; margin-top: 8px; }
+.port .pins { display: flex; gap: 4px; margin-top: 8px; flex-wrap: wrap; }
 .port .pin {
   background: transparent;
   border: 1px solid var(--line);
@@ -526,12 +527,160 @@ tbody tr.spacer td {
   font-size: 10px;
   letter-spacing: 0.08em;
   text-transform: uppercase;
-  padding: 2px 8px;
+  padding: 2px 6px;
   cursor: pointer;
 }
-.port .pin.on { border-color: var(--accent, #39d); color: #fff; }
-.port .pin.pulse:hover { border-color: var(--warn, #e0a800); color: var(--warn, #e0a800); }
-.port .pin:hover:not(.on) { border-color: var(--accent, #39d); }
+.port .pin.on { border-color: var(--tx); color: var(--text); }
+.port .pin.pulse:hover { border-color: var(--yield); color: var(--yield); }
+.port .pin.seq { color: var(--tx); border-color: var(--line); }
+.port .pin.seq:hover { border-color: var(--tx); }
+.port .pin.seq-toggle { color: var(--dim); }
+.port .pin.seq-toggle.on { border-color: var(--tx); color: var(--tx); }
+.port .pin:hover:not(.on) { border-color: var(--tx); }
+
+.pin-seq-form {
+  display: flex;
+  gap: 4px;
+  margin-top: 6px;
+  align-items: center;
+}
+.pin-seq-input {
+  flex: 1;
+  min-width: 0;
+  background: var(--bg);
+  border: 1px solid var(--line);
+  border-radius: 4px;
+  color: var(--text);
+  font: inherit;
+  font-size: 10px;
+  padding: 2px 6px;
+}
+.pin-seq-input:focus { outline: 1px solid var(--tx); }
+
+.chip.action.diff-toggle.on { color: var(--tx); border-color: var(--tx); }
+.transport.diff-transport { margin-left: 4px; font-size: 11px; }
+.transport.diff-transport.active { color: var(--tx); border-color: var(--tx); }
+
+.diff-panel {
+  width: 100%;
+  border-top: 1px solid var(--line);
+  margin-top: 4px;
+  padding: 6px 0 2px;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.diff-form {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  flex-wrap: wrap;
+}
+
+.diff-title {
+  font-size: 11px;
+  font-weight: 600;
+  color: var(--tx);
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+}
+
+.diff-sep {
+  font-size: 11px;
+  color: var(--dim);
+}
+
+.diff-input {
+  flex: 1;
+  min-width: 120px;
+  background: var(--bg);
+  border: 1px solid var(--line);
+  border-radius: 4px;
+  color: var(--text);
+  font: inherit;
+  font-size: 11px;
+  padding: 2px 6px;
+}
+
+.diff-input:focus {
+  outline: 1px solid var(--tx);
+}
+
+.diff-error {
+  margin: 0;
+  color: var(--fault);
+  font-size: 11px;
+}
+
+.diff-report {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  background: var(--panel-2);
+  border: 1px solid var(--line);
+  border-radius: 4px;
+  padding: 6px 8px;
+}
+
+.diff-summary {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex-wrap: wrap;
+}
+
+.diff-first-divergence {
+  font-size: 11px;
+  color: var(--text);
+}
+
+.diff-first-divergence strong {
+  color: var(--yield);
+}
+
+.divergence-reason {
+  color: var(--dim);
+}
+
+.diff-table-wrap {
+  max-height: 140px;
+  overflow: auto;
+  border-top: 1px solid var(--line);
+  margin-top: 4px;
+  padding-top: 4px;
+}
+
+.diff-table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 11px;
+}
+
+.diff-table th {
+  text-align: left;
+  color: var(--dim);
+  font-weight: normal;
+  padding: 2px 6px;
+  border-bottom: 1px solid var(--line);
+}
+
+.diff-table td {
+  padding: 2px 6px;
+  white-space: nowrap;
+}
+
+.diff-table td.field-name {
+  color: var(--tx);
+}
+
+.diff-table td.val-a {
+  color: var(--dim);
+}
+
+.diff-table td.val-b {
+  color: var(--yield);
+}
 
 .plot { display: grid; grid-template-rows: minmax(0, 1fr) auto; min-height: 0; padding: 0 12px 8px; }
 

@@ -1,6 +1,6 @@
 //! Loading a firmware image and resolving addresses into it.
 
-use crate::{SourceLocation, SymbolizeError};
+use crate::{SourceLocation, SymbolizeError, TokenDatabase};
 
 /// A symbol as a person reads it: Rust names demangled, C names unchanged.
 pub fn readable_name(name: &str) -> String {
@@ -10,7 +10,7 @@ pub fn readable_name(name: &str) -> String {
         Err(_) => name.to_string(),
     }
 }
-use object::{Object, ObjectSymbol};
+use object::{Object, ObjectSection, ObjectSymbol};
 use std::path::{Path, PathBuf};
 
 /// One function symbol from the image.
@@ -31,6 +31,7 @@ pub struct ElfImage {
     /// Address range covered by the function symbols. An address outside it is
     /// not code in this image, and the line lookup is not asked about it.
     span: Option<(u64, u64)>,
+    tokens: TokenDatabase,
 }
 
 impl std::fmt::Debug for ElfImage {
@@ -38,6 +39,7 @@ impl std::fmt::Debug for ElfImage {
         f.debug_struct("ElfImage")
             .field("path", &self.path)
             .field("functions", &self.functions.len())
+            .field("tokens", &self.tokens.len())
             .finish()
     }
 }
@@ -85,16 +87,34 @@ impl ElfImage {
             _ => None,
         };
 
+        let mut tokens = TokenDatabase::new();
+        if let Some(data) = object
+            .section_by_name(".pw_tokenizer.entries")
+            .and_then(|s| s.data().ok())
+        {
+            tokens.load_pw_entries(data);
+        }
+        if let Some(data) = object.section_by_name(".defmt").and_then(|s| s.data().ok()) {
+            tokens.load_defmt_section(data);
+        }
+        tokens.load_symbols(&object);
+
         Ok(Self {
             path: path.to_path_buf(),
             loader,
             functions,
             span,
+            tokens,
         })
     }
 
     pub fn path(&self) -> &Path {
         &self.path
+    }
+
+    /// Interned format string database for pw_tokenizer and defmt.
+    pub fn tokens(&self) -> &TokenDatabase {
+        &self.tokens
     }
 
     pub fn functions(&self) -> &[Function] {
@@ -165,6 +185,14 @@ mod tests {
     /// when a check could not run instead of passing quietly on nothing.
     fn has_symbols(image: &ElfImage) -> bool {
         !image.functions().is_empty()
+    }
+
+    #[test]
+    fn an_image_provides_a_token_database() {
+        let image = this_binary();
+        let tokens = image.tokens();
+        let count = tokens.len();
+        assert_eq!(tokens.is_empty(), count == 0);
     }
 
     #[test]

@@ -14,6 +14,7 @@ pub mod mavlink;
 pub mod modbus;
 pub mod protobuf;
 
+pub use mavlink::MavlinkDialect;
 pub use protobuf::ProtoSchema;
 
 use crate::DecodedField;
@@ -36,6 +37,8 @@ pub enum Pack {
     ProtobufSchema(ProtoSchema),
     /// MAVLink v1 and v2, envelope only for messages outside the common four.
     Mavlink,
+    /// MAVLink v1 and v2, decoded with an XML dialect schema.
+    MavlinkDialect(MavlinkDialect),
 }
 
 impl Pack {
@@ -59,7 +62,7 @@ impl Pack {
             Self::Csp => "csp",
             Self::ModbusRtu => "modbus_rtu",
             Self::Protobuf | Self::ProtobufSchema(_) => "protobuf",
-            Self::Mavlink => "mavlink",
+            Self::Mavlink | Self::MavlinkDialect(_) => "mavlink",
         }
     }
 
@@ -71,7 +74,7 @@ impl Pack {
             Self::Csp => "CSP",
             Self::ModbusRtu => "MODBUS_RTU",
             Self::Protobuf | Self::ProtobufSchema(_) => "PROTOBUF",
-            Self::Mavlink => "MAVLINK",
+            Self::Mavlink | Self::MavlinkDialect(_) => "MAVLINK",
         }
     }
 
@@ -84,6 +87,7 @@ impl Pack {
             Self::Protobuf => protobuf::decode(frame),
             Self::ProtobufSchema(schema) => protobuf::decode_with_schema(frame, schema),
             Self::Mavlink => mavlink::decode(frame),
+            Self::MavlinkDialect(dialect) => mavlink::decode_with_dialect(frame, dialect),
         }
     }
 }

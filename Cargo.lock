@@ -291,6 +291,7 @@ version = "0.8.0"
 dependencies = [
  "bforge-core",
  "bforge-hal",
+ "bforge-script",
  "bforge-storage",
  "serde_json",
 ]

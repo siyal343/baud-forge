@@ -7,8 +7,13 @@ use bforge_dissect::DissectedFrame;
 
 pub mod frame;
 pub mod runtime;
+pub mod xymodem;
 
 pub use runtime::{FrameVerdict, ScriptError, ScriptRuntime};
+pub use xymodem::{
+    ModemError, ModemMode, ReceiverState, SenderState, TransferStats, XmodemReceiver, XmodemSender,
+    crc16_xmodem, receive_stream, send_stream,
+};
 
 /// Built-in fault primitives that do not need a script (FR-FLT-01).
 #[derive(Debug, Clone, PartialEq, Default)]
