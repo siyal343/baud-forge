@@ -369,7 +369,7 @@ id = "link"
 device_path = "COM1"
 baud_rate = 115200
 framing = { mode = "cobs" }
-dissector = { type = "native", name = "mavlink" }
+dissector = { type = "native", name = "canopen" }
 "#;
     let config = bforge_core::parse(text).unwrap();
     let issues = config.validate();
@@ -415,4 +415,35 @@ fn a_protobuf_frame_decodes_without_a_proto_file() {
     .unwrap();
     let report = evaluate(&vault.display().to_string(), &mut reader, &rules, &rows).unwrap();
     assert!(report.passed(), "{report:#?}");
+}
+
+/// MAVLink reads its envelope for every frame and the bodies of the common four.
+#[test]
+fn a_mavlink_heartbeat_decodes_through_a_vault() {
+    let vault = temp("mavlink", "bflog");
+    let config = native_workspace("mavlink");
+    // v1 HEARTBEAT: quadrotor, ArduPilot, armed, system 1 component 1.
+    let mut frame = vec![0xFE, 9, 0, 1, 1, 0];
+    frame.extend_from_slice(&0u32.to_le_bytes());
+    frame.extend_from_slice(&[2, 3, 0x81, 4, 3]);
+    frame.extend_from_slice(&0u16.to_le_bytes());
+    frame.push(0x0A);
+    let mut reader = build_raw_vault(&vault, &[frame]);
+
+    let rows = decode_vault(&mut reader, &config.ports[0]).unwrap();
+    assert_eq!(rows.len(), 1, "{rows:#?}");
+    assert_eq!(rows[0].protocol.as_deref(), Some("MAVLINK"));
+    let value = |name: &str| {
+        rows[0]
+            .fields
+            .iter()
+            .find(|field| field.name == name)
+            .unwrap_or_else(|| panic!("no field {name} in {:?}", rows[0].fields))
+            .value
+            .clone()
+    };
+    assert_eq!(value("msgid"), "0 (HEARTBEAT)");
+    assert_eq!(value("type"), "2");
+    assert_eq!(value("base_mode"), "129");
+    assert_eq!(value("mavlink_version"), "3");
 }

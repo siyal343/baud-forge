@@ -19,12 +19,10 @@ record: `STATUS.md` holds the state, `DEFERRED.md` holds the gaps with reasons.
 
 ## The three things worth doing next, in order
 
-### 1. A generated pack: MAVLink
+### 1. More MAVLink messages, from a dialect
 
-Protobuf is done (spec 0047) and needs no schema to be useful. MAVLink needs a dialect XML:
-the envelope (stx, length, sequence, system, component, message id, checksum) is fixed, and the
-message bodies come from the dialect. The next decoder is the envelope first, then the common
-message set.
+The envelope and four bodies decode now (spec 0048). The rest of the common set needs the
+dialect XML: parse it, generate the field table, and keep a fixture per message.
 
 Export is done on all three paths (spec 0044): CLI, engine route, ribbon control, and now in
 half the time, because a whole-file pass walks the file forward instead of seeking per payload

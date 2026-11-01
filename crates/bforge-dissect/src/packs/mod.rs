@@ -10,6 +10,7 @@
 
 pub mod ccsds;
 pub mod csp;
+pub mod mavlink;
 pub mod modbus;
 pub mod protobuf;
 
@@ -29,6 +30,8 @@ pub enum Pack {
     ModbusRtu,
     /// Protobuf wire format, without a schema.
     Protobuf,
+    /// MAVLink v1 and v2, envelope only for messages outside the common four.
+    Mavlink,
 }
 
 impl Pack {
@@ -40,6 +43,7 @@ impl Pack {
             "csp" => Some(Self::Csp),
             "modbus_rtu" => Some(Self::ModbusRtu),
             "protobuf" => Some(Self::Protobuf),
+            "mavlink" => Some(Self::Mavlink),
             _ => None,
         }
     }
@@ -51,6 +55,7 @@ impl Pack {
             Self::Csp => "csp",
             Self::ModbusRtu => "modbus_rtu",
             Self::Protobuf => "protobuf",
+            Self::Mavlink => "mavlink",
         }
     }
 
@@ -62,6 +67,7 @@ impl Pack {
             Self::Csp => "CSP",
             Self::ModbusRtu => "MODBUS_RTU",
             Self::Protobuf => "PROTOBUF",
+            Self::Mavlink => "MAVLINK",
         }
     }
 
@@ -72,12 +78,20 @@ impl Pack {
             Self::Csp => csp::decode(frame),
             Self::ModbusRtu => modbus::decode(frame),
             Self::Protobuf => protobuf::decode(frame),
+            Self::Mavlink => mavlink::decode(frame),
         }
     }
 }
 
 /// Every pack name a workspace may use.
-pub const PACK_NAMES: [&str; 5] = ["ccsds_tm", "ccsds_tc", "csp", "modbus_rtu", "protobuf"];
+pub const PACK_NAMES: [&str; 6] = [
+    "ccsds_tm",
+    "ccsds_tc",
+    "csp",
+    "modbus_rtu",
+    "protobuf",
+    "mavlink",
+];
 
 /// Build one field with no children.
 pub(crate) fn field(
