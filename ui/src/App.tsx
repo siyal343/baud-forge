@@ -475,6 +475,21 @@ export default function App() {
 
   const [yieldNote, setYieldNote] = createSignal<string | null>(null)
   const [exportNote, setExportNote] = createSignal<string | null>(null)
+  const [pinNote, setPinNote] = createSignal<string | null>(null)
+
+  async function drivePins(port: string, dtr: boolean, rts: boolean, pulseMs?: number) {
+    try {
+      const response = await fetch(api('/api/pins'), {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ port, dtr, rts, pulse_ms: pulseMs ?? null }),
+      })
+      if (!response.ok) setPinNote(`${response.status} ${await response.text()}`)
+      else setPinNote(pulseMs ? `${port} pulsed for ${pulseMs} ms` : `${port} dtr ${dtr ? 'on' : 'off'}`)
+    } catch (error) {
+      setPinNote(String(error))
+    }
+  }
   const [exporting, setExporting] = createSignal(false)
 
   async function saveExport(format: string) {
@@ -620,6 +635,7 @@ export default function App() {
         </select>
         <Show when={yieldNote()}>{(note) => <span class="chip">{note()}</span>}</Show>
         <Show when={exportNote()}>{(note) => <span class="chip export-note">{note()}</span>}</Show>
+        <Show when={pinNote()}>{(note) => <span class="chip">{note()}</span>}</Show>
         <For each={feed.snapshot()?.bridges ?? []}>
           {(bridge) => (
             <span class="chip bridge" classList={{ forward: bridge.forward }}>
@@ -665,6 +681,34 @@ export default function App() {
                   <dt>stall</dt>
                   <dd>{port.stalls_ms.toFixed(1)} ms</dd>
                 </dl>
+                <div class="pins">
+                  <button
+                    type="button"
+                    class="pin"
+                    classList={{ on: port.pins.dtr }}
+                    title="drive DTR, which resets most boards"
+                    onClick={() => drivePins(port.id, !port.pins.dtr, port.pins.rts)}
+                  >
+                    dtr
+                  </button>
+                  <button
+                    type="button"
+                    class="pin"
+                    classList={{ on: port.pins.rts }}
+                    title="drive RTS"
+                    onClick={() => drivePins(port.id, port.pins.dtr, !port.pins.rts)}
+                  >
+                    rts
+                  </button>
+                  <button
+                    type="button"
+                    class="pin pulse"
+                    title="pulse DTR for 100 ms: reset the board"
+                    onClick={() => drivePins(port.id, true, port.pins.rts, 100)}
+                  >
+                    pulse
+                  </button>
+                </div>
               </article>
             )}
           </For>

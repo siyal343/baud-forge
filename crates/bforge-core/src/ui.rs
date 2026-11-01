@@ -74,7 +74,7 @@ pub struct PortView {
     pub read_errors: u64,
 }
 
-/// The pin matrix. Inputs only; DTR and RTS are outputs and arrive with F1.2.3.
+/// The pin matrix: the inputs a line reports, and the outputs this session drove.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Default, Serialize, Deserialize)]
 pub struct PinsView {
     pub cts: bool,
@@ -84,6 +84,10 @@ pub struct PinsView {
     pub break_state: bool,
     pub framing_error: bool,
     pub parity_error: bool,
+    /// DTR as this session drove it, not as the far end reports it.
+    pub dtr: bool,
+    /// RTS as this session drove it.
+    pub rts: bool,
 }
 
 /// One change, in the order it happened.

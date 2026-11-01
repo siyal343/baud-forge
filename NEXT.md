@@ -36,11 +36,13 @@ Live transmit rows are done too (spec 0045): a forwarding bridge's writes appear
 as they leave. A typed send from the forge does not, which is the small next step if anyone
 notices.
 
+Pin control is done (spec 0049): DTR and RTS are driven from the port card, a pulse resets a
+board, and the pin view reports the outputs this session set. A timed pulse sequence is D-114.
+
 ## Then, by value
 
 | Item | Why | Estimate |
 | --- | --- | --- |
-| Hardware triggers (DTR/RTS pulses, the ribbon pin matrix) | Milestone 4, and the guide's band 1 promises it | 1 session |
 | Session diff | Milestone 4; compare two vaults by decoded field | 1–2 sessions |
 | Signed builds (SignPath Foundation) | Free for OSI projects; the pipeline is ready, the application is a human step (D-95) | a form, then a CI change |
 | macOS and Linux shells (D-77) | Only Windows is built and run; CI builds the Windows shell | 1 session on a Mac |

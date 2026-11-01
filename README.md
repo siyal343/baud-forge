@@ -40,6 +40,8 @@ What works today:
 - **Lua fault scripts**: a sandboxed hook on every transmitted frame, with an
   instruction budget, so a fault can depend on the bytes (`examples/flip-last-byte.lua`).
 - **Bridges**: a passive tap or an inline forward between two ports.
+- **Pin control**: DTR and RTS driven from the port card, including a reset pulse, with the
+  output state shown where the inputs are.
 - **A workbench** in the browser or in a window: live stream, decoded fields with
   field-to-byte highlighting, a WebGL telemetry band with stacked rows, state lanes
   and bit rails, a scrubber by time with playback, the forge, the fault row and a

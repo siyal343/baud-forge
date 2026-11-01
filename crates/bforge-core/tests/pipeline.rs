@@ -202,3 +202,45 @@ fn stats_report_a_rate() {
     assert!(stats.bytes >= 64 * 64 * 1024);
     pipeline.stop();
 }
+
+/// DTR and RTS reach the transport, and a pulse clears them again.
+#[test]
+fn pins_reach_the_transport_and_a_pulse_lets_go() {
+    let config = PipelineConfig {
+        port_id: 3,
+        queue_chunks: 8,
+        ..Default::default()
+    };
+    let transport = MockTransport::new(100);
+    let pins = transport.pins_handle();
+    let pipeline = Pipeline::start(config, Box::new(transport));
+
+    pipeline
+        .set_pins(bforge_hal::PinStateFlags::DTR, None, Duration::from_secs(2))
+        .expect("the reader drives DTR");
+    assert_eq!(
+        pins.load(std::sync::atomic::Ordering::Relaxed) & bforge_hal::PinStateFlags::DTR.0,
+        bforge_hal::PinStateFlags::DTR.0,
+        "the transport saw DTR"
+    );
+
+    // A pulse holds the pin and then lets go before the caller is answered.
+    let started = Instant::now();
+    pipeline
+        .set_pins(
+            bforge_hal::PinStateFlags::DTR,
+            Some(Duration::from_millis(100)),
+            Duration::from_secs(2),
+        )
+        .expect("the reader pulses DTR");
+    assert!(
+        started.elapsed() >= Duration::from_millis(100),
+        "the pulse lasted its window: {:?}",
+        started.elapsed()
+    );
+    assert_eq!(
+        pins.load(std::sync::atomic::Ordering::Relaxed),
+        0,
+        "the pulse cleared the pins it set"
+    );
+}

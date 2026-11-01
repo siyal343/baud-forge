@@ -442,6 +442,22 @@ tbody tr.faulty td:last-child { color: var(--fault); }
 }
 .ribbon select.chip.action:hover:not(:disabled) { border-color: var(--accent, #39d); color: #fff; }
 .ribbon .chip.export-note { color: var(--valid, #4ec9b0); }
+.port .pins { display: flex; gap: 6px; margin-top: 8px; }
+.port .pin {
+  background: transparent;
+  border: 1px solid var(--line);
+  border-radius: 4px;
+  color: var(--dim);
+  font: inherit;
+  font-size: 10px;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  padding: 2px 8px;
+  cursor: pointer;
+}
+.port .pin.on { border-color: var(--accent, #39d); color: #fff; }
+.port .pin.pulse:hover { border-color: var(--warn, #e0a800); color: var(--warn, #e0a800); }
+.port .pin:hover:not(.on) { border-color: var(--accent, #39d); }
 
 .plot { display: grid; grid-template-rows: minmax(0, 1fr) auto; min-height: 0; padding: 0 12px 8px; }
 

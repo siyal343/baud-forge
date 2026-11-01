@@ -503,6 +503,34 @@ impl Session {
         self.frames_dropped
     }
 
+    /// Drive DTR and RTS, or pulse them, so a board can be reset from the workbench.
+    ///
+    /// The reader thread performs the change: it owns the transport.
+    pub fn set_pins(
+        &self,
+        port: &str,
+        dtr: bool,
+        rts: bool,
+        pulse: Option<Duration>,
+    ) -> Result<(), SessionError> {
+        let running = self
+            .ports
+            .iter()
+            .find(|running| running.info.id == port)
+            .ok_or_else(|| SessionError::UnknownPort(port.to_string()))?;
+        let mut pins = PinStateFlags(0);
+        if dtr {
+            pins.insert(PinStateFlags::DTR);
+        }
+        if rts {
+            pins.insert(PinStateFlags::RTS);
+        }
+        running
+            .pipeline
+            .set_pins(pins, pulse, Duration::from_secs(2))
+            .map_err(SessionError::Write)
+    }
+
     /// Send bytes to a port and report how many the transport accepted.
     ///
     /// The reader thread performs the write: it owns the transport, so a write from
@@ -752,6 +780,8 @@ impl Session {
                 break_state: stats.line_state & PinStateFlags::BREAK.0 != 0,
                 framing_error: stats.line_state & PinStateFlags::FRAMING_ERR.0 != 0,
                 parity_error: stats.line_state & PinStateFlags::PARITY_ERR.0 != 0,
+                dtr: stats.pins_out & PinStateFlags::DTR.0 != 0,
+                rts: stats.pins_out & PinStateFlags::RTS.0 != 0,
             };
             if stats.overruns > port.info.overruns {
                 port.info.overruns = stats.overruns;

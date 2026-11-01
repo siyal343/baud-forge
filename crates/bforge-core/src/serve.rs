@@ -96,6 +96,16 @@ struct SendJob {
     reply: std::sync::mpsc::SyncSender<Result<crate::fault::FaultOutcome, String>>,
 }
 
+/// One `POST /api/pins`: drive DTR and RTS, or pulse them.
+#[derive(Debug)]
+struct PinJob {
+    port: String,
+    dtr: bool,
+    rts: bool,
+    pulse: Option<Duration>,
+    reply: std::sync::mpsc::SyncSender<Result<(), String>>,
+}
+
 /// One `POST /api/yield`: release a port for a window so a flash tool can use it.
 #[derive(Debug)]
 struct YieldJob {
@@ -133,6 +143,7 @@ struct Shared {
     fault: Mutex<Option<std::sync::mpsc::Sender<FaultJob>>>,
     /// Same for yielding a port.
     yield_request: Mutex<Option<std::sync::mpsc::Sender<YieldJob>>>,
+    pins_request: Mutex<Option<std::sync::mpsc::Sender<PinJob>>>,
     /// Set by `with_vault`, before the server runs.
     vault: Mutex<Option<VaultSource>>,
     /// Set by `with_ui`: the built frontend to serve instead of the placeholder.
@@ -247,6 +258,8 @@ impl Server {
         *shared.fault.lock().unwrap() = Some(fault_tx);
         let (yield_tx, yield_rx) = std::sync::mpsc::channel::<YieldJob>();
         *shared.yield_request.lock().unwrap() = Some(yield_tx);
+        let (pin_tx, pin_rx) = std::sync::mpsc::channel::<PinJob>();
+        *shared.pins_request.lock().unwrap() = Some(pin_tx);
 
         let events = session.subscribe();
         let mut reported_sampled = 0u64;
@@ -260,6 +273,12 @@ impl Server {
                     None => session.send(&job.port, job.bytes, Duration::from_secs(2)),
                 }
                 .map_err(|error| error.to_string());
+                let _ = job.reply.send(result);
+            }
+            while let Ok(job) = pin_rx.try_recv() {
+                let result = session
+                    .set_pins(&job.port, job.dtr, job.rts, job.pulse)
+                    .map_err(|error| error.to_string());
                 let _ = job.reply.send(result);
             }
             while let Ok(job) = yield_rx.try_recv() {
@@ -429,6 +448,11 @@ fn handle(mut stream: TcpStream, shared: Arc<Shared>, stop: Arc<AtomicBool>) {
     if method == "POST" && path == "/api/yield" {
         let body = read_body(&mut reader, content_length);
         yield_port(&mut stream, &shared, &body);
+        return;
+    }
+    if method == "POST" && path == "/api/pins" {
+        let body = read_body(&mut reader, content_length);
+        pins(&mut stream, &shared, &body);
         return;
     }
     if method == "POST" && path == "/api/fault" {
@@ -1073,6 +1097,89 @@ fn content_type(path: &str) -> String {
         _ => "application/octet-stream",
     };
     kind.to_string()
+}
+
+#[derive(Debug, serde::Deserialize)]
+struct PinsBody {
+    port: String,
+    #[serde(default)]
+    dtr: bool,
+    #[serde(default)]
+    rts: bool,
+    /// Hold the pins for this long and then clear them: how a board is reset.
+    #[serde(default)]
+    pulse_ms: Option<u64>,
+}
+
+/// Drive DTR and RTS on a port (FR-HAL-04).
+fn pins(stream: &mut TcpStream, shared: &Arc<Shared>, body: &[u8]) {
+    let request: PinsBody = match serde_json::from_slice(body) {
+        Ok(request) => request,
+        Err(error) => {
+            let body = format!("{{\"error\":\"bad request: {error}\"}}");
+            return respond(
+                stream,
+                "400 Bad Request",
+                "application/json",
+                body.as_bytes(),
+            );
+        }
+    };
+    let sender = shared.pins_request.lock().unwrap().clone();
+    let Some(sender) = sender else {
+        let body = "{\"error\":\"the pump is not running\"}";
+        return respond(
+            stream,
+            "503 Service Unavailable",
+            "application/json",
+            body.as_bytes(),
+        );
+    };
+    // A pulse holds the reader thread, so 500 ms is the most a person can ask for.
+    let pulse = request
+        .pulse_ms
+        .map(|ms| Duration::from_millis(ms.clamp(1, 500)));
+    let (reply, answer) = std::sync::mpsc::sync_channel(1);
+    if sender
+        .send(PinJob {
+            port: request.port.clone(),
+            dtr: request.dtr,
+            rts: request.rts,
+            pulse,
+            reply,
+        })
+        .is_err()
+    {
+        let body = "{\"error\":\"the pump has stopped\"}";
+        return respond(
+            stream,
+            "503 Service Unavailable",
+            "application/json",
+            body.as_bytes(),
+        );
+    }
+    match answer.recv_timeout(Duration::from_secs(3)) {
+        Ok(Ok(())) => {
+            let body = format!(
+                "{{\"port\":\"{}\",\"dtr\":{},\"rts\":{}}}",
+                request.port, request.dtr, request.rts
+            );
+            respond(stream, "200 OK", "application/json", body.as_bytes());
+        }
+        Ok(Err(error)) => {
+            let body = format!("{{\"error\":\"{error}\"}}");
+            respond(stream, "409 Conflict", "application/json", body.as_bytes());
+        }
+        Err(_) => {
+            let body = "{\"error\":\"no answer from the pump\"}";
+            respond(
+                stream,
+                "504 Gateway Timeout",
+                "application/json",
+                body.as_bytes(),
+            );
+        }
+    }
 }
 
 #[derive(Debug, serde::Deserialize)]

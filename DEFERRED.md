@@ -53,7 +53,6 @@ The plan lives in [IMPLEMENTATION.md](IMPLEMENTATION.md), progress in
 | D-16 | Idle-gap framing needs its clock from the caller | `ByteMachine::tick` exists and is tested, but nothing in the read path calls it with a chunk timestamp. | D-15 | A port configured for `idle_gap` produces nothing until then. |
 | D-18 | Dissector UI, real tree, field-to-hex highlight | Phase 3, after the GUI. | D-01 | None; the engine side is what S11 builds. |
 | D-19 | Telemetry series in the contract | Contract v1 has no time-series field; plots need one. | Phase 2, with the DVR | The GUI cannot plot from the contract yet. |
-| D-20 | DTR and RTS in the pin view | The view carries inputs only; the outputs are write-only in the transport. | F1.2.3, which needs the same plumbing | The ribbon cannot show the output state it just set. |
 | D-21 | Command forge, script editor, fault studio, session diff view | Phases 2 and 4. | Their phases | None. |
 
 ## 4. Deliberate limits in shipped code
@@ -104,6 +103,7 @@ The plan lives in [IMPLEMENTATION.md](IMPLEMENTATION.md), progress in
 | D-64 | Sends are hex bytes, not typed fields | Band 5 in the UI guide is field pills with a live encoded preview: pick `battery_mv`, type 7400, see the bytes. That needs an encoder that walks the dissector IR in reverse, including bitfields and CRCs, and a schema that says how to lay a frame out. Hex is honest and works today. | An encoder slice over the same IR the decoder reads, with fixtures that round-trip | A person must assemble frame bytes by hand and add their own checksum. |
 | D-65 | Sends are not in the UI contract | A send is an action, not session state, and the workbench keeps its own log of the last six. A second client cannot see what the first sent, and a vault does not record it. | A `sent` event in the contract, plus a vault record type for transmit chunks | Two people watching one session cannot see each other's writes. |
 | D-104 | State lanes are not captured | A trace whose values are whole and few draws as a lane instead of a line (spec 0039). Reaching that needs a discrete field selected, and the capture cannot click a control; the code path is type-checked and reviewed, not photographed. | A UI harness, or a `?plot=mode` capture in the shell | The lane drawing could regress without anyone noticing. |
+| D-114 | A pin cannot be pulsed on a schedule | A pulse is one request with one duration. A board that needs a reset every few seconds, or a boot loader entered by a pin sequence, needs a timed sequence in the session. | A trigger requirement from real hardware | The pin is driven by hand or by a script that sends requests. |
 | D-112 | Protobuf fields have no names | The wire carries field numbers and wire types, not names, so a protobuf row reads `field_7`. Applying a `.proto` needs a parser for it and a workspace setting that points at the file. | The first request to name protobuf fields | A capture shows the shape of a message but not the meaning of a field. |
 | D-109 | Parquet is refused by name | FR-STO-02 lists Parquet. It needs a columnar writer and a compression codec as dependencies, and nobody has asked for the format; CSV and JSON Lines carry the same columns. | A request for Parquet from an analysis pipeline | A script that asks for Parquet gets an error that names the alternatives. |
 | D-107 | Rows are assigned in trace order | Stacked rows come out in the order traces were added, not grouped by unit or magnitude, and a row cannot be dragged to a different position or resized. | A row model the person can edit, once someone asks for it | Two traces of the same unit can end up in different rows. |
@@ -148,6 +148,7 @@ The plan lives in [IMPLEMENTATION.md](IMPLEMENTATION.md), progress in
 | — | A session copies its workspace beside the vault, so a review decodes (was D-111) | `specs/0046` |
 | — | MAVLink v1/v2 envelope and four common message bodies (most of D-56) | `specs/0048` |
 | — | `bforge record` writes the workspace sidecar too (was D-113) | `specs/0046` |
+| — | DTR and RTS drive and pulse from the pin view (was D-20) | `specs/0049` |
 | — | TCP, UDP and a device simulator in the config (F1.2.7) | `specs/0016` |
 | — | CCSDS with PUS, CSP and Modbus RTU (most of F3.4) | `specs/0017` |
 | — | The UI contract over loopback HTTP with server-sent events (F1.7.2) | `specs/0018` |

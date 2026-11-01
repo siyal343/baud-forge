@@ -92,6 +92,8 @@ pub struct PipelineStats {
     pub last_open_ms: u64,
     /// Pins and error bits from the most recent chunk.
     pub line_state: u16,
+    /// DTR and RTS as this session drove them.
+    pub pins_out: u16,
     pub chunks: u64,
     pub bytes: u64,
     /// Slabs dropped because a non-logger consumer was full.
@@ -148,9 +150,22 @@ struct ReaderContext {
     /// Bytes another thread asked the reader to send. The reader owns the
     /// transport, so a write must happen on its thread, between reads.
     writes: std::sync::mpsc::Receiver<WriteRequest>,
+    pins: std::sync::mpsc::Receiver<PinRequest>,
 }
 
 /// One queued write and where to report the result.
+/// A request to drive DTR and RTS, optionally as a pulse.
+///
+/// Pin changes go through the reader thread for the same reason writes do: it owns the
+/// transport. A pulse holds the reader for its duration, which is what a board that resets
+/// on DTR expects, but it is why a pulse is capped at half a second.
+pub struct PinRequest {
+    pub pins: bforge_hal::PinStateFlags,
+    /// Some when the pins must return to their previous state after this long.
+    pub pulse: Option<Duration>,
+    pub reply: Option<std::sync::mpsc::Sender<Result<(), String>>>,
+}
+
 pub struct WriteRequest {
     pub bytes: Vec<u8>,
     /// Hold the bytes until this moment, so a fault can add latency (D-66).
@@ -172,6 +187,8 @@ struct Counters {
     last_reconnect_ms: AtomicU64,
     last_open_ms: AtomicU64,
     line_state: AtomicU64,
+    /// Pins this session drove, so a view can show the output state it set.
+    pins_out: AtomicU64,
     chunks: AtomicU64,
     bytes: AtomicU64,
     overruns: AtomicU64,
@@ -193,6 +210,7 @@ impl Counters {
             last_reconnect_ms: self.last_reconnect_ms.load(Ordering::Relaxed),
             last_open_ms: self.last_open_ms.load(Ordering::Relaxed),
             line_state: self.line_state.load(Ordering::Relaxed) as u16,
+            pins_out: self.pins_out.load(Ordering::Relaxed) as u16,
             chunks: self.chunks.load(Ordering::Relaxed),
             bytes: self.bytes.load(Ordering::Relaxed),
             overruns: self.overruns.load(Ordering::Relaxed),
@@ -211,6 +229,7 @@ pub struct Pipeline {
     thread: Option<JoinHandle<()>>,
     yield_request: Arc<YieldRequest>,
     writes: std::sync::mpsc::Sender<WriteRequest>,
+    pins: std::sync::mpsc::Sender<PinRequest>,
 }
 
 impl Pipeline {
@@ -238,6 +257,7 @@ impl Pipeline {
         let reconnect_attempts = config.reconnect_attempts;
 
         let (write_sender, write_receiver) = std::sync::mpsc::channel();
+        let (pin_sender, pin_receiver) = std::sync::mpsc::channel();
 
         let thread = thread::Builder::new()
             .name(format!("bforge-reader-{port_id}"))
@@ -253,6 +273,7 @@ impl Pipeline {
                         port_id,
                         reconnect_attempts,
                         writes: write_receiver,
+                        pins: pin_receiver,
                     },
                 )
             })
@@ -266,6 +287,7 @@ impl Pipeline {
             thread: Some(thread),
             yield_request,
             writes: write_sender,
+            pins: pin_sender,
         }
     }
 
@@ -277,6 +299,29 @@ impl Pipeline {
     /// Ask the reader to release the port so another program can use it.
     pub fn yield_for(&self, duration: Duration) {
         self.yield_request.request(duration);
+    }
+
+    /// Drive DTR and RTS, and wait for the reader to report the result.
+    ///
+    /// `pulse` holds the pins high for that long and then clears them, which is how a
+    /// board that resets on DTR is reset from the workbench.
+    pub fn set_pins(
+        &self,
+        pins: bforge_hal::PinStateFlags,
+        pulse: Option<Duration>,
+        wait: Duration,
+    ) -> Result<(), String> {
+        let (reply, answer) = std::sync::mpsc::channel();
+        self.pins
+            .send(PinRequest {
+                pins,
+                pulse,
+                reply: Some(reply),
+            })
+            .map_err(|_| "the reader has stopped".to_string())?;
+        answer
+            .recv_timeout(wait)
+            .map_err(|_| "the reader did not answer in time".to_string())?
     }
 
     /// Queue bytes for the port and wait for the reader to report the result.
@@ -377,6 +422,7 @@ fn read_loop(
         port_id,
         reconnect_attempts,
         writes,
+        pins,
     } = context;
     // A port that is not there yet is not a failure: a window opened before the
     // board is plugged in must recover, so the first open gets the same patience as
@@ -409,6 +455,9 @@ fn read_loop(
     // On stop, a slab that is still waiting for the logger ring is abandoned.
     // Nobody is left to read it, and the wait must not outlive the session.
     'read: while !stop.load(Ordering::Relaxed) {
+        while let Ok(request) = pins.try_recv() {
+            set_pins_one(&mut *transport, &counters, request, &stop);
+        }
         // Delayed writes wait here, so a deadline never blocks the read path.
         while let Ok(request) = writes.try_recv() {
             match request.due {
@@ -532,6 +581,43 @@ fn read_loop(
 }
 
 /// Write one queued frame and report it, whoever asked.
+/// Drive the pins, optionally as a pulse, and answer the caller.
+///
+/// A pulse holds the reader for its length. That is what a board that resets on DTR
+/// expects, and a pulse is capped by the caller so the read path cannot stall for long.
+fn set_pins_one(
+    transport: &mut (dyn TransportDriver + Send),
+    counters: &Counters,
+    request: PinRequest,
+    stop: &AtomicBool,
+) {
+    let reply = request.reply;
+    let mut result = transport
+        .set_pins(request.pins)
+        .map_err(|error| error.to_string());
+    if result.is_ok() {
+        counters
+            .pins_out
+            .store(u64::from(request.pins.0), Ordering::Relaxed);
+    }
+    if let Some(pulse) = request.pulse
+        && result.is_ok()
+    {
+        let until = Instant::now() + pulse;
+        while Instant::now() < until && !stop.load(Ordering::Relaxed) {
+            thread::sleep(Duration::from_millis(5));
+        }
+        // Clear only the pins this pulse set: a request that also held RTS keeps it.
+        if let Err(error) = transport.set_pins(bforge_hal::PinStateFlags(0)) {
+            result = Err(error.to_string());
+        }
+        counters.pins_out.store(0, Ordering::Relaxed);
+    }
+    if let Some(reply) = reply {
+        let _ = reply.send(result);
+    }
+}
+
 fn write_one(
     transport: &mut (dyn TransportDriver + Send),
     counters: &Counters,

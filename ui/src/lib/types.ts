@@ -9,6 +9,10 @@ export interface PinsView {
   break_state: boolean
   framing_error: boolean
   parity_error: boolean
+  /** DTR as this session drove it. */
+  dtr: boolean
+  /** RTS as this session drove it. */
+  rts: boolean
 }
 
 export interface PortView {
