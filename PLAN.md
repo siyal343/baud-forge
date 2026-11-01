@@ -682,6 +682,5 @@ toolchain.
 
 ## Next step
 
-Write the implementation plan for Milestone 1. Start with `bforge-hal` and
-`bforge-storage`, because the ring buffer, the port match and the `.bflog`
-writer are the base of every later feature.
+The forward plan moved to [`NEXT.md`](NEXT.md): export (FR-STO-02), live transmit rows, a vault
+picker, then decoders and the remaining lab features. Releases are paused by the user.
