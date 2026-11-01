@@ -104,7 +104,8 @@ pub struct DissectorConfig {
     /// `c_header`, `native`, `protobuf` or `kaitai`.
     #[serde(rename = "type")]
     pub kind: String,
-    /// Pack name when `kind` is `native`: `ccsds_tm`, `ccsds_tc`, `csp`, `modbus_rtu`.
+    /// Pack name when `kind` is `native`: `ccsds_tm`, `ccsds_tc`, `csp`, `modbus_rtu`,
+    /// `protobuf`.
     pub name: Option<String>,
     pub file: Option<String>,
     pub root_struct: Option<String>,

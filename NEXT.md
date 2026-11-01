@@ -19,11 +19,12 @@ record: `STATUS.md` holds the state, `DEFERRED.md` holds the gaps with reasons.
 
 ## The three things worth doing next, in order
 
-### 1. Another decoder: protobuf, MAVLink or defmt
+### 1. A generated pack: MAVLink
 
-The SRS names all three. Each is one dependency and one pack behind the existing `Dissector`
-seam, so the cost is the schema: a `.proto` file, a dialect XML, or the defmt table from the
-ELF.
+Protobuf is done (spec 0047) and needs no schema to be useful. MAVLink needs a dialect XML:
+the envelope (stx, length, sequence, system, component, message id, checksum) is fixed, and the
+message bodies come from the dialect. The next decoder is the envelope first, then the common
+message set.
 
 Export is done on all three paths (spec 0044): CLI, engine route, ribbon control. The only
 follow-up is a sequential cursor so a 285 740 record vault stops taking twelve seconds

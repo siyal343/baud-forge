@@ -11,6 +11,7 @@
 pub mod ccsds;
 pub mod csp;
 pub mod modbus;
+pub mod protobuf;
 
 use crate::DecodedField;
 use crate::exec::ExecError;
@@ -26,6 +27,8 @@ pub enum Pack {
     Csp,
     /// Modbus RTU application data unit.
     ModbusRtu,
+    /// Protobuf wire format, without a schema.
+    Protobuf,
 }
 
 impl Pack {
@@ -36,6 +39,7 @@ impl Pack {
             "ccsds_tc" => Some(Self::CcsdsTc),
             "csp" => Some(Self::Csp),
             "modbus_rtu" => Some(Self::ModbusRtu),
+            "protobuf" => Some(Self::Protobuf),
             _ => None,
         }
     }
@@ -46,6 +50,7 @@ impl Pack {
             Self::CcsdsTc => "ccsds_tc",
             Self::Csp => "csp",
             Self::ModbusRtu => "modbus_rtu",
+            Self::Protobuf => "protobuf",
         }
     }
 
@@ -56,6 +61,7 @@ impl Pack {
             Self::CcsdsTc => "CCSDS_TC",
             Self::Csp => "CSP",
             Self::ModbusRtu => "MODBUS_RTU",
+            Self::Protobuf => "PROTOBUF",
         }
     }
 
@@ -65,12 +71,13 @@ impl Pack {
             Self::CcsdsTc => ccsds::decode(frame, ccsds::Direction::Telecommand),
             Self::Csp => csp::decode(frame),
             Self::ModbusRtu => modbus::decode(frame),
+            Self::Protobuf => protobuf::decode(frame),
         }
     }
 }
 
 /// Every pack name a workspace may use.
-pub const PACK_NAMES: [&str; 4] = ["ccsds_tm", "ccsds_tc", "csp", "modbus_rtu"];
+pub const PACK_NAMES: [&str; 5] = ["ccsds_tm", "ccsds_tc", "csp", "modbus_rtu", "protobuf"];
 
 /// Build one field with no children.
 pub(crate) fn field(

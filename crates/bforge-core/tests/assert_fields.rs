@@ -376,3 +376,43 @@ dissector = { type = "native", name = "mavlink" }
     assert_eq!(issues.len(), 1);
     assert!(issues[0].message.contains("ccsds_tm"), "{:?}", issues[0]);
 }
+
+/// Protobuf has no schema here: the pack prints field numbers and wire types.
+#[test]
+fn a_protobuf_frame_decodes_without_a_proto_file() {
+    let vault = temp("protobuf", "bflog");
+    let config = native_workspace("protobuf");
+    // field 1 varint 150, field 2 string "abc", then the line delimiter.
+    let mut payload = vec![0x08, 0x96, 0x01, 0x12, 0x03, b'a', b'b', b'c'];
+    payload.push(0x0A);
+    let mut reader = build_raw_vault(&vault, &[payload]);
+
+    let rows = decode_vault(&mut reader, &config.ports[0]).unwrap();
+    assert_eq!(rows.len(), 1, "{rows:#?}");
+    assert_eq!(rows[0].protocol.as_deref(), Some("PROTOBUF"));
+    let value = |name: &str| {
+        rows[0]
+            .fields
+            .iter()
+            .find(|field| field.name == name)
+            .unwrap_or_else(|| panic!("no field {name} in {:?}", rows[0].fields))
+            .value
+            .clone()
+    };
+    assert_eq!(value("field_1"), "varint 150");
+    assert_eq!(value("field_2"), "\"abc\"");
+
+    // A rule can now assert on protobuf content, which is the point of decoding it.
+    let rules = parse_rules(
+        r#"
+        [[checks]]
+        name = "framing"
+        kind = "field"
+        value = "field_1"
+        equals = "varint 150"
+        "#,
+    )
+    .unwrap();
+    let report = evaluate(&vault.display().to_string(), &mut reader, &rules, &rows).unwrap();
+    assert!(report.passed(), "{report:#?}");
+}

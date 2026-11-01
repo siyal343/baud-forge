@@ -32,7 +32,8 @@ What works today:
 - **Six framing modes**: delimiter, COBS, SLIP, Intel HEX, sync word plus length,
   idle gap. Checksums CRC-8, CRC-16/CCITT-FALSE and CRC-32C.
 - **Dissection** with a C header parser (packed structs, bitfields, enums, arrays,
-  endianness) and three native packs: CCSDS TM/TC with PUS, CSP v1, Modbus RTU.
+  endianness) and four native packs: CCSDS TM/TC with PUS, CSP v1, Modbus RTU, and
+  schema-less Protobuf.
 - **Symbols**: an address in a frame becomes a function and a source line.
 - **Sending** bytes with a checksum appended, and **fault profiles** — bit flips,
   drops, truncation, corrupted CRC — seeded so a run reproduces.
