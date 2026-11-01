@@ -292,6 +292,12 @@ fn record(args: &[String]) -> ExitCode {
             return ExitCode::FAILURE;
         }
     };
+    // The vault cannot describe its own ports yet, so the workspace travels beside it: a
+    // capture reviewed later decodes with the configuration it was recorded with (D-113).
+    let sidecar = Path::new(&out).with_extension("bforge.toml");
+    if sidecar != Path::new(&config_path) {
+        let _ = std::fs::copy(&config_path, &sidecar);
+    }
 
     if let Err(error) = session.enable_bridges(&config.bridges) {
         eprintln!("error: {error}");

@@ -68,7 +68,9 @@ cargo test -p bforge-core --test serve
 - The sidecar is a copy of the workspace file, so a review of a capture whose `.bforge.toml`
   has since changed decodes with the old copy. That is the point, but it means editing the
   workspace does not change how an old capture reads.
-- `bforge record` on the command line does not write a sidecar yet (D-113).
+- `bforge record` writes the same sidecar, so a capture made in CI reviews with its schema.
+  Verified by running it: `record -c examples/loopback-demo.bforge.toml -o cli-sidecar.bflog
+  --duration 2s` produced 1383 chunks and a 933-byte `cli-sidecar.bforge.toml` beside them.
 - The picker's chosen vault applies to sessions started from that page; there is no per-workspace
   memory of where its captures go.
 - The port strip says "No ports in this workspace" in review, which is true but reads oddly.
