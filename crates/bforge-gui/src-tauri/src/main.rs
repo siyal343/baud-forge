@@ -310,6 +310,7 @@ fn open_workbench(
     base: &str,
     plot: Option<&str>,
     rows: Option<&str>,
+    query: Option<&str>,
 ) -> Result<(), String> {
     // A nonce per launch: the webview caches the bundle by URL, and a rebuilt frontend
     // served at the same address is not revalidated. Without this, a new build can be
@@ -321,6 +322,15 @@ fn open_workbench(
     let mut url = format!("index.html?api={base}&v={nonce}");
     if let Some(rows) = rows {
         url.push_str(&format!("&rows={rows}"));
+    }
+    if let Some(query) = query {
+        // Raw extra parameters, for a view that is easier to describe than to click:
+        // `--query "play=1"`.
+        let trimmed = query.trim_start_matches('&');
+        if !trimmed.is_empty() {
+            url.push('&');
+            url.push_str(trimmed);
+        }
     }
     if let Some(plot) = plot {
         let encoded: String = plot
@@ -378,6 +388,7 @@ fn main() {
             let mut args = std::env::args_os().skip(1);
             let mut plot: Option<String> = None;
             let mut rows: Option<String> = None;
+            let mut query: Option<String> = None;
             let mut workspace: Option<PathBuf> = None;
             while let Some(argument) = args.next() {
                 let text = argument.to_string_lossy().to_string();
@@ -385,6 +396,8 @@ fn main() {
                     plot = args.next().map(|value| value.to_string_lossy().to_string());
                 } else if text == "--rows" {
                     rows = args.next().map(|value| value.to_string_lossy().to_string());
+                } else if text == "--query" {
+                    query = args.next().map(|value| value.to_string_lossy().to_string());
                 } else if !text.starts_with("--") {
                     workspace = Some(PathBuf::from(argument));
                 }
@@ -394,8 +407,13 @@ fn main() {
                 match start(&handle, &path) {
                     Ok(base) => {
                         if let Some(window) = app.get_webview_window("main") {
-                            let _ =
-                                open_workbench(&window, &base, plot.as_deref(), rows.as_deref());
+                            let _ = open_workbench(
+                                &window,
+                                &base,
+                                plot.as_deref(),
+                                rows.as_deref(),
+                                query.as_deref(),
+                            );
                         }
                     }
                     Err(error) => eprintln!("bforge-gui: {error}"),

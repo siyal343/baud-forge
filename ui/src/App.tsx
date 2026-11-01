@@ -161,6 +161,9 @@ export default function App() {
   const [windowRows, setWindowRows] = createSignal<TailRow[]>([])
   // The vault's span, in milliseconds: what a timeline drags along.
   const [spanMs, setSpanMs] = createSignal(0)
+  // Playback: a timeline that advances on its own, at a chosen rate.
+  const [playing, setPlaying] = createSignal(false)
+  const [rate, setRate] = createSignal(1)
   // A paired bus: one bridge's two ports, merged by time (spec 0029).
   // `null` follows the workspace: one bridge means one bus, no choice to make.
   const [bridge, setBridge] = createSignal<string | null>(null)
@@ -239,11 +242,52 @@ export default function App() {
       .filter((value): value is number => value !== null && value !== undefined)
   }
 
+  onCleanup(() => stopPlayback())
+
   const traces = createMemo(() =>
     plottedKeys().map((entry) => ({ key: entry.key, mode: entry.mode, values: seriesFor(entry.key) })),
   )
 
   const [timelineNote, setTimelineNote] = createSignal<string | null>(null)
+  let playTimer: ReturnType<typeof setInterval> | undefined
+  let playFrom = 0
+  let playClock = 0
+  let lastFetch = 0
+
+  function stopPlayback() {
+    if (playTimer !== undefined) clearInterval(playTimer)
+    playTimer = undefined
+    setPlaying(false)
+  }
+
+  /** Advance the window through the recording without asking for every frame. */
+  function play() {
+    if (spanMs() <= 0) {
+      setTimelineNote('nothing recorded yet')
+      return
+    }
+    const start = at() ?? 0
+    playFrom = start >= spanMs() ? 0 : start
+    playClock = performance.now()
+    lastFetch = 0
+    setPlaying(true)
+    setTimelineNote(null)
+    playTimer = setInterval(() => {
+      const now = performance.now()
+      const next = playFrom + (now - playClock) * rate()
+      if (next >= spanMs()) {
+        stopPlayback()
+        void loadWindow(spanMs())
+        return
+      }
+      setAt(next)
+      // A window every 300 ms is what a person can read; more would be work for nothing.
+      if (now - lastFetch >= 300) {
+        lastFetch = now
+        void loadWindow(next)
+      }
+    }, 60)
+  }
 
   async function loadWindow(record: number) {
     setAt(record)
@@ -291,6 +335,7 @@ export default function App() {
     }
     const shared = params.get('at')
     if (params.get('rows') === 'stack') setStackRows(true)
+    const autoPlay = params.get('play') === '1'
     const sharedBridge = params.get('bridge')
     if (sharedBridge !== null) setBridge(sharedBridge)
     // `?typed=1` opens on the typed form, which is also the only way to capture it
@@ -304,6 +349,17 @@ export default function App() {
       if (at() === null) void refreshSpan()
     }, 3000)
     onCleanup(() => clearInterval(timer))
+
+    if (autoPlay) {
+      // Wait for a span worth playing rather than starting against an empty vault.
+      // Ten seconds of recording is the shortest that is worth playing from the start.
+      const wait = setInterval(() => {
+        if (spanMs() < 10_000) return
+        clearInterval(wait)
+        play()
+      }, 200)
+      onCleanup(() => clearInterval(wait))
+    }
   })
 
   const detail = () => selected() ?? rows().at(-1) ?? null
@@ -685,7 +741,29 @@ export default function App() {
               onInput={(event) => loadWindow(Number(event.currentTarget.value))}
               aria-label="vault time in milliseconds"
             />
-            <button type="button" onClick={() => { setAt(null); setWindowRows([]) }} classList={{ active: at() === null }}>
+            <button
+              type="button"
+              class="transport"
+              onClick={() => (playing() ? stopPlayback() : play())}
+              title={playing() ? 'pause the recording' : 'play the recording'}
+            >
+              {playing() ? '⏸' : '▶'}
+            </button>
+            <button
+              type="button"
+              class="transport"
+              onClick={() => {
+                setRate(rate() === 1 ? 2 : rate() === 2 ? 4 : 1)
+                if (playing()) {
+                  playFrom = at() ?? 0
+                  playClock = performance.now()
+                }
+              }}
+              title="playback rate"
+            >
+              {rate()}x
+            </button>
+            <button type="button" onClick={() => { stopPlayback(); setAt(null); setWindowRows([]) }} classList={{ active: at() === null }}>
               live
             </button>
             <span class="hint">

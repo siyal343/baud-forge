@@ -431,6 +431,7 @@ tbody tr.faulty td:last-child { color: var(--fault); }
   cursor: pointer;
 }
 .scrubber button.active { color: var(--valid); border-color: var(--valid); }
+.scrubber button.transport { color: var(--text); font-size: 11px; min-width: 28px; }
 
 .plot { display: grid; grid-template-rows: minmax(0, 1fr) auto; min-height: 0; padding: 0 12px 8px; }
 
