@@ -31,8 +31,8 @@ half the time, because a whole-file pass walks the file forward instead of seeki
 (D-110 closed).
 
 The vault picker and review mode are done too (spec 0046): the window opens a finished `.bflog`
-read-only and lands at its end. A reviewed capture shows bytes rather than fields, because the
-vault does not carry its workspace (D-111).
+read-only, lands at its end, and decodes it, because a session copies its workspace beside the
+vault (D-111 closed).
 
 Live transmit rows are done too (spec 0045): a forwarding bridge's writes appear as `tx` rows
 as they leave. A typed send from the forge does not, which is the small next step if anyone

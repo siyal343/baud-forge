@@ -23,20 +23,35 @@ Two actions on the picker page, and a read-only way to run the engine over a fin
    rather than the three-second poll, which would land at a stale end.
 4. With no workspace there is no schema, so each record becomes one row: port `port N`, the
    bytes as hex, the direction, no fields. Nothing is guessed about framing.
-5. `bforge-gui --review --vault file.bflog` does the same from a command line. A path that is
-   not a `.toml` is treated as a vault, so a `.bflog` on the command line opens for review.
+5. `bforge-gui --review --vault file.bflog` does the same from a command line, and
+   `bforge-gui capture.bflog` reviews that file: a vault alone is a capture, `--vault` beside a
+   workspace is where that session records.
+6. **A session copies its workspace beside the vault** as `<vault stem>.bforge.toml`, and a
+   review reads that copy when it exists. With it the capture decodes: port ids, schema, fields.
+   Without it the review falls back to raw records.
 
 ## Measured
 
 Captured from the window with `--review --vault bforge-gui-1793520598.bflog`:
 
+Without a sidecar, from a vault recorded before this stage:
+
 ```text
-mode review · ports 0/0 · 55.379 s / 55.4 s · vault not recording · 0 B on disk
+mode review · 55.379 s / 55.4 s · vault not recording
 55.3796 s   port 0   tx   25   08 55 AA 03 73 38 C1 7E 10 1E 1B 18 2F 9D ...
+inspector: No schema on this port.
 ```
 
-The scrubber sits at the end of a 55.4 s recording, the row is the last record, and the
-inspector says `No schema on this port.` rather than inventing fields.
+With a sidecar, from a vault recorded after it:
+
+```text
+mode review · 43.818 s / 43.8 s
+43.8182 s   eps   tx   23   55 AA 03 AA 10 40 64 00 1D 92 86 EB 11 3F AA 19 30 40 ...   C_STRUCT:ImuPacket
+43.8182 s   obc   tx   23   55 AA 03 AA 10 40 64 00 1D 92 86 EB 11 3F AA 19 30 40 ...   C_STRUCT:ImuPacket
+```
+
+The scrubber sits at the end of the recording, the rows carry their port ids, and the pack
+decodes them, because the workspace travelled with the vault.
 
 ## Test
 
@@ -50,8 +65,10 @@ cargo test -p bforge-core --test serve
 
 ## Limits, recorded
 
-- A review shows undecoded rows. Pairing a vault with its workspace would decode it, and the
-  vault does not store the configuration, so that needs a sidecar file (not built).
+- The sidecar is a copy of the workspace file, so a review of a capture whose `.bforge.toml`
+  has since changed decodes with the old copy. That is the point, but it means editing the
+  workspace does not change how an old capture reads.
+- `bforge record` on the command line does not write a sidecar yet (D-113).
 - The picker's chosen vault applies to sessions started from that page; there is no per-workspace
   memory of where its captures go.
 - The port strip says "No ports in this workspace" in review, which is true but reads oddly.

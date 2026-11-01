@@ -250,6 +250,13 @@ fn start(app: &tauri::AppHandle, path: &Path, vault: Option<PathBuf>) -> Result<
         }
     });
 
+    // The vault cannot describe itself yet, so the workspace is copied beside it. Review
+    // reads that copy, which is what makes a reviewed capture decode (D-111).
+    let sidecar = vault.with_extension("bforge.toml");
+    if sidecar != path {
+        let _ = std::fs::copy(path, &sidecar);
+    }
+
     *engine.running.lock().unwrap() = Some(Running {
         port,
         stop,
@@ -327,6 +334,17 @@ fn start_review(app: tauri::AppHandle, path: String) -> Result<String, String> {
     let vault = PathBuf::from(&path);
     bforge_storage::LogReader::open(&vault).map_err(|error| format!("{}: {error}", path))?;
 
+    // A workspace copied beside the vault gives the review its port names and schema. A
+    // vault without one still reads, as raw records.
+    let sidecar = vault.with_extension("bforge.toml");
+    let config = std::fs::read_to_string(&sidecar)
+        .ok()
+        .and_then(|text| toml::from_str::<ProjectConfig>(&text).ok());
+    let ports = config
+        .as_ref()
+        .map(|config| config.ports.clone())
+        .unwrap_or_default();
+
     let engine = app.state::<Engine>();
     engine.stop();
 
@@ -343,7 +361,7 @@ fn start_review(app: tauri::AppHandle, path: String) -> Result<String, String> {
     };
     let server = server.with_vault(VaultSource {
         path: vault.clone(),
-        ports: Vec::new(),
+        ports,
     });
     let stop = server.stop_handle();
     std::thread::spawn(move || {
@@ -505,10 +523,16 @@ fn main() {
                     workspace = Some(PathBuf::from(argument));
                 }
             }
-            // `--review` with a vault, or a vault that is not a workspace, opens read-only.
-            let reviewing = vault_arg
-                .clone()
-                .filter(|path| review || !path.extension().is_some_and(|kind| kind == "toml"));
+            // A vault on its own is a capture to review; `--vault` beside a workspace is
+            // where that session records.
+            let reviewing = match (vault_arg.clone(), workspace.clone()) {
+                (Some(vault), None) => Some(vault),
+                (Some(vault), Some(_)) if review => Some(vault),
+                (None, Some(path)) if path.extension().is_some_and(|kind| kind == "bflog") => {
+                    Some(path)
+                }
+                _ => None,
+            };
             if let Some(vault) = reviewing {
                 let handle = app.handle().clone();
                 match start_review(handle, vault.display().to_string()) {
