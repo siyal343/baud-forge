@@ -1,3 +1,50 @@
+# BaudForge 0.8.0
+
+The window becomes the laboratory: a real application shell, a telemetry band drawn on the GPU,
+and a timeline that plays by itself. Released 1 November 2026.
+
+## New since 0.7.0
+
+- **The window is the application** (spec 0039). Frameless chrome with its own title bar, a
+  session menu (stop, switch, yield), a workspace tree that lists the decoded fields the stream
+  has produced, and geometry saved to `window.json` and restored per launch.
+- **The telemetry band moved to WebGL** (spec 0040). Traces are drawn on a canvas through the
+  GPU, so a minute of high-rate data scrolls without the paint cost growing. States become
+  **lanes**: a word with few values (mode, channel, flags) draws as coloured spans instead of a
+  line that jumps between them.
+- **A flags word becomes bits** (spec 0041). Choose *rails* on a trace and each bit gets its own
+  hairline, so a status byte reads as eight channels rather than a number.
+- **Rows stack with their own scales** (spec 0042). A battery in millivolts and a gyro in
+  degrees per second now share a band without one flattening the other; `--rows stack` or the
+  `rows` pill switches it.
+- **Seek by time** (spec 0040). The scrubber predicts the record for a moment with the vault's
+  own index and then scans forward, so `1.234 s` is enough; the header shows *recorded* or
+  *predicted*.
+- **Playback** (spec 0043). A transport with play, pause, and a rate cycling 1x, 2x and 4x.
+  The playhead ticks at 60 ms and a window is fetched every 300 ms, which is the reading rate.
+
+## Measured
+
+Playback, two captures six seconds apart in the same run:
+
+| Capture | Transport | Readout |
+| --- | --- | --- |
+| 1 | pause shown | `5.712 s / 12.2 s` |
+| 2 | play shown | `12.151 s / 12.2 s` |
+
+It advanced on its own, the plot, the rows and the lane followed, and it stopped on the last
+record.
+
+The suite is **271 tests**, CI green on nine jobs, and `docs/screenshots/workbench.png` is a
+capture of the window during playback.
+
+## Recorded
+
+Releases before this one listed the gaps; this one keeps the same habit. Rows are assigned in
+trace order, so there is no drag to reorder (D-107). Playback reads the vault, not the stream,
+and has no frame stepping or loop. The shell is built and run on Windows only (D-77). Export is
+still absent entirely (FR-STO-02), which is the first item in `NEXT.md`.
+
 # BaudForge 0.7.0
 
 The telemetry band becomes a workspace, and the stream stops under-reporting itself.
