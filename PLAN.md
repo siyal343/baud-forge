@@ -40,6 +40,7 @@ state through one contract (F1.7).
 | S8b assert fields | D-15 | done | a 6 s recording from the board decodes to 122 frames and passes 5 field, protocol and count checks |
 | S9 sockets | F1.2.7 (TCP, UDP, config) | done | simulator over loopback: tail decodes, record stores 60 frames, assert passes 3 of 3, no hardware |
 | S10 native packs | F3.4 (CCSDS/PUS, CSP, Modbus; MAVLink deferred) | done | 12 pack tests on hand-built fixtures; a CCSDS packet in a vault decodes and passes assert rules with no schema file |
+| S42 bit rails | D-63 (bits instead of numbers) | done | `--plot obc.flags:bits,eps.channel:lane` draws an 8-bit rail and a state lane; chips carry the mode; the narrow tier scrolls instead of hiding the plot |
 | S41 time seek | D-68 (the scrubber speaks seconds) | done | `?t_ms=8000` resolved to record 5032 at 7 998 513 µs; the timeline reads "15.1 s recorded" and follows the growing recording |
 | S40 GPU plots | D-63 (band 3B on the GPU) | done | the band reports `webgl`, draws traces on a GPU canvas with a 2D overlay, and turns discrete fields into state lanes; canvas remains the fallback |
 | S39 application polish | D-98, D-99, D-100, D-69 (the window becomes the app) | done | geometry saved and restored (1100x700 at 120,90 round trip), frameless window with controls in the ribbon, session menu, four layout tiers, field tree in the inspector |
@@ -581,8 +582,16 @@ S41 notes:
 - `?at=` keeps its name and changes its unit to milliseconds. That is a small breaking change
   to bookmarks, recorded in the spec.
 
-Next action: D-105 (playback) or the rails (D-63). Neither is needed for the tool to be
-honest; the band now measures in the unit a person uses. `serve` is the only interface it needs, so the
+S42 notes:
+
+- Presentation is now a choice, not a heuristic: a discrete value stays a line if the person
+  asked for a line. The chip carries the mode and cycles it.
+- The mode lives in the URL, so a view is shareable and a capture can reach it without a
+  click. `--plot` on the shell does the same from a shortcut.
+- Bit rails answer the question a flags word always raises: which bit, when.
+- A 640x480 window used to lose the plot band entirely; that tier scrolls now.
+
+Next action: stacked rows (D-106), or stop and release. Releases remain paused by the user. `serve` is the only interface it needs, so the
 work can be done in Edge with hot reload, and the Tauri shell wraps the same files
 afterwards. The engine has published the contract since S4; this is the first phase
 where a change to a panel can be seen without a desktop build.

@@ -379,10 +379,21 @@ tbody tr.faulty td:last-child { color: var(--fault); }
   color: var(--text);
   font: inherit;
   font-size: 11px;
-  padding: 2px 9px 2px 7px;
+  padding: 1px 4px 1px 7px;
+}
+.trace-chip:hover { border-color: var(--dim); }
+.trace-chip .trace-mode,
+.trace-chip .trace-remove {
+  background: transparent;
+  border: 0;
+  color: var(--dim);
+  font: inherit;
+  font-size: 10px;
+  padding: 0 4px;
   cursor: pointer;
 }
-.trace-chip:hover { border-color: var(--fault); }
+.trace-chip .trace-mode:hover { color: var(--tx); }
+.trace-chip .trace-remove:hover { color: var(--fault); }
 .trace-chip .swatch {
   width: 8px;
   height: 8px;
@@ -446,17 +457,20 @@ tbody tr.faulty td:last-child { color: var(--fault); }
 /* 640 to 959 px: one column. Stream and plot keep a 60/40 split, the furniture moves
    under them, and nothing is removed. */
 @media (max-width: 959px) {
+  /* A narrow window scrolls rather than hiding bands: the guide's rule is collapse,
+     never remove, and at 640x480 there is no room to show all six at once. */
   .shell {
     grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
-    grid-template-rows: minmax(38px, auto) minmax(0, 1fr) 220px 220px 28px;
+    grid-template-rows: auto 420px 220px 220px 28px;
     grid-template-areas:
       'ribbon ribbon'
       'stage stage'
       'forge forge'
       'sidebar inspector'
       'footer footer';
+    overflow-y: auto;
   }
   .stage { grid-template-rows: minmax(0, 3fr) minmax(0, 2fr); }
-  .sidebar, .inspector { overflow: auto; }
+  .stream, .sidebar, .inspector { overflow: auto; }
   .plot-band { border-top: 1px solid var(--line); }
 }

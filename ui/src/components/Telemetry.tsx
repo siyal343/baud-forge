@@ -7,9 +7,14 @@ export const SERIES_COLOURS = SERIES_RGB.map(([r, g, b]) => {
   return `#${hex(r)}${hex(g)}${hex(b)}`
 })
 
+/** How a trace is drawn: as a measurement, a state, or a rail per bit. */
+export type TraceMode = 'line' | 'lane' | 'bits'
+
 export interface SeriesLike {
   key: string
   values: number[]
+  /** Missing means a line, which is what a measurement is. */
+  mode?: TraceMode
 }
 
 interface Props {
@@ -50,6 +55,7 @@ export function Telemetry(props: Props) {
   const visible = createMemo(() =>
     props.series.map((trace) => ({
       key: trace.key,
+      mode: trace.mode ?? 'line',
       values: trace.values.slice(-windowSize()),
     })),
   )
@@ -57,14 +63,22 @@ export function Telemetry(props: Props) {
     visible().reduce((most, trace) => Math.max(most, trace.values.length), 0),
   )
 
-  /** State lanes: discrete traces get a strip of their own instead of a line. */
-  const lanes = createMemo(() => visible().filter((trace) => isDiscrete(trace.values)))
+  /** State lanes: a discrete trace asked for as a lane gets a strip, not a line. */
+  const lanes = createMemo(() => visible().filter((trace) => trace.mode === 'lane'))
+  const laneCount = () => lanes().length
+  /** Bit rails: one row per bit of a flags word. */
+  const rails = createMemo(() => visible().filter((trace) => trace.mode === 'bits'))
+  /** Lines: everything else. */
+  const lines = createMemo(() =>
+    visible().filter((trace) => trace.mode === 'line' && !isDiscrete(trace.values)),
+  )
+  const bitsOf = (values: number[]) =>
+    values.reduce((most, value) => Math.max(most, Number.isFinite(value) ? Math.floor(value) : 0), 0)
 
   const bounds = createMemo(() => {
     let low = Number.POSITIVE_INFINITY
     let high = Number.NEGATIVE_INFINITY
-    for (const trace of visible()) {
-      if (isDiscrete(trace.values)) continue
+    for (const trace of lines()) {
       for (const value of trace.values) {
         if (!Number.isFinite(value)) continue
         if (value < low) low = value
@@ -124,7 +138,40 @@ export function Telemetry(props: Props) {
       context.fillText(format(value), padding.left - 6, at)
     }
 
-    // State lanes, under the traces: one row per discrete field, a block per change.
+    // Bit rails: a row per bit of a flags word, filled where the bit is set. This is the
+    // view a protocol engineer needs when "flags" is not a number but four switches.
+    rails().forEach((rail, railIndex) => {
+      const bits = Math.max(1, Math.min(16, 32 - Math.clz32(bitsOf(rail.values))))
+      const rowHeight = 3
+      const gap = 1
+      const railHeight = bits * (rowHeight + gap)
+      const top = padding.top + plotHeight() - 10 - laneCount() * 10 - (railIndex + 1) * (railHeight + 6)
+      const colour = SERIES_COLOURS[(visible().findIndex((trace) => trace.key === rail.key)) % SERIES_COLOURS.length]
+      context.fillStyle = '#4a5468'
+      for (let bit = 0; bit < bits; bit += 1) {
+        const y = top + (bits - 1 - bit) * (rowHeight + gap)
+        context.globalAlpha = 0.35
+        context.fillRect(padding.left, y, plotWidth(), rowHeight)
+      }
+      context.globalAlpha = 1
+      if (rail.values.length > 1) {
+        const step = plotWidth() / (rail.values.length - 1)
+        rail.values.forEach((value, index) => {
+          for (let bit = 0; bit < bits; bit += 1) {
+            if (((Math.floor(value) >> bit) & 1) === 0) continue
+            context.fillStyle = colour
+            context.fillRect(
+              padding.left + index * step,
+              top + (bits - 1 - bit) * (rowHeight + gap),
+              Math.max(1, step),
+              rowHeight,
+            )
+          }
+        })
+      }
+    })
+
+    // State lanes, under the traces: one row per field, a block per change.
     lanes().forEach((lane, laneIndex) => {
       const laneHeight = 6
       const laneY = padding.top + plotHeight() - 4 - laneIndex * (laneHeight + 3)
@@ -167,9 +214,9 @@ export function Telemetry(props: Props) {
       context.lineTo(at, padding.top + plotHeight())
       context.stroke()
       context.setLineDash([])
-      visible().forEach((trace, index) => {
+      lines().forEach((trace, index) => {
         const value = trace.values[cursor]
-        if (value === undefined || isDiscrete(trace.values)) return
+        if (value === undefined) return
         context.fillStyle = SERIES_COLOURS[index % SERIES_COLOURS.length]
         context.beginPath()
         context.arc(at, y(value), 2.5, 0, Math.PI * 2)
@@ -196,9 +243,9 @@ export function Telemetry(props: Props) {
         const pixelY = padding.top + plotHeight() * (1 - fraction)
         return [(pixelX / width) * 2 - 1, 1 - (pixelY / height) * 2]
       }
-      const traces = visible()
+      const traces = lines()
         .map((trace, index) => {
-          if (isDiscrete(trace.values) || trace.values.length < 2) return null
+          if (trace.values.length < 2) return null
           const points: number[] = []
           trace.values.forEach((value, sample) => {
             const [x, y] = toClip(value, sample, trace.values.length)
@@ -221,8 +268,8 @@ export function Telemetry(props: Props) {
     context.setTransform(ratio, 0, 0, ratio, 0, 0)
     context.clearRect(0, 0, width, height)
     context.lineWidth = 1.5
-    visible().forEach((trace, index) => {
-      if (trace.values.length < 2 || isDiscrete(trace.values)) return
+    lines().forEach((trace, index) => {
+      if (trace.values.length < 2) return
       context.strokeStyle = SERIES_COLOURS[index % SERIES_COLOURS.length]
       context.beginPath()
       trace.values.forEach((value, sample) => {

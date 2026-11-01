@@ -301,9 +301,28 @@ fn start_workspace(app: tauri::AppHandle, path: String) -> Result<String, String
     start(&app, Path::new(&path))
 }
 
-/// Load the bundled workbench, pointed at an engine.
-fn open_workbench(window: &tauri::WebviewWindow, base: &str) -> Result<(), String> {
-    let script = format!("location.replace('index.html?api={base}')");
+/// Load the bundled workbench, pointed at an engine and optionally at traces.
+///
+/// `plot` takes `port.field:mode` entries, so a shortcut can open a view directly:
+/// `bforge-gui workspace.toml --plot obc.flags:bits`.
+fn open_workbench(
+    window: &tauri::WebviewWindow,
+    base: &str,
+    plot: Option<&str>,
+) -> Result<(), String> {
+    let mut url = format!("index.html?api={base}");
+    if let Some(plot) = plot {
+        let encoded: String = plot
+            .chars()
+            .map(|character| match character {
+                ':' => "%3A".to_string(),
+                ',' => "%2C".to_string(),
+                other => other.to_string(),
+            })
+            .collect();
+        url.push_str(&format!("&plot={encoded}"));
+    }
+    let script = format!("location.replace('{url}')");
     window.eval(&script).map_err(|error| error.to_string())
 }
 
@@ -345,16 +364,23 @@ fn main() {
             }
             // A workspace on the command line still works, which is what a script or a
             // shortcut with an argument does.
-            let from_args = std::env::args_os()
-                .skip(1)
-                .map(PathBuf::from)
-                .find(|argument| !argument.to_string_lossy().starts_with("--"));
-            if let Some(path) = from_args {
+            let mut args = std::env::args_os().skip(1);
+            let mut plot: Option<String> = None;
+            let mut workspace: Option<PathBuf> = None;
+            while let Some(argument) = args.next() {
+                let text = argument.to_string_lossy().to_string();
+                if text == "--plot" {
+                    plot = args.next().map(|value| value.to_string_lossy().to_string());
+                } else if !text.starts_with("--") {
+                    workspace = Some(PathBuf::from(argument));
+                }
+            }
+            if let Some(path) = workspace {
                 let handle = app.handle().clone();
                 match start(&handle, &path) {
                     Ok(base) => {
                         if let Some(window) = app.get_webview_window("main") {
-                            let _ = open_workbench(&window, &base);
+                            let _ = open_workbench(&window, &base, plot.as_deref());
                         }
                     }
                     Err(error) => eprintln!("bforge-gui: {error}"),

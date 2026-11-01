@@ -1,5 +1,6 @@
 import { For, Show, createMemo, createSignal, onCleanup, onMount } from 'solid-js'
 import { Telemetry, SERIES_COLOURS } from './components/Telemetry'
+import type { TraceMode } from './components/Telemetry'
 import { WindowControls } from './components/WindowControls'
 import { createFeed } from './lib/feed'
 import { api, inShell, stopSession, toPicker } from './lib/shell'
@@ -143,7 +144,9 @@ export default function App() {
   const [hovered, setHovered] = createSignal<FieldRow | null>(null)
   // The traces on screen, in order. A person chooses them, from the picker or the
   // inspector's plot button (the guide's signature interaction).
-  const [plotted, setPlotted] = createSignal<string[]>([])
+  // Each trace keeps its own mode: a measurement is a line, a state is a lane, a flags
+  // word is a rail per bit.
+  const [plotted, setPlotted] = createSignal<{ key: string; mode: TraceMode }[]>([])
   const [hex, setHex] = createSignal('AA 55 03')
   const [crc, setCrc] = createSignal('')
   const [typed, setTyped] = createSignal(false)
@@ -182,17 +185,33 @@ export default function App() {
     return pair ? keys.filter((key) => pair.includes(key.split('.')[0])) : keys
   })
   const plottedKeys = createMemo(() => {
-    const chosen = plotted().filter((key) => plotKeys().includes(key))
+    const chosen = plotted().filter((entry) => plotKeys().includes(entry.key))
     if (chosen.length > 0) return chosen
-    return plotKeys().slice(0, 1)
+    return plotKeys().slice(0, 1).map((key) => ({ key, mode: 'line' as TraceMode }))
   })
 
-  function plotField(key: string) {
-    setPlotted((current) => (current.includes(key) ? current : [...current, key].slice(-6)))
+  function plotField(key: string, mode: TraceMode = 'line') {
+    setPlotted((current) =>
+      current.some((entry) => entry.key === key)
+        ? current
+        : [...current, { key, mode }].slice(-6),
+    )
   }
 
   function unplotField(key: string) {
-    setPlotted((current) => current.filter((item) => item !== key))
+    setPlotted((current) => current.filter((entry) => entry.key !== key))
+  }
+
+  /** Cycle a trace between a line, a state lane and a rail per bit. */
+  function cycleMode(key: string) {
+    const order: TraceMode[] = ['line', 'lane', 'bits']
+    setPlotted((current) =>
+      current.map((entry) =>
+        entry.key === key
+          ? { key, mode: order[(order.indexOf(entry.mode) + 1) % order.length] }
+          : entry,
+      ),
+    )
   }
 
   const session = () => feed.snapshot()?.session
@@ -218,7 +237,9 @@ export default function App() {
       .filter((value): value is number => value !== null && value !== undefined)
   }
 
-  const traces = createMemo(() => plottedKeys().map((key) => ({ key, values: seriesFor(key) })))
+  const traces = createMemo(() =>
+    plottedKeys().map((entry) => ({ key: entry.key, mode: entry.mode, values: seriesFor(entry.key) })),
+  )
 
   const [timelineNote, setTimelineNote] = createSignal<string | null>(null)
 
@@ -254,7 +275,18 @@ export default function App() {
   onMount(() => {
     const params = new URLSearchParams(location.search)
     const sharedPlot = params.get('plot')
-    if (sharedPlot) setPlotted(sharedPlot.split(',').map((item) => item.trim()).filter(Boolean))
+    if (sharedPlot) {
+      setPlotted(
+        sharedPlot
+          .split(',')
+          .map((item) => item.trim())
+          .filter(Boolean)
+          .map((item) => {
+            const [key, mode] = item.split(':')
+            return { key, mode: (mode as TraceMode) ?? 'line' }
+          }),
+      )
+    }
     const shared = params.get('at')
     const sharedBridge = params.get('bridge')
     if (sharedBridge !== null) setBridge(sharedBridge)
@@ -587,24 +619,34 @@ export default function App() {
                 aria-label="add a trace"
               >
                 <option value="">plot a field…</option>
-                <For each={plotKeys().filter((key) => !plottedKeys().includes(key))}>
+                <For each={plotKeys().filter((key) => !plottedKeys().some((entry) => entry.key === key))}>
                   {(key) => <option value={key}>{key}</option>}
                 </For>
               </select>
             </Show>
             <div class="traces">
               <For each={plottedKeys()}>
-                {(key, index) => (
-                  <button
-                    type="button"
-                    class="trace-chip"
-                    style={{ '--trace': SERIES_COLOURS[index() % SERIES_COLOURS.length] }}
-                    onClick={() => unplotField(key)}
-                    title="remove this trace"
-                  >
+                {(entry, index) => (
+                  <span class="trace-chip" style={{ '--trace': SERIES_COLOURS[index() % SERIES_COLOURS.length] }}>
                     <span class="swatch" />
-                    {key}
-                  </button>
+                    <span class="trace-key">{entry.key}</span>
+                    <button
+                      type="button"
+                      class="trace-mode"
+                      onClick={() => cycleMode(entry.key)}
+                      title="switch between a line, a state lane and a rail per bit"
+                    >
+                      {entry.mode}
+                    </button>
+                    <button
+                      type="button"
+                      class="trace-remove"
+                      onClick={() => unplotField(entry.key)}
+                      title="remove this trace"
+                    >
+                      ×
+                    </button>
+                  </span>
                 )}
               </For>
             </div>
@@ -687,7 +729,7 @@ export default function App() {
                         node={node}
                         port={detail()!.port}
                         onHover={setHovered}
-                        onPlot={plotField}
+                        onPlot={(key) => plotField(key)}
                       />
                     )}
                   </For>
