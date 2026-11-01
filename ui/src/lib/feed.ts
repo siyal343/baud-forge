@@ -6,7 +6,7 @@ import type { SeriesUpdate, TailRow, UiEvent, UiSnapshot } from './types'
 import { api } from './shell'
 
 /** Frames kept in the viewport. The engine caps its own queue at 4096. */
-const FRAME_WINDOW = 500
+const FRAME_WINDOW = 10000
 
 /** Samples kept per series, matching the engine's ring. */
 const SERIES_SAMPLES = 600

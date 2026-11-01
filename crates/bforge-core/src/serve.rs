@@ -93,17 +93,22 @@ struct SendJob {
     bytes: Vec<u8>,
     /// Named fields to encode with the port's schema.
     values: Option<std::collections::BTreeMap<String, bforge_dissect::encoder::Value>>,
+    /// Optional chunk size for flow-controlled / paced paste.
+    chunk_size: Option<usize>,
+    /// Optional delay in milliseconds between paced chunks.
+    pace_ms: Option<u64>,
     reply: std::sync::mpsc::SyncSender<Result<crate::fault::FaultOutcome, String>>,
 }
 
-/// One `POST /api/pins`: drive DTR and RTS, or pulse them.
+/// One `POST /api/pins`: drive DTR and RTS, pulse them, or run a sequence.
 #[derive(Debug)]
 struct PinJob {
     port: String,
     dtr: bool,
     rts: bool,
     pulse: Option<Duration>,
-    reply: std::sync::mpsc::SyncSender<Result<(), String>>,
+    steps: Option<Vec<crate::pipeline::PinStep>>,
+    reply: std::sync::mpsc::SyncSender<Result<crate::ui::PinsView, String>>,
 }
 
 /// One `POST /api/yield`: release a port for a window so a flash tool can use it.
@@ -270,15 +275,33 @@ impl Server {
             while let Ok(job) = send_rx.try_recv() {
                 let result = match &job.values {
                     Some(values) => session.send_values(&job.port, values, Duration::from_secs(2)),
-                    None => session.send(&job.port, job.bytes, Duration::from_secs(2)),
+                    None => match job.chunk_size.filter(|size| *size > 0) {
+                        Some(chunk_size) => session.send_paced(
+                            &job.port,
+                            &job.bytes,
+                            chunk_size,
+                            job.pace_ms.unwrap_or(0),
+                        ),
+                        None => session.send(&job.port, job.bytes, Duration::from_secs(2)),
+                    },
                 }
                 .map_err(|error| error.to_string());
                 let _ = job.reply.send(result);
             }
             while let Ok(job) = pin_rx.try_recv() {
-                let result = session
-                    .set_pins(&job.port, job.dtr, job.rts, job.pulse)
-                    .map_err(|error| error.to_string());
+                let result = match job.steps {
+                    Some(steps) if !steps.is_empty() => session
+                        .run_pin_sequence(&job.port, steps)
+                        .map_err(|error| error.to_string()),
+                    _ => session
+                        .set_pins(&job.port, job.dtr, job.rts, job.pulse)
+                        .map(|()| crate::ui::PinsView {
+                            dtr: job.dtr,
+                            rts: job.rts,
+                            ..Default::default()
+                        })
+                        .map_err(|error| error.to_string()),
+                };
                 let _ = job.reply.send(result);
             }
             while let Ok(job) = yield_rx.try_recv() {
@@ -445,6 +468,10 @@ fn handle(mut stream: TcpStream, shared: Arc<Shared>, stop: Arc<AtomicBool>) {
         vault_export(&mut stream, &shared, target);
         return;
     }
+    if method == "GET" && path == "/api/diff" {
+        vault_diff(&mut stream, &shared, target);
+        return;
+    }
     if method == "POST" && path == "/api/yield" {
         let body = read_body(&mut reader, content_length);
         yield_port(&mut stream, &shared, &body);
@@ -609,6 +636,12 @@ struct SendRequest {
     /// Optional checksum appended after the bytes: `crc8`, `crc16_ccitt_false`
     /// or `crc32c`, little endian as the field would travel.
     crc: Option<String>,
+    /// Optional chunk size in bytes for flow-controlled / paced paste.
+    #[serde(default)]
+    chunk_size: Option<usize>,
+    /// Optional pause in milliseconds between paced chunks.
+    #[serde(default)]
+    pace_ms: Option<u64>,
 }
 
 /// Parse spaced or run-together hex into bytes.
@@ -701,6 +734,8 @@ fn send(stream: &mut TcpStream, shared: &Arc<Shared>, body: &[u8]) {
             port: port.clone(),
             bytes,
             values: typed,
+            chunk_size: request.chunk_size,
+            pace_ms: request.pace_ms,
             reply,
         })
         .is_err()
@@ -1109,6 +1144,9 @@ struct PinsBody {
     /// Hold the pins for this long and then clear them: how a board is reset.
     #[serde(default)]
     pulse_ms: Option<u64>,
+    /// Optional timed sequence of pin transitions (`dtr`, `rts`, `wait_ms`).
+    #[serde(default)]
+    steps: Option<Vec<crate::pipeline::PinStep>>,
 }
 
 /// Drive DTR and RTS on a port (FR-HAL-04).
@@ -1146,6 +1184,7 @@ fn pins(stream: &mut TcpStream, shared: &Arc<Shared>, body: &[u8]) {
             dtr: request.dtr,
             rts: request.rts,
             pulse,
+            steps: request.steps.clone(),
             reply,
         })
         .is_err()
@@ -1158,11 +1197,11 @@ fn pins(stream: &mut TcpStream, shared: &Arc<Shared>, body: &[u8]) {
             body.as_bytes(),
         );
     }
-    match answer.recv_timeout(Duration::from_secs(3)) {
-        Ok(Ok(())) => {
+    match answer.recv_timeout(Duration::from_secs(5)) {
+        Ok(Ok(pins_view)) => {
             let body = format!(
                 "{{\"port\":\"{}\",\"dtr\":{},\"rts\":{}}}",
-                request.port, request.dtr, request.rts
+                request.port, pins_view.dtr, pins_view.rts
             );
             respond(stream, "200 OK", "application/json", body.as_bytes());
         }
@@ -1178,6 +1217,37 @@ fn pins(stream: &mut TcpStream, shared: &Arc<Shared>, body: &[u8]) {
                 "application/json",
                 body.as_bytes(),
             );
+        }
+    }
+}
+
+/// Compare two recorded vaults (`GET /api/diff?a=<path>&b=<path>`).
+fn vault_diff(stream: &mut TcpStream, shared: &Arc<Shared>, target: &str) {
+    let params = query(target);
+    let default_a = shared
+        .vault
+        .lock()
+        .unwrap()
+        .as_ref()
+        .map(|source| source.path.clone());
+    let path_a = params.get("a").map(std::path::PathBuf::from).or(default_a);
+    let path_b = params.get("b").map(std::path::PathBuf::from);
+    let (Some(a), Some(b)) = (path_a, path_b) else {
+        return respond(
+            stream,
+            "400 Bad Request",
+            "application/json",
+            b"{\"error\":\"provide query parameters `a` and `b`\"}",
+        );
+    };
+    match crate::diff::diff_vaults(&a, &b, None) {
+        Ok(report) => {
+            let body = serde_json::to_string(&report).unwrap_or_else(|_| "{}".to_string());
+            respond(stream, "200 OK", "application/json", body.as_bytes());
+        }
+        Err(error) => {
+            let body = format!("{{\"error\":\"{error}\"}}");
+            respond(stream, "409 Conflict", "application/json", body.as_bytes());
         }
     }
 }

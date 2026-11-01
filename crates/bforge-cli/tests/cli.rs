@@ -142,3 +142,19 @@ fn yield_names_a_device_with_no_running_session() {
     assert!(stderr.contains("no running session holds"), "{stderr}");
     let _ = std::fs::remove_file(path);
 }
+
+#[test]
+fn diff_without_arguments_is_refused() {
+    let output = run(&["diff"]);
+    assert_eq!(output.status.code(), Some(1));
+    let stderr = String::from_utf8_lossy(&output.stderr);
+    assert!(stderr.contains("diff needs"), "{stderr}");
+}
+
+#[test]
+fn diff_missing_vault_reports_error() {
+    let output = run(&["diff", "missing-a.bflog", "missing-b.bflog"]);
+    assert_eq!(output.status.code(), Some(2));
+    let stderr = String::from_utf8_lossy(&output.stderr);
+    assert!(stderr.contains("storage:"), "{stderr}");
+}

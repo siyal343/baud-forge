@@ -125,7 +125,13 @@ body {
   min-height: 0;
 }
 
-.stream { overflow: auto; min-height: 0; }
+.stream {
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+  min-height: 0;
+  height: 100%;
+}
 .inspector { grid-area: inspector; border-left: 1px solid var(--line); background: var(--panel); overflow: auto; }
 
 h2 {
@@ -188,6 +194,27 @@ dd.bad { color: var(--fault); }
   align-items: baseline;
   justify-content: space-between;
   padding-right: 12px;
+  flex-shrink: 0;
+}
+
+.stream-actions {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.stream-viewport {
+  flex: 1 1 auto;
+  overflow-y: auto;
+  overflow-x: auto;
+  min-height: 0;
+  position: relative;
+}
+
+.stream-viewport table {
+  width: 100%;
+  border-collapse: collapse;
+  table-layout: fixed;
 }
 
 .hint { color: var(--dim); font-size: 11px; }
@@ -204,13 +231,60 @@ th {
   text-transform: uppercase;
   letter-spacing: .1em;
   border-bottom: 1px solid var(--line);
+  z-index: 2;
+  height: 26px;
+  box-sizing: border-box;
 }
-tbody tr { border-bottom: 1px solid rgba(35, 43, 54, .5); cursor: default; }
+tbody tr {
+  height: 26px;
+  max-height: 26px;
+  box-sizing: border-box;
+  border-bottom: 1px solid rgba(35, 43, 54, .5);
+  cursor: default;
+}
+tbody td {
+  height: 26px;
+  box-sizing: border-box;
+  padding: 3px 10px;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
 tbody tr:hover { background: var(--panel-2); }
 tbody tr.chosen { background: #1b2532; box-shadow: inset 2px 0 0 var(--tx); }
 tbody tr.faulty td:last-child { color: var(--fault); }
+
+tbody tr.spacer {
+  border: 0 !important;
+  background: transparent !important;
+  box-shadow: none !important;
+  pointer-events: none;
+}
+tbody tr.spacer td {
+  padding: 0 !important;
+  border: 0 !important;
+  margin: 0 !important;
+  line-height: 0 !important;
+  font-size: 0 !important;
+  background: transparent !important;
+}
+
 .tx { color: var(--tx); }
-.hexcell { color: var(--dim); max-width: 380px; overflow: hidden; text-overflow: ellipsis; }
+.hexcell { color: var(--dim); overflow: hidden; text-overflow: ellipsis; }
+
+.hex-container {
+  display: flex;
+  flex-direction: column;
+}
+
+.hex-nav {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 4px 12px;
+  background: var(--panel-2);
+  border-bottom: 1px solid var(--line);
+}
 
 .hex {
   display: flex;
@@ -499,6 +573,7 @@ tbody tr.faulty td:last-child { color: var(--fault); }
     overflow-y: auto;
   }
   .stage { grid-template-rows: minmax(0, 3fr) minmax(0, 2fr); }
-  .stream, .sidebar, .inspector { overflow: auto; }
+  .stream { overflow: hidden; }
+  .stream-viewport, .sidebar, .inspector { overflow: auto; }
   .plot-band { border-top: 1px solid var(--line); }
 }

@@ -1,31 +1,16 @@
-[package]
-name = "baud-forge"
-version = "0.8.0"
-edition = "2021"
-description = "Open-source serial monitor"
-license = "MIT OR Apache-2.0"
-repository = "https://github.com/siyal343/baud-forge"
-readme = "README.md"
-
-[[bin]]
-name = "baud-forge"
-path = "src/main.rs"
-
-[lib]
-name = "baud_forge"
-path = "src/lib.rs"
-
-[dependencies]
-serde = { version = "1.0", features = ["derive"] }
-
-[profile.dev]
-debug = 1
-
-[profile.test]
-debug = 1
-
 [workspace]
-members = ["crates/bforge-hal", "crates/bforge-storage", "crates/bforge-framer", "crates/bforge-dissect", "crates/bforge-elf", "crates/bforge-script", "crates/bforge-core", "crates/bforge-cli", "crates/bforge-gui/src-tauri"]
+resolver = "2"
+members = [
+    "crates/bforge-hal",
+    "crates/bforge-storage",
+    "crates/bforge-framer",
+    "crates/bforge-dissect",
+    "crates/bforge-elf",
+    "crates/bforge-script",
+    "crates/bforge-core",
+    "crates/bforge-cli",
+    "crates/bforge-gui/src-tauri",
+]
 
 [workspace.package]
 version = "0.8.0"
@@ -48,3 +33,9 @@ bforge-elf = { path = "crates/bforge-elf" }
 rustc-demangle = "0.1"
 bforge-script = { path = "crates/bforge-script" }
 bforge-core = { path = "crates/bforge-core" }
+
+[profile.dev]
+debug = 1
+
+[profile.test]
+debug = 1

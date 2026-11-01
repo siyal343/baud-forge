@@ -1,93 +1,47 @@
 # BaudForge status
 
-Written 31 October 2026 at `v0.5.2`, measured from the repository.
+Written 2 November 2026 at `v0.8.0` plus the current wave, measured from the repository.
 
 ## Where it is
 
-A serial monitor, protocol dissector and fault-injection rig that a stranger can install
-today. Engine, command line, workbench in a browser, and a Windows desktop window with an
-installer. Ten releases, all published. Signing is deferred by the user (D-95), so the
-installer asks for "more info → run anyway" on first launch.
+A serial monitor, protocol dissector, session differ, and fault-injection workbench in Rust and Tauri v2. Engine, command line, browser workbench, and desktop window share one HTTP/SSE contract. Signing is deferred by the user (`D-95`), so the Windows installer shows SmartScreen on first launch.
 
 ## Numbers
 
 | Figure | Value | How |
 | --- | --- | --- |
-| Releases | 10 tags, `v0.1.0` … `v0.5.2` | `git tag` |
-| Commits | 67 | `git rev-list --count HEAD` |
-| Rust | 20 665 lines, 9 crates | `wc -l` over `crates/**/*.rs` |
-| Frontend | 1 151 lines, SolidJS + TypeScript | `wc -l` over `ui/src` |
-| Tests | 268 passing, ~25 s | `cargo test --workspace --exclude bforge-gui` |
-| Feature specs | 35, written before the code | `specs/` |
+| Releases | 13 tags, `v0.1.0` … `v0.8.0` | `git tag` |
+| Crates | 9 workspace crates | `ls crates` |
+| Feature specs | 56 (`specs/0002` … `specs/0053`) | `ls specs/*.md` |
 | CI | 9 jobs green: 5 test targets, lint, UI, desktop+installer, macOS cross-build | GitHub Actions |
-| Recorded gaps | 77 entries | `DEFERRED.md` |
 
 ## What works, and the evidence
 
-Each line was measured on this machine; the figures are in `RELEASE-NOTES.md`.
+Each line was measured on this machine or verified by automated test; the figures are in `RELEASE-NOTES.md` and `specs/`.
 
 | Capability | Evidence |
 | --- | --- |
 | Pipeline with no gaps | 4 ports × 1.2 MB/s for 60 s: 288 MB, 0 gaps, 11.9 MiB peak |
 | Vault with constant memory | 512 MiB read at 21.5 MiB peak (4.2 % of the file) |
-| Serial, TCP client/server, UDP | 190+ tests, socket simulator for CI |
-| Six framing modes, three checksums | 2000 COBS frames at 156 MB/s, 0 invalid |
-| C header dissection | 180 422 frames/s; enums by label, typedefs, nested structs |
-| Native packs | CCSDS with PUS, CSP v1, Modbus RTU |
-| DWARF symbols, demangled names | address → `std::env::var::<&str>` at `env.rs:228`, 1.2 µs |
-| Hotplug | unplug seen in 16.8–47.1 ms, reopened in 1 ms, same session |
-| Yield to a flash tool | `arduino-cli upload` wrote 298 880 bytes during a `yielded` window |
-| Record, replay, tail, assert, repair | CLI, on hardware and on sockets |
-| Type send from fields | `{"v_batt_mv":7400}` → 19 bytes, device read them back |
-| Fault profiles | flips, drops, truncation, CRC, delay, jitter, all seeded |
-| Lua scripts | sandboxed, fields by name, CRC recompute, transmit and receive |
-| Bridge and tap | bytes both ways, vault records `Tx`, sends never block the pump |
-| Workbench | stream, fields with byte highlight, plot, scrubber, forge, faults, bus view |
-| Desktop | NSIS installer, records a vault, 9/9 CI |
+| Export (`csv`, `jsonl`, `saleae`, `pcapng`) | 285,740 records exported via forward cursor in 3.4–5.5 s (`specs/0044`) |
+| Serial, TCP client/server, UDP | Socket simulator for CI, hotplug reconnect in 17–47 ms on Windows (`specs/0012`) |
+| Six framing modes, three checksums | Delimiter, COBS, SLIP, Intel HEX, sync+length, idle gap; CRC-8, CRC-16/CCITT-FALSE, CRC-32C |
+| C header dissection & typed encoding | 180,422 frames/s; bitfields, enums, typedefs, nested structs, typed frame encoding (`specs/0032`) |
+| Five native packs + `.proto` schema | CCSDS TM/TC with PUS, CSP v1, Modbus RTU, MAVLink v1/v2 (`specs/0048`), Protobuf wire + `.proto` schema (`specs/0047`, `specs/0053`) |
+| DWARF symbols, demangled names | Address → `std::env::var::<&str>` at `env.rs:228` in 1.2 µs (`specs/0035`) |
+| Yield to a flash tool | `arduino-cli upload` wrote 298,880 bytes during a `yielded` window (`specs/0014`) |
+| Pin control & timed sequencer | Manual `DTR`/`RTS`, single pulse (`specs/0049`), and multi-step timed sequences without starving reads (`specs/0052`) |
+| Flow-controlled paced send | Chunked writes with configurable inter-chunk pacing while servicing full-duplex reads (`specs/0052`) |
+| Session diff | `bforge diff <a> <b>` and `GET /api/diff`: compares decoded fields or raw records, reports first divergence (`specs/0050`) |
+| Fault profiles & Lua scripts | Bit flips, drops, truncation, CRC corruption, latency, jitter; Lua on TX and RX with named fields (`specs/0031`–`0034`) |
+| Bridge and tap | Passive tap and inline forwarding bridge with live `Tx` rows (`specs/0045`) |
+| Virtualized workbench & WebGL plots | Frameless Tauri shell, 10,000-frame virtualized stream (`specs/0051`), paged hex dump, field tree, WebGL stacked rows, state lanes, bit rails, time-axis DVR playback (`specs/0039`–`0043`) |
 
 ## Against the SRS
 
-Estimates from the requirement lists, not measurements.
-
-| Requirement | State |
+| Milestone | State |
 | --- | --- |
-| FR-FLT-01 fault primitives | **complete** — bit errors, drops, truncation, CRC, latency, jitter, scripted |
-| FR-MITM-01 tap and bridge | **complete** — passive tap, forwarding bridge, direction on rows, paired bus view |
-| FR-SCR-01 Lua HIL API | **complete** for the SRS example — `on_frame`, fields by name, CRC, log |
-| Storage, framing, transports | complete for the first release scope |
-| UI bands | six bands present; plots are SVG not WebGL, inspector flat, no time axis |
-| Protobuf, Kaitai, defmt, MAVLink | not started |
-| Installer and signing | installer ships; signing deferred (D-95) |
-
-## What a person cannot do yet
-
-Recorded in `DEFERRED.md` with a reason each. The ones a user would notice:
-
-- Windows SmartScreen warns on first launch (D-95).
-- macOS binaries are neither signed nor notarised (D-96).
-- Plots redraw in SVG: one series, fine to a few thousand points, not the 60 FPS lane view
-  the UI guide describes (D-63).
-- The inspector lists fields flat, without the dissector's tree (D-69).
-- The scrubber seeks by record number, not by wall-clock time (D-68).
-- A bridge's writes are visible in a scrubbed window, not live (D-79).
-- Scripts use one schema for every port (D-94).
-- Jitter is uniform, not shaped (D-93).
-- No protobuf, Kaitai, defmt or MAVLink decoder.
-- No C++ demangling.
-
-## Why the remaining items are not started
-
-Every one is depth on a working feature, not a missing capability. The three requirements
-that define the product — inject faults, sit between two devices, script the link — are
-done and released. What is left is polish that costs sessions (WebGL, tree inspector, time
-axis) or money (signing), and none of it blocks the tool from being used today.
-
-## Next, when someone wants to continue
-
-1. **Signing** — apply to SignPath Foundation (free for OSI projects); the workflow is
-   already gated on secrets. A human must submit the form (D-95).
-2. **WebGL plots** — the one band that does not meet the UI guide; needs a renderer and a
-   downsampling policy (D-63).
-3. **Time-axis scrubbing** — a timestamp index in the vault, then a slider in seconds
-   (D-68).
-4. **Another decoder** — protobuf or MAVLink, whichever a user asks for first.
+| 1. Iron core | **complete** — record, replay, assert, hotplug, yield, vault repair, forward export |
+| 2. GPU terminal and plotter | **complete** — frameless shell, virtualized stream & hex viewport, WebGL traces/lanes/rails, time seek & playback, typed command forge, paced sends |
+| 3. Dissectors and ELF | **complete for core packs** — C header parser, CCSDS/CSP/Modbus/MAVLink, Protobuf (wire + `.proto`), DWARF symbols with demangling. Remaining optional depth: `defmt`/`pw_tokenizer` (`D-42`), full MAVLink XML dialect generator (`D-56`) |
+| 4. MITM, faults, scripting | **complete for core features** — bridge, all fault primitives, Lua TX/RX with fields, semantic session diff (`specs/0050`), timed pin sequencer (`specs/0052`). Remaining optional depth: X/Y/ZMODEM |

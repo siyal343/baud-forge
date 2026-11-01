@@ -32,6 +32,8 @@ Commands:
          [--port <id>]... [--duration 5s] [--fields] [--json]
   assert <vault> -r <rules>     Check a vault against a TOML rule file
          [-c <workspace> --port <id>] [--json]
+  diff <vault-a> <vault-b>      Compare two vaults semantically
+         [--config <file>] [--json]
   export <vault> --format <f>   Write the vault as csv, jsonl, saleae or pcapng
          [--out <file>]
   vault info <vault>            Report records, bytes, index source, damage
@@ -70,6 +72,7 @@ fn main() -> ExitCode {
         Some("serve") => serve(&args[1..]),
         Some("tail") => tail(&args[1..]),
         Some("assert") => assert_vault(&args[1..]),
+        Some("diff") => diff_cmd(&args[1..]),
         Some("export") => export_vault(&args[1..]),
         Some("vault") => vault(&args[1..]),
         Some("yield") => yield_port(&args[1..]),
@@ -743,6 +746,90 @@ fn assert_vault(args: &[String]) -> ExitCode {
         ExitCode::SUCCESS
     } else {
         ExitCode::FAILURE
+    }
+}
+
+fn diff_cmd(args: &[String]) -> ExitCode {
+    let mut args = Args::new(args);
+    let vault_a = args.positional();
+    let vault_b = args.positional();
+    let config_path = args.value("--config").or_else(|| args.value("-c"));
+    let json = args.flag("--json");
+    if let Some(unknown) = args.unknown() {
+        return usage_error(&format!("unknown option `{unknown}`"));
+    }
+    let (Some(vault_a), Some(vault_b)) = (vault_a, vault_b) else {
+        return usage_error("diff needs two vaults: bforge diff <vault-a> <vault-b>");
+    };
+
+    let config = match config_path {
+        Some(path) => match load_config(&path) {
+            Ok(config) => Some(config),
+            Err(code) => return code,
+        },
+        None => None,
+    };
+
+    let report = match bforge_core::diff::diff_vaults(
+        Path::new(&vault_a),
+        Path::new(&vault_b),
+        config.as_ref(),
+    ) {
+        Ok(report) => report,
+        Err(error) => {
+            eprintln!("error: {error}");
+            return ExitCode::from(2);
+        }
+    };
+
+    if json {
+        println!("{}", serde_json::to_string_pretty(&report).unwrap());
+    } else if report.identical {
+        println!(
+            "identical: {} records, {} frame(s)",
+            report.records_a, report.frames_a
+        );
+    } else {
+        println!(
+            "different: {} vs {} records, {} vs {} frames",
+            report.records_a, report.records_b, report.frames_a, report.frames_b
+        );
+        if let Some(divergence) = &report.first_divergence {
+            println!(
+                "  first divergence at index {} (port {}): {}",
+                divergence.index, divergence.port, divergence.reason
+            );
+            for field in &divergence.field_diffs {
+                println!(
+                    "    field `{}`: `{}` vs `{}`",
+                    field.field_name, field.value_a, field.value_b
+                );
+            }
+        }
+        if !report.changed_fields.is_empty() {
+            println!("  changed fields ({} total):", report.changed_fields.len());
+            for field in report.changed_fields.iter().take(10) {
+                println!(
+                    "    [{}] {}.{}: `{}` -> `{}`",
+                    field.frame_index, field.port, field.field_name, field.value_a, field.value_b
+                );
+            }
+            if report.changed_fields.len() > 10 {
+                println!("    ... and {} more", report.changed_fields.len() - 10);
+            }
+        }
+        if report.missing_from_a > 0 {
+            println!("  missing from a: {} frame(s)", report.missing_from_a);
+        }
+        if report.missing_from_b > 0 {
+            println!("  missing from b: {} frame(s)", report.missing_from_b);
+        }
+    }
+
+    if report.identical {
+        ExitCode::SUCCESS
+    } else {
+        ExitCode::from(1)
     }
 }
 

@@ -521,13 +521,40 @@ pub fn tail_config(port: &PortConfig) -> Result<TailConfig, TailError> {
                 .name
                 .as_deref()
                 .ok_or_else(|| TailError::Settings("native dissector needs a name".into()))?;
-            let pack = Pack::from_name(name).ok_or_else(|| {
-                TailError::Settings(format!(
-                    "`{name}` is not a pack; use {}",
-                    bforge_dissect::packs::PACK_NAMES.join(", ")
-                ))
-            })?;
-            Some(Decoder::Pack(pack))
+            if name == "protobuf"
+                && let Some(file) = specification.file.as_deref()
+            {
+                let text = std::fs::read_to_string(file)
+                    .map_err(|error| TailError::Settings(format!("cannot read {file}: {error}")))?;
+                let schema = bforge_dissect::packs::protobuf::parse_proto(
+                    &text,
+                    specification.root_struct.as_deref(),
+                )
+                .map_err(|error| TailError::Settings(format!("{file}: {error}")))?;
+                Some(Decoder::Pack(Pack::ProtobufSchema(schema)))
+            } else {
+                let pack = Pack::from_name(name).ok_or_else(|| {
+                    TailError::Settings(format!(
+                        "`{name}` is not a pack; use {}",
+                        bforge_dissect::packs::PACK_NAMES.join(", ")
+                    ))
+                })?;
+                Some(Decoder::Pack(pack))
+            }
+        }
+        Some(specification) if specification.kind == "protobuf" => {
+            if let Some(file) = specification.file.as_deref() {
+                let text = std::fs::read_to_string(file)
+                    .map_err(|error| TailError::Settings(format!("cannot read {file}: {error}")))?;
+                let schema = bforge_dissect::packs::protobuf::parse_proto(
+                    &text,
+                    specification.root_struct.as_deref(),
+                )
+                .map_err(|error| TailError::Settings(format!("{file}: {error}")))?;
+                Some(Decoder::Pack(Pack::ProtobufSchema(schema)))
+            } else {
+                Some(Decoder::Pack(Pack::Protobuf))
+            }
         }
         Some(specification) if specification.kind == "c_header" => {
             let ir = c_header_ir(specification)?;

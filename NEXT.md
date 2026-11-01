@@ -4,66 +4,23 @@
 > maps the code, the conventions, the traps and the remaining work for an agent or a person who
 > is new to the tree.
 
-Written 1 November 2026. The tree is at `v0.7.0` plus the work since, all pushed and green
-(271 tests, CI 9/9): the standalone shell, geometry, session menu, field tree, GPU band, time
-seek, bit rails, stacked rows and playback. Releases are paused by the user, so `v0.8.0` is
-waiting rather than missing.
-
-This file replaces the stale tail of `PLAN.md` as the forward plan. It is a plan, not a
-record: `STATUS.md` holds the state, `DEFERRED.md` holds the gaps with reasons.
+Written 2 November 2026. The tree is at `v0.8.0` plus the fast-build wave: session diff (`specs/0050`), virtualized stream and paged hex dump (`specs/0051`), timed pin sequencer and flow-controlled paced sends (`specs/0052`), and `.proto` schema field naming (`specs/0053`).
 
 ## Where the SRS stands
 
 | Milestone | State |
 | --- | --- |
-| 1. Iron core | **done** — record, replay, assert, hotplug, yield, vault repair |
-| 2. GPU terminal and plotter | **mostly done** — frameless shell, WebGL traces with rows, lanes, rails, DVR seek and playback, command builder with CRCs. Missing: a virtualized hex viewport, flow-controlled paste |
-| 3. Dissectors and ELF | **partial** — C header parser, CCSDS/CSP/Modbus, DWARF symbols with demangling. Missing: protobuf, MAVLink, defmt/pw_tokenizer, ELF watching, **export** |
-| 4. MITM, faults, scripting | **partial** — bridge, all fault primitives, Lua on both directions with fields. Missing: session diff, hardware triggers, X/Y/ZMODEM, 50 µs MITM |
+| 1. Iron core | **done** — record, replay, assert, hotplug, yield, vault repair, forward export |
+| 2. GPU terminal and plotter | **done** — frameless shell, virtualized stream & hex viewport, WebGL traces with rows/lanes/rails, DVR seek and playback, typed command forge, paced sends |
+| 3. Dissectors and ELF | **done for core packs** — C header parser, CCSDS/CSP/Modbus/MAVLink, Protobuf wire + `.proto` schema, DWARF symbols with demangling, export. Optional depth: MAVLink XML dialect loader (`D-56`), `defmt`/`pw_tokenizer` (`D-42`) |
+| 4. MITM, faults, scripting | **done for core features** — bridge, all fault primitives, Lua on both directions with fields, semantic session diff (`specs/0050`), timed pin sequencer (`specs/0052`). Optional depth: X/Y/ZMODEM, 50 µs hardware scope rig (`D-11`) |
 
-## The three things worth doing next, in order
-
-### 1. More MAVLink messages, from a dialect
-
-The envelope and four bodies decode now (spec 0048). The rest of the common set needs the
-dialect XML: parse it, generate the field table, and keep a fixture per message.
-
-Export is done on all three paths (spec 0044): CLI, engine route, ribbon control, and now in
-half the time, because a whole-file pass walks the file forward instead of seeking per payload
-(D-110 closed).
-
-The vault picker and review mode are done too (spec 0046): the window opens a finished `.bflog`
-read-only, lands at its end, and decodes it, because a session copies its workspace beside the
-vault (D-111 closed).
-
-Live transmit rows are done too (spec 0045): a forwarding bridge's writes appear as `tx` rows
-as they leave. A typed send from the forge does not, which is the small next step if anyone
-notices.
-
-Pin control is done (spec 0049): DTR and RTS are driven from the port card, a pulse resets a
-board, and the pin view reports the outputs this session set. A timed pulse sequence is D-114.
-
-## Then, by value
+## Remaining optional items, by value
 
 | Item | Why | Estimate |
 | --- | --- | --- |
-| Session diff | Milestone 4; compare two vaults by decoded field | 1–2 sessions |
-| Signed builds (SignPath Foundation) | Free for OSI projects; the pipeline is ready, the application is a human step (D-95) | a form, then a CI change |
-| macOS and Linux shells (D-77) | Only Windows is built and run; CI builds the Windows shell | 1 session on a Mac |
-| Long soak on hardware (D-14) | Hours under load is a claim nobody has made yet | a day of babysitting |
-| Virtualized hex viewport, flow-controlled paste | Milestone 2's remaining promises | 1 session each |
-| X/Y/ZMODEM | Milestone 4; a file transfer protocol is its own small project | 2–3 sessions |
-| 50 µs MITM latency (F4.2) | Needs a measurement rig more than code | unknown |
-
-## Not worth doing now
-
-- **Parquet**: a large dependency for a format nobody has asked for; CSV covers analysis.
-- **tree-sitter** (D-35): the hand-written C parser works, and the seam is local if it ever
-  stops being enough.
-- **A light theme and a phone layout**: this is desktop lab software, and the guide says so.
-- **Row drag-and-drop** (D-107): assignment by trace order is adequate until someone complains.
-
-## Release
-
-`v0.8.0` carries everything since `v0.7.0`. Cut it when the user says so; then export becomes
-the headline of `v0.9.0`.
+| Signed builds (SignPath Foundation) | Free for OSI projects; the pipeline is ready, the application is a human step (`D-95`) | a form, then a CI secret |
+| macOS and Linux shells (`D-77`) | Only Windows is built and run locally; CI builds the Windows shell | 1 session on a Mac/Linux runner |
+| MAVLink dialect XML loader (`D-56`) | Decode arbitrary dialect messages beyond the common four (`specs/0048`) | 1 session once dialect XML is chosen |
+| Long soak on hardware (`D-05`) | Multi-hour hardware soak on a physical bench | a day of hardware soak |
+| X/Y/ZMODEM | File transfer state machine | 2–3 sessions |

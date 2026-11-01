@@ -14,11 +14,13 @@ pub mod mavlink;
 pub mod modbus;
 pub mod protobuf;
 
+pub use protobuf::ProtoSchema;
+
 use crate::DecodedField;
 use crate::exec::ExecError;
 
 /// A protocol the tool understands without a schema.
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[derive(Debug, Clone, PartialEq, Eq)]
 pub enum Pack {
     /// CCSDS Space Packet, telemetry direction, with an optional ECSS PUS header.
     CcsdsTm,
@@ -30,6 +32,8 @@ pub enum Pack {
     ModbusRtu,
     /// Protobuf wire format, without a schema.
     Protobuf,
+    /// Protobuf wire format, decoded with a `.proto` schema.
+    ProtobufSchema(ProtoSchema),
     /// MAVLink v1 and v2, envelope only for messages outside the common four.
     Mavlink,
 }
@@ -48,36 +52,37 @@ impl Pack {
         }
     }
 
-    pub fn name(self) -> &'static str {
+    pub fn name(&self) -> &'static str {
         match self {
             Self::CcsdsTm => "ccsds_tm",
             Self::CcsdsTc => "ccsds_tc",
             Self::Csp => "csp",
             Self::ModbusRtu => "modbus_rtu",
-            Self::Protobuf => "protobuf",
+            Self::Protobuf | Self::ProtobufSchema(_) => "protobuf",
             Self::Mavlink => "mavlink",
         }
     }
 
     /// The tag a row shows for this pack.
-    pub fn tag(self) -> &'static str {
+    pub fn tag(&self) -> &'static str {
         match self {
             Self::CcsdsTm => "CCSDS_TM",
             Self::CcsdsTc => "CCSDS_TC",
             Self::Csp => "CSP",
             Self::ModbusRtu => "MODBUS_RTU",
-            Self::Protobuf => "PROTOBUF",
+            Self::Protobuf | Self::ProtobufSchema(_) => "PROTOBUF",
             Self::Mavlink => "MAVLINK",
         }
     }
 
-    pub fn decode(self, frame: &[u8]) -> Result<Vec<DecodedField>, ExecError> {
+    pub fn decode(&self, frame: &[u8]) -> Result<Vec<DecodedField>, ExecError> {
         match self {
             Self::CcsdsTm => ccsds::decode(frame, ccsds::Direction::Telemetry),
             Self::CcsdsTc => ccsds::decode(frame, ccsds::Direction::Telecommand),
             Self::Csp => csp::decode(frame),
             Self::ModbusRtu => modbus::decode(frame),
             Self::Protobuf => protobuf::decode(frame),
+            Self::ProtobufSchema(schema) => protobuf::decode_with_schema(frame, schema),
             Self::Mavlink => mavlink::decode(frame),
         }
     }

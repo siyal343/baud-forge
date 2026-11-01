@@ -1,4 +1,4 @@
-import { For, Show, createMemo, createSignal, onCleanup, onMount } from 'solid-js'
+import { For, Show, createEffect, createMemo, createSignal, on, onCleanup, onMount } from 'solid-js'
 import { Telemetry, SERIES_COLOURS } from './components/Telemetry'
 import type { TraceMode } from './components/Telemetry'
 import { WindowControls } from './components/WindowControls'
@@ -27,24 +27,91 @@ function shortName(symbol: string): string {
   return tail.length > 26 ? `${tail.slice(0, 23)}...` : tail
 }
 
-/** Bytes of a frame as separate spans, so a field can point at its own bytes. */
+const HEX_WINDOW_SIZE = 512
+
+/** Bytes of a frame as separate spans, bounded to a window so large frames do not slow the DOM. */
 function HexDump(props: { row: TailRow; field: FieldRow | null }) {
+  const [offset, setOffset] = createSignal(0)
   const bytes = createMemo(() => props.row.hex.split(' ').filter(Boolean))
+
+  createEffect(
+    on(
+      () => props.row,
+      () => setOffset(0),
+    ),
+  )
+
+  createEffect(
+    on(
+      () => props.field,
+      (field) => {
+        if (field != null) {
+          const o = field.offset
+          const cur = offset()
+          if (o < cur || o >= cur + HEX_WINDOW_SIZE) {
+            setOffset(Math.floor(o / HEX_WINDOW_SIZE) * HEX_WINDOW_SIZE)
+          }
+        }
+      },
+    ),
+  )
+
+  const slice = createMemo(() => {
+    const all = bytes()
+    if (all.length <= HEX_WINDOW_SIZE) {
+      return { items: all, baseIndex: 0, total: all.length }
+    }
+    const start = Math.min(offset(), Math.max(0, all.length - HEX_WINDOW_SIZE))
+    const end = Math.min(start + HEX_WINDOW_SIZE, all.length)
+    return { items: all.slice(start, end), baseIndex: start, total: all.length }
+  })
+
   const inField = (index: number) =>
     props.field != null && index >= props.field.offset && index < props.field.offset + props.field.len
+
   return (
-    <div class="hex">
-      <For each={bytes()}>
-        {(byte, index) => (
-          <span
-            class="byte"
-            classList={{ hot: inField(index()), warn: props.row.decode_error != null }}
-            title={`byte ${index()} = 0x${byte}`}
+    <div class="hex-container">
+      <Show when={bytes().length > HEX_WINDOW_SIZE}>
+        <div class="hex-nav">
+          <button
+            type="button"
+            class="chip action"
+            disabled={slice().baseIndex === 0}
+            onClick={() => setOffset((o) => Math.max(0, o - HEX_WINDOW_SIZE))}
+            title="show previous 512 bytes"
           >
-            {byte}
+            ◀ prev
+          </button>
+          <span class="hint">
+            bytes {slice().baseIndex}–{slice().baseIndex + slice().items.length} of {bytes().length}
           </span>
-        )}
-      </For>
+          <button
+            type="button"
+            class="chip action"
+            disabled={slice().baseIndex + slice().items.length >= bytes().length}
+            onClick={() => setOffset((o) => o + HEX_WINDOW_SIZE)}
+            title="show next 512 bytes"
+          >
+            next ▶
+          </button>
+        </div>
+      </Show>
+      <div class="hex">
+        <For each={slice().items}>
+          {(byte, i) => {
+            const index = () => slice().baseIndex + i()
+            return (
+              <span
+                class="byte"
+                classList={{ hot: inField(index()), warn: props.row.decode_error != null }}
+                title={`byte ${index()} = 0x${byte}`}
+              >
+                {byte}
+              </span>
+            )
+          }}
+        </For>
+      </div>
     </div>
   )
 }
@@ -219,17 +286,104 @@ export default function App() {
     )
   }
 
+  const ROW_HEIGHT = 26
+  const OVERSCAN = 8
+
+  const [scrollTop, setScrollTop] = createSignal(0)
+  const [viewportHeight, setViewportHeight] = createSignal(500)
+  const [follow, setFollow] = createSignal(true)
+  let viewportRef: HTMLDivElement | undefined
+
   const session = () => feed.snapshot()?.session
   const ports = () => feed.snapshot()?.ports ?? []
-  const rows = createMemo(() => {
+  const allRows = createMemo(() => {
     const all = at() === null ? feed.frames() : windowRows()
     const pair = bridgePorts()
-    return pair ? all.filter((row) => pair.includes(row.port)) : all
+    const filtered = pair ? all.filter((row) => pair.includes(row.port)) : all
+    return pair ? [...filtered].sort((left, right) => left.timestamp_us - right.timestamp_us) : filtered
   })
-  // One sequence for the pair: the table reads top to bottom in time order.
-  const shown = createMemo(() => {
-    const window = rows().slice(-120).reverse()
-    return bridgePorts() ? [...window].sort((left, right) => right.timestamp_us - left.timestamp_us) : window
+  const rows = allRows
+
+  const totalRows = createMemo(() => allRows().length)
+
+  const startIndex = createMemo(() => {
+    const top = scrollTop()
+    const raw = Math.floor(top / ROW_HEIGHT)
+    return Math.max(0, raw - OVERSCAN)
+  })
+
+  const endIndex = createMemo(() => {
+    const top = scrollTop()
+    const height = viewportHeight()
+    const raw = Math.ceil((top + height) / ROW_HEIGHT)
+    return Math.min(totalRows(), raw + OVERSCAN)
+  })
+
+  const topSpacer = createMemo(() => startIndex() * ROW_HEIGHT)
+  const bottomSpacer = createMemo(() => Math.max(0, (totalRows() - endIndex()) * ROW_HEIGHT))
+
+  const visibleRows = createMemo(() => allRows().slice(startIndex(), endIndex()))
+
+  function jumpToLive() {
+    if (at() !== null) {
+      stopPlayback()
+      setAt(null)
+      setWindowRows([])
+    }
+    setFollow(true)
+    if (viewportRef) {
+      viewportRef.scrollTop = viewportRef.scrollHeight
+    }
+  }
+
+  function onViewportScroll() {
+    if (!viewportRef) return
+    const currentTop = viewportRef.scrollTop
+    const currentHeight = viewportRef.clientHeight
+    const currentScrollHeight = viewportRef.scrollHeight
+    setScrollTop(currentTop)
+    setViewportHeight(currentHeight)
+
+    const distanceToBottom = currentScrollHeight - currentTop - currentHeight
+    const atBottom = distanceToBottom <= ROW_HEIGHT + 4
+    if (atBottom !== follow()) {
+      setFollow(atBottom)
+    }
+  }
+
+  createEffect(
+    on(
+      totalRows,
+      (count) => {
+        if (at() === null && follow() && viewportRef && count > 0) {
+          requestAnimationFrame(() => {
+            if (at() === null && follow() && viewportRef) {
+              viewportRef.scrollTop = viewportRef.scrollHeight
+            }
+          })
+        }
+      },
+      { defer: true },
+    ),
+  )
+
+  let ro: ResizeObserver | undefined
+  onMount(() => {
+    if (viewportRef) {
+      ro = new ResizeObserver((entries) => {
+        for (const entry of entries) {
+          setViewportHeight(entry.contentRect.height)
+        }
+      })
+      ro.observe(viewportRef)
+      setViewportHeight(viewportRef.clientHeight)
+      if (follow()) {
+        viewportRef.scrollTop = viewportRef.scrollHeight
+      }
+    }
+  })
+  onCleanup(() => {
+    ro?.disconnect()
   })
   const seriesFor = (key: string): number[] => {
     if (at() === null) return feed.series()[key] ?? []
@@ -722,52 +876,125 @@ export default function App() {
 
       <div class="stage" data-zone="stage" tabindex="-1">
         <main class="stream">
-        <div class="stream-head">
-          <h2>Stream</h2>
-          <span class="hint">{shown().length} of {feed.received()} frames</span>
-        </div>
-        <table>
-          <thead>
-            <tr>
-              <th>t</th>
-              <th>Δt µs</th>
-              <th>port</th>
-              <th>dir</th>
-              <th>len</th>
-              <th>hex</th>
-              <th>protocol</th>
-              <th>crash</th>
-            </tr>
-          </thead>
-          <tbody>
-            <For each={shown()} fallback={<tr><td colSpan={6} class="empty">Waiting for frames.</td></tr>}>
-              {(row) => (
-                <tr
-                  classList={{ chosen: detail() === row, faulty: row.decode_error != null }}
-                  onClick={() => setSelected(row)}
-                >
-                  <td>{clock(row.timestamp_us)}</td>
-                  <td>{row.delta_us}</td>
-                  <td>{row.port}</td>
-                  <td classList={{ tx: row.direction !== 'Rx' }}>{row.direction.toLowerCase()}</td>
-                  <td>{row.len}</td>
-                  <td class="hexcell">{row.hex}</td>
-                  <td>{row.protocol ?? (row.text ? 'text' : '-')}</td>
-                  <td class="crash">
-                    <Show when={row.symbols[0]}>
-                      {(hit) => (
-                        <span title={`${shortName(hit().function)} @ 0x${hit().address.toString(16)}`}>
-                          {hit().field}
-                          <Show when={sourceOf(hit())}> {sourceOf(hit())}</Show>
-                        </span>
-                      )}
-                    </Show>
-                  </td>
+          <div class="stream-head">
+            <h2>Stream</h2>
+            <div class="stream-actions">
+              <span class="hint">
+                {totalRows() === 0
+                  ? '0 frames'
+                  : `rows ${startIndex() + 1}–${Math.min(endIndex(), totalRows())} of ${totalRows()} (${feed.received()} rx)`}
+              </span>
+              <button
+                type="button"
+                class="chip action"
+                classList={{ on: follow() }}
+                onClick={() => {
+                  if (!follow()) jumpToLive()
+                  else setFollow(false)
+                }}
+                title={follow() ? 'following live stream (click to pause)' : 'stream paused (click to follow live)'}
+              >
+                {follow() ? '● follow' : 'jump to live'}
+              </button>
+            </div>
+          </div>
+          <div class="stream-viewport" ref={viewportRef} onScroll={onViewportScroll}>
+            <table>
+              <colgroup>
+                <col style={{ width: '85px' }} />
+                <col style={{ width: '65px' }} />
+                <col style={{ width: '65px' }} />
+                <col style={{ width: '45px' }} />
+                <col style={{ width: '50px' }} />
+                <col style={{ width: '340px' }} />
+                <col style={{ width: '80px' }} />
+                <col style={{ width: 'auto' }} />
+              </colgroup>
+              <thead>
+                <tr>
+                  <th>t</th>
+                  <th>Δt µs</th>
+                  <th>port</th>
+                  <th>dir</th>
+                  <th>len</th>
+                  <th>hex</th>
+                  <th>protocol</th>
+                  <th>crash</th>
                 </tr>
-              )}
-            </For>
-          </tbody>
-        </table>
+              </thead>
+              <tbody>
+                <Show when={totalRows() === 0}>
+                  <tr><td colSpan={8} class="empty">Waiting for frames.</td></tr>
+                </Show>
+                <Show when={topSpacer() > 0}>
+                  <tr
+                    class="spacer"
+                    style={{
+                      height: `${topSpacer()}px`,
+                    }}
+                  >
+                    <td
+                      colSpan={8}
+                      style={{
+                        height: `${topSpacer()}px`,
+                        padding: '0',
+                        border: '0',
+                        margin: '0',
+                        'line-height': '0',
+                        'font-size': '0',
+                      }}
+                    />
+                  </tr>
+                </Show>
+                <For each={visibleRows()}>
+                  {(row) => (
+                    <tr
+                      classList={{ chosen: detail() === row, faulty: row.decode_error != null }}
+                      onClick={() => setSelected(row)}
+                    >
+                      <td>{clock(row.timestamp_us)}</td>
+                      <td>{row.delta_us}</td>
+                      <td>{row.port}</td>
+                      <td classList={{ tx: row.direction !== 'Rx' }}>{row.direction.toLowerCase()}</td>
+                      <td>{row.len}</td>
+                      <td class="hexcell">{row.hex}</td>
+                      <td>{row.protocol ?? (row.text ? 'text' : '-')}</td>
+                      <td class="crash">
+                        <Show when={row.symbols[0]}>
+                          {(hit) => (
+                            <span title={`${shortName(hit().function)} @ 0x${hit().address.toString(16)}`}>
+                              {hit().field}
+                              <Show when={sourceOf(hit())}> {sourceOf(hit())}</Show>
+                            </span>
+                          )}
+                        </Show>
+                      </td>
+                    </tr>
+                  )}
+                </For>
+                <Show when={bottomSpacer() > 0}>
+                  <tr
+                    class="spacer"
+                    style={{
+                      height: `${bottomSpacer()}px`,
+                    }}
+                  >
+                    <td
+                      colSpan={8}
+                      style={{
+                        height: `${bottomSpacer()}px`,
+                        padding: '0',
+                        border: '0',
+                        margin: '0',
+                        'line-height': '0',
+                        'font-size': '0',
+                      }}
+                    />
+                  </tr>
+                </Show>
+              </tbody>
+            </table>
+          </div>
         </main>
 
         <section class="plot-band">
@@ -869,7 +1096,7 @@ export default function App() {
             >
               {rate()}x
             </button>
-            <button type="button" onClick={() => { stopPlayback(); setAt(null); setWindowRows([]) }} classList={{ active: at() === null }}>
+            <button type="button" onClick={() => { stopPlayback(); setAt(null); setWindowRows([]); jumpToLive() }} classList={{ active: at() === null }}>
               live
             </button>
             <span class="hint">

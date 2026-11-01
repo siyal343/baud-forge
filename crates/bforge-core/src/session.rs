@@ -6,6 +6,7 @@
 
 use crate::control::{ControlServer, ControlTarget};
 use crate::fault::{FaultOutcome, FaultProfile, Injector};
+pub use crate::pipeline::PinStep;
 use crate::pipeline::{Pipeline, PipelineConfig, YieldRequest};
 use crate::series::{SeriesSet, SeriesUpdate};
 use crate::symbolize::symbolize;
@@ -531,6 +532,40 @@ impl Session {
             .map_err(SessionError::Write)
     }
 
+    /// Run a timed sequence of pin changes on a port's reader thread.
+    ///
+    /// Executes the steps in order without starving reads between steps.
+    /// Returns the updated [`PinsView`].
+    pub fn run_pin_sequence(
+        &mut self,
+        port: &str,
+        steps: Vec<PinStep>,
+    ) -> Result<PinsView, SessionError> {
+        let running = self
+            .ports
+            .iter_mut()
+            .find(|running| running.info.id == port)
+            .ok_or_else(|| SessionError::UnknownPort(port.to_string()))?;
+        let pins_out = running
+            .pipeline
+            .run_pin_sequence(steps)
+            .map_err(SessionError::Write)?;
+        let stats = running.pipeline.stats();
+        let view = PinsView {
+            cts: stats.line_state & PinStateFlags::CTS.0 != 0,
+            dsr: stats.line_state & PinStateFlags::DSR.0 != 0,
+            dcd: stats.line_state & PinStateFlags::DCD.0 != 0,
+            ri: stats.line_state & PinStateFlags::RI.0 != 0,
+            break_state: stats.line_state & PinStateFlags::BREAK.0 != 0,
+            framing_error: stats.line_state & PinStateFlags::FRAMING_ERR.0 != 0,
+            parity_error: stats.line_state & PinStateFlags::PARITY_ERR.0 != 0,
+            dtr: pins_out & PinStateFlags::DTR.0 != 0,
+            rts: pins_out & PinStateFlags::RTS.0 != 0,
+        };
+        running.info.pins = view;
+        Ok(view)
+    }
+
     /// Send bytes to a port and report how many the transport accepted.
     ///
     /// The reader thread performs the write: it owns the transport, so a write from
@@ -609,6 +644,86 @@ impl Session {
                 outcome.sent = pipeline.write(bytes, wait).map_err(SessionError::Write)?;
             }
         }
+        Ok(outcome)
+    }
+
+    /// Send bytes with pacing between chunks on the port's reader thread.
+    ///
+    /// Paced sending breaks large byte buffers into chunks with delay between them
+    /// so the receiver does not overrun, while servicing reads between chunks.
+    pub fn send_paced(
+        &mut self,
+        port: &str,
+        bytes: &[u8],
+        chunk_size: usize,
+        pace_ms: u64,
+    ) -> Result<FaultOutcome, SessionError> {
+        let running = self
+            .ports
+            .iter()
+            .find(|running| running.info.id == port)
+            .ok_or_else(|| SessionError::UnknownPort(port.to_string()))?;
+
+        let bytes = bytes.to_vec();
+        let prepared = {
+            let mut faults = self.faults.lock().unwrap();
+            match faults.get_mut(port) {
+                Some(injector) => injector.apply(bytes),
+                None => {
+                    let sent = bytes.len();
+                    Some((
+                        bytes,
+                        FaultOutcome {
+                            sent,
+                            delay: None,
+                            bytes: 0,
+                            dropped: false,
+                        },
+                    ))
+                }
+            }
+        };
+        let Some((bytes, mut outcome)) = prepared else {
+            return Ok(FaultOutcome {
+                sent: 0,
+                delay: None,
+                bytes: 0,
+                dropped: true,
+            });
+        };
+
+        let bytes = match self.script.as_mut() {
+            Some(script) => match script.run(&bytes) {
+                FrameVerdict::Send(next) => next,
+                FrameVerdict::Drop => {
+                    return Ok(FaultOutcome {
+                        sent: 0,
+                        delay: None,
+                        bytes: 0,
+                        dropped: true,
+                    });
+                }
+            },
+            None => bytes,
+        };
+
+        let pipeline = &running.pipeline;
+        let pace = Duration::from_millis(pace_ms);
+        let chunks_count = if chunk_size > 0 {
+            bytes.len().div_ceil(chunk_size)
+        } else {
+            1
+        };
+        let wait = Duration::from_millis(pace_ms.saturating_mul(chunks_count as u64))
+            + Duration::from_secs(5);
+
+        if let Some(delay) = outcome.delay {
+            std::thread::sleep(delay);
+        }
+        outcome.sent = pipeline
+            .write_paced(bytes, chunk_size, pace, wait)
+            .map_err(SessionError::Write)?;
+
         Ok(outcome)
     }
 

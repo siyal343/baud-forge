@@ -150,7 +150,31 @@ struct ReaderContext {
     /// Bytes another thread asked the reader to send. The reader owns the
     /// transport, so a write must happen on its thread, between reads.
     writes: std::sync::mpsc::Receiver<WriteRequest>,
-    pins: std::sync::mpsc::Receiver<PinRequest>,
+    pins: std::sync::mpsc::Receiver<PinControl>,
+}
+
+/// One step in a timed pin sequence.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
+pub struct PinStep {
+    pub dtr: Option<bool>,
+    pub rts: Option<bool>,
+    #[serde(default)]
+    pub wait_ms: u64,
+}
+
+/// Pin control message sent to the reader thread.
+pub enum PinControl {
+    Single(PinRequest),
+    Sequence {
+        steps: Vec<PinStep>,
+        reply: std::sync::mpsc::Sender<Result<u16, String>>,
+    },
+}
+
+impl From<PinRequest> for PinControl {
+    fn from(request: PinRequest) -> Self {
+        Self::Single(request)
+    }
 }
 
 /// One queued write and where to report the result.
@@ -177,6 +201,10 @@ pub struct WriteRequest {
     pub settled: Option<Arc<AtomicU64>>,
     /// Bytes a transport refused, so a wedged port is visible without a caller.
     pub failed: Option<Arc<AtomicU64>>,
+    /// Split bytes into chunks of this size. Zero means send all at once.
+    pub chunk_size: usize,
+    /// Pause between chunks while servicing incoming reads.
+    pub pace: Duration,
 }
 
 #[derive(Debug, Default)]
@@ -229,7 +257,7 @@ pub struct Pipeline {
     thread: Option<JoinHandle<()>>,
     yield_request: Arc<YieldRequest>,
     writes: std::sync::mpsc::Sender<WriteRequest>,
-    pins: std::sync::mpsc::Sender<PinRequest>,
+    pins: std::sync::mpsc::Sender<PinControl>,
 }
 
 impl Pipeline {
@@ -313,11 +341,28 @@ impl Pipeline {
     ) -> Result<(), String> {
         let (reply, answer) = std::sync::mpsc::channel();
         self.pins
-            .send(PinRequest {
+            .send(PinControl::Single(PinRequest {
                 pins,
                 pulse,
                 reply: Some(reply),
-            })
+            }))
+            .map_err(|_| "the reader has stopped".to_string())?;
+        answer
+            .recv_timeout(wait)
+            .map_err(|_| "the reader did not answer in time".to_string())?
+    }
+
+    /// Run a timed sequence of pin changes on the reader thread.
+    ///
+    /// Steps execute in order. Between steps with `wait_ms > 0`, the reader
+    /// thread continues servicing reads so bootloader banners and incoming bytes
+    /// are captured into the logger ring. Returns the final `pins_out` bitmask.
+    pub fn run_pin_sequence(&self, steps: Vec<PinStep>) -> Result<u16, String> {
+        let total_wait_ms: u64 = steps.iter().map(|step| step.wait_ms).sum();
+        let wait = Duration::from_millis(total_wait_ms) + Duration::from_secs(5);
+        let (reply, answer) = std::sync::mpsc::channel();
+        self.pins
+            .send(PinControl::Sequence { steps, reply })
             .map_err(|_| "the reader has stopped".to_string())?;
         answer
             .recv_timeout(wait)
@@ -337,6 +382,37 @@ impl Pipeline {
                 reply: Some(reply),
                 settled: None,
                 failed: None,
+                chunk_size: 0,
+                pace: Duration::ZERO,
+            })
+            .map_err(|_| "the reader has stopped".to_string())?;
+        answer
+            .recv_timeout(wait)
+            .map_err(|_| "the reader did not answer in time".to_string())?
+    }
+
+    /// Queue bytes with pacing between chunks on the reader thread.
+    ///
+    /// When `chunk_size > 0` and `bytes.len() > chunk_size`, the write is split
+    /// into chunks with `pace` delay between them. The reader services reads
+    /// during pauses so full-duplex echoes are not dropped.
+    pub fn write_paced(
+        &self,
+        bytes: Vec<u8>,
+        chunk_size: usize,
+        pace: Duration,
+        wait: Duration,
+    ) -> Result<usize, String> {
+        let (reply, answer) = std::sync::mpsc::channel();
+        self.writes
+            .send(WriteRequest {
+                bytes,
+                due: None,
+                reply: Some(reply),
+                settled: None,
+                failed: None,
+                chunk_size,
+                pace,
             })
             .map_err(|_| "the reader has stopped".to_string())?;
         answer
@@ -371,6 +447,8 @@ impl Pipeline {
                 reply: None,
                 settled: Some(settled),
                 failed: Some(failed),
+                chunk_size: 0,
+                pace: Duration::ZERO,
             })
             .map_err(|_| "the reader has stopped".to_string())
     }
@@ -452,120 +530,75 @@ fn read_loop(
     // Writes a fault asked to delay, oldest deadline first.
     let mut held: Vec<(Instant, WriteRequest)> = Vec::new();
 
+    let mut state = ReaderLoopState {
+        transport: &mut transport,
+        pool: &mut pool,
+        producers: &mut producers,
+        counters: &counters,
+        stop: &stop,
+        port_id,
+        clock,
+        seq_id: &mut seq_id,
+        failed_reopens: &mut failed_reopens,
+        reconnect_attempts,
+    };
+
     // On stop, a slab that is still waiting for the logger ring is abandoned.
     // Nobody is left to read it, and the wait must not outlive the session.
     'read: while !stop.load(Ordering::Relaxed) {
-        while let Ok(request) = pins.try_recv() {
-            set_pins_one(&mut *transport, &counters, request, &stop);
+        while let Ok(control) = pins.try_recv() {
+            match control {
+                PinControl::Single(request) => {
+                    set_pins_one(&mut **state.transport, &counters, request, &stop);
+                }
+                PinControl::Sequence { steps, reply } => {
+                    if !state.run_pin_sequence(steps, reply) {
+                        break 'read;
+                    }
+                }
+            }
         }
         // Delayed writes wait here, so a deadline never blocks the read path.
         while let Ok(request) = writes.try_recv() {
             match request.due {
                 Some(due) if due > Instant::now() => held.push((due, request)),
-                _ => write_one(&mut *transport, &counters, request),
+                _ => {
+                    if !state.write_one(request) {
+                        break 'read;
+                    }
+                }
             }
         }
         if !held.is_empty() {
             let now = Instant::now();
             let mut still = Vec::with_capacity(held.len());
-            for (due, request) in held.drain(..) {
+            let mut iter = std::mem::take(&mut held).into_iter();
+            while let Some((due, request)) = iter.next() {
                 if due <= now {
-                    write_one(&mut *transport, &counters, request);
+                    if !state.write_one(request) {
+                        still.extend(iter);
+                        held = still;
+                        break 'read;
+                    }
                 } else {
                     still.push((due, request));
                 }
             }
-            held = still;
+            if !stop.load(Ordering::Relaxed) {
+                held = still;
+            }
         }
         if let Some(window) = yield_request.take() {
             counters.state.store(STATE_YIELDED, Ordering::Relaxed);
             counters.yields.fetch_add(1, Ordering::Relaxed);
-            transport.close();
-            yield_port(&mut transport, &counters, &stop, window);
+            state.transport.close();
+            yield_port(state.transport, &counters, &stop, window);
             continue;
         }
 
-        let mut buffer = pool.take();
-        let read = transport.read_slab(&mut buffer);
-        let len = match read {
-            Ok(0) => {
-                thread::sleep(IDLE_SLEEP);
-                continue;
-            }
-            Ok(len) => len,
-            Err(TransportError::Disconnected) => {
-                counters.read_errors.fetch_add(1, Ordering::Relaxed);
-                counters.state.store(STATE_RECONNECTING, Ordering::Relaxed);
-                counters.reconnects.fetch_add(1, Ordering::Relaxed);
-                transport.close();
-                if !reopen(
-                    &mut transport,
-                    &counters,
-                    &stop,
-                    reconnect_attempts,
-                    &mut failed_reopens,
-                ) {
-                    break 'read;
-                }
-                continue;
-            }
-            Err(_) => {
-                counters.read_errors.fetch_add(1, Ordering::Relaxed);
-                thread::sleep(IDLE_SLEEP);
-                continue;
-            }
-        };
-        buffer.truncate(len);
-        failed_reopens = 0;
-
-        let meta = ChunkMeta {
-            seq_id,
-            timestamp_ns: clock.elapsed().as_nanos() as u64,
-            port_id,
-            direction: Direction::Rx,
-            line_state: transport.read_pins().unwrap_or_default(),
-            len: len as u32,
-        };
-        seq_id += 1;
-        counters.chunks.fetch_add(1, Ordering::Relaxed);
-        counters.bytes.fetch_add(len as u64, Ordering::Relaxed);
-        counters
-            .line_state
-            .store(u64::from(meta.line_state.0), Ordering::Relaxed);
-
-        let slab = Arc::new(Slab::new(meta, buffer, Some(pool.recycle_handle())));
-
-        for (index, producer) in producers.iter_mut().enumerate() {
-            let mut item = Arc::clone(&slab);
-            loop {
-                match producer.push(item) {
-                    Ok(()) => break,
-                    Err(PushError::Full(returned)) => {
-                        if index == 0 {
-                            if stop.load(Ordering::Relaxed) {
-                                break 'read;
-                            }
-                            // The logger must not lose a byte: wait for a slot.
-                            // Sleep rather than spin. A hot spin burned a core and,
-                            // on macOS, could starve the thread that drains the ring
-                            // or sets `stop`; the wait is already the slow path.
-                            item = returned;
-                            let wait_started = Instant::now();
-                            thread::sleep(IDLE_SLEEP);
-                            counters.stalls_ns.fetch_add(
-                                wait_started.elapsed().as_nanos() as u64,
-                                Ordering::Relaxed,
-                            );
-                        } else {
-                            counters.overruns.fetch_add(1, Ordering::Relaxed);
-                            break;
-                        }
-                    }
-                }
-            }
+        if !state.pump_one_slab() {
+            break 'read;
         }
-
-        drop(slab);
     }
 
     for (_, request) in held.drain(..) {
@@ -580,7 +613,248 @@ fn read_loop(
     counters.state.store(STATE_CLOSED, Ordering::Relaxed);
 }
 
-/// Write one queued frame and report it, whoever asked.
+struct ReaderLoopState<'a> {
+    transport: &'a mut Box<dyn TransportDriver + Send>,
+    pool: &'a mut SlabPool,
+    producers: &'a mut [Producer<Arc<Slab>>],
+    counters: &'a Counters,
+    stop: &'a AtomicBool,
+    port_id: u16,
+    clock: Instant,
+    seq_id: &'a mut u64,
+    failed_reopens: &'a mut u32,
+    reconnect_attempts: u32,
+}
+
+impl ReaderLoopState<'_> {
+    fn pump_one_slab(&mut self) -> bool {
+        let mut buffer = self.pool.take();
+        let read = self.transport.read_slab(&mut buffer);
+        let len = match read {
+            Ok(0) => {
+                thread::sleep(IDLE_SLEEP);
+                return true;
+            }
+            Ok(len) => len,
+            Err(TransportError::Disconnected) => {
+                self.counters.read_errors.fetch_add(1, Ordering::Relaxed);
+                self.counters
+                    .state
+                    .store(STATE_RECONNECTING, Ordering::Relaxed);
+                self.counters.reconnects.fetch_add(1, Ordering::Relaxed);
+                self.transport.close();
+                if !reopen(
+                    self.transport,
+                    self.counters,
+                    self.stop,
+                    self.reconnect_attempts,
+                    self.failed_reopens,
+                ) {
+                    return false;
+                }
+                return true;
+            }
+            Err(_) => {
+                self.counters.read_errors.fetch_add(1, Ordering::Relaxed);
+                thread::sleep(IDLE_SLEEP);
+                return true;
+            }
+        };
+        buffer.truncate(len);
+        *self.failed_reopens = 0;
+
+        let meta = ChunkMeta {
+            seq_id: *self.seq_id,
+            timestamp_ns: self.clock.elapsed().as_nanos() as u64,
+            port_id: self.port_id,
+            direction: Direction::Rx,
+            line_state: self.transport.read_pins().unwrap_or_default(),
+            len: len as u32,
+        };
+        *self.seq_id += 1;
+        self.counters.chunks.fetch_add(1, Ordering::Relaxed);
+        self.counters.bytes.fetch_add(len as u64, Ordering::Relaxed);
+        self.counters
+            .line_state
+            .store(u64::from(meta.line_state.0), Ordering::Relaxed);
+
+        let slab = Arc::new(Slab::new(meta, buffer, Some(self.pool.recycle_handle())));
+
+        for (index, producer) in self.producers.iter_mut().enumerate() {
+            let mut item = Arc::clone(&slab);
+            loop {
+                match producer.push(item) {
+                    Ok(()) => break,
+                    Err(PushError::Full(returned)) => {
+                        if index == 0 {
+                            if self.stop.load(Ordering::Relaxed) {
+                                return false;
+                            }
+                            item = returned;
+                            let wait_started = Instant::now();
+                            thread::sleep(IDLE_SLEEP);
+                            self.counters.stalls_ns.fetch_add(
+                                wait_started.elapsed().as_nanos() as u64,
+                                Ordering::Relaxed,
+                            );
+                        } else {
+                            self.counters.overruns.fetch_add(1, Ordering::Relaxed);
+                            break;
+                        }
+                    }
+                }
+            }
+        }
+        true
+    }
+
+    fn wait_servicing_reads(&mut self, duration: Duration) -> bool {
+        let deadline = Instant::now() + duration;
+        while Instant::now() < deadline {
+            if self.stop.load(Ordering::Relaxed) {
+                return false;
+            }
+            if !self.pump_one_slab() {
+                return false;
+            }
+        }
+        true
+    }
+
+    fn run_pin_sequence(
+        &mut self,
+        steps: Vec<PinStep>,
+        reply: std::sync::mpsc::Sender<Result<u16, String>>,
+    ) -> bool {
+        let mut current_pins =
+            bforge_hal::PinStateFlags(self.counters.pins_out.load(Ordering::Relaxed) as u16);
+        for step in steps {
+            if self.stop.load(Ordering::Relaxed) {
+                let _ = reply.send(Err("the reader stopped during pin sequence".to_string()));
+                return false;
+            }
+            if let Some(dtr) = step.dtr {
+                if dtr {
+                    current_pins.insert(bforge_hal::PinStateFlags::DTR);
+                } else {
+                    current_pins.0 &= !bforge_hal::PinStateFlags::DTR.0;
+                }
+            }
+            if let Some(rts) = step.rts {
+                if rts {
+                    current_pins.insert(bforge_hal::PinStateFlags::RTS);
+                } else {
+                    current_pins.0 &= !bforge_hal::PinStateFlags::RTS.0;
+                }
+            }
+            if let Err(error) = self.transport.set_pins(current_pins) {
+                self.counters.read_errors.fetch_add(1, Ordering::Relaxed);
+                let _ = reply.send(Err(error.to_string()));
+                return true;
+            }
+            self.counters
+                .pins_out
+                .store(u64::from(current_pins.0), Ordering::Relaxed);
+
+            if step.wait_ms > 0 {
+                let wait_dur = Duration::from_millis(step.wait_ms);
+                if !self.wait_servicing_reads(wait_dur) {
+                    let _ = reply.send(Err(
+                        "the reader stopped during pin sequence wait".to_string()
+                    ));
+                    return false;
+                }
+            }
+        }
+        let final_pins = self.counters.pins_out.load(Ordering::Relaxed) as u16;
+        let _ = reply.send(Ok(final_pins));
+        true
+    }
+
+    fn write_one(&mut self, request: WriteRequest) -> bool {
+        if request.chunk_size > 0 && request.bytes.len() > request.chunk_size {
+            let chunks: Vec<&[u8]> = request.bytes.chunks(request.chunk_size).collect();
+            let total_chunks = chunks.len();
+            let mut written_total = 0usize;
+
+            for (i, chunk) in chunks.iter().enumerate() {
+                if self.stop.load(Ordering::Relaxed) {
+                    if let Some(failed) = &request.failed {
+                        failed.fetch_add(
+                            (request.bytes.len() - written_total) as u64,
+                            Ordering::Relaxed,
+                        );
+                    }
+                    if let Some(reply) = request.reply {
+                        let _ =
+                            reply.send(Err("the reader stopped during paced write".to_string()));
+                    }
+                    return false;
+                }
+
+                match self.transport.write_frame(chunk) {
+                    Ok(()) => {
+                        written_total += chunk.len();
+                        if let Some(settled) = &request.settled {
+                            settled.fetch_add(chunk.len() as u64, Ordering::Relaxed);
+                        }
+                    }
+                    Err(error) => {
+                        self.counters.read_errors.fetch_add(1, Ordering::Relaxed);
+                        if let Some(failed) = &request.failed {
+                            failed.fetch_add(
+                                (request.bytes.len() - written_total) as u64,
+                                Ordering::Relaxed,
+                            );
+                        }
+                        if let Some(reply) = request.reply {
+                            let _ = reply.send(Err(error.to_string()));
+                        }
+                        return true;
+                    }
+                }
+
+                if i + 1 < total_chunks
+                    && !request.pace.is_zero()
+                    && !self.wait_servicing_reads(request.pace)
+                {
+                    if let Some(reply) = request.reply {
+                        let _ = reply.send(Err("the reader stopped during pace wait".to_string()));
+                    }
+                    return false;
+                }
+            }
+
+            if let Some(reply) = request.reply {
+                let _ = reply.send(Ok(written_total));
+            }
+            true
+        } else {
+            let written = request.bytes.len();
+            match self.transport.write_frame(&request.bytes) {
+                Ok(()) => {
+                    if let Some(settled) = &request.settled {
+                        settled.fetch_add(written as u64, Ordering::Relaxed);
+                    }
+                    if let Some(reply) = request.reply {
+                        let _ = reply.send(Ok(written));
+                    }
+                }
+                Err(error) => {
+                    self.counters.read_errors.fetch_add(1, Ordering::Relaxed);
+                    if let Some(failed) = &request.failed {
+                        failed.fetch_add(written as u64, Ordering::Relaxed);
+                    }
+                    if let Some(reply) = request.reply {
+                        let _ = reply.send(Err(error.to_string()));
+                    }
+                }
+            }
+            true
+        }
+    }
+}
+
 /// Drive the pins, optionally as a pulse, and answer the caller.
 ///
 /// A pulse holds the reader for its length. That is what a board that resets on DTR
@@ -615,33 +889,6 @@ fn set_pins_one(
     }
     if let Some(reply) = reply {
         let _ = reply.send(result);
-    }
-}
-
-fn write_one(
-    transport: &mut (dyn TransportDriver + Send),
-    counters: &Counters,
-    request: WriteRequest,
-) {
-    let written = request.bytes.len();
-    match transport.write_frame(&request.bytes) {
-        Ok(()) => {
-            if let Some(settled) = &request.settled {
-                settled.fetch_add(written as u64, Ordering::Relaxed);
-            }
-            if let Some(reply) = request.reply {
-                let _ = reply.send(Ok(written));
-            }
-        }
-        Err(error) => {
-            counters.read_errors.fetch_add(1, Ordering::Relaxed);
-            if let Some(failed) = &request.failed {
-                failed.fetch_add(written as u64, Ordering::Relaxed);
-            }
-            if let Some(reply) = request.reply {
-                let _ = reply.send(Err(error.to_string()));
-            }
-        }
     }
 }
 
@@ -714,4 +961,180 @@ fn reopen(
         }
     }
     false
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use bforge_hal::PinStateFlags;
+    use bforge_hal::mock::MockTransport;
+    use std::sync::Mutex;
+
+    type PinTrace = Arc<Mutex<Vec<u16>>>;
+    type WriteTrace = Arc<Mutex<Vec<Vec<u8>>>>;
+
+    struct TracingTransport {
+        mock: MockTransport,
+        pin_history: PinTrace,
+        write_history: WriteTrace,
+    }
+
+    impl TracingTransport {
+        fn new(mock: MockTransport) -> (Self, PinTrace, WriteTrace) {
+            let pin_history = Arc::new(Mutex::new(Vec::new()));
+            let write_history = Arc::new(Mutex::new(Vec::new()));
+            (
+                Self {
+                    mock,
+                    pin_history: Arc::clone(&pin_history),
+                    write_history: Arc::clone(&write_history),
+                },
+                pin_history,
+                write_history,
+            )
+        }
+    }
+
+    impl TransportDriver for TracingTransport {
+        fn open(&mut self) -> Result<(), TransportError> {
+            self.mock.open()
+        }
+
+        fn close(&mut self) {
+            self.mock.close()
+        }
+
+        fn read_slab(&mut self, out: &mut [u8]) -> Result<usize, TransportError> {
+            self.mock.read_slab(out)
+        }
+
+        fn write_frame(&mut self, frame: &[u8]) -> Result<(), TransportError> {
+            self.write_history.lock().unwrap().push(frame.to_vec());
+            self.mock.write_frame(frame)
+        }
+
+        fn set_pins(&mut self, pins: PinStateFlags) -> Result<(), TransportError> {
+            self.pin_history.lock().unwrap().push(pins.0);
+            self.mock.set_pins(pins)
+        }
+
+        fn read_pins(&mut self) -> Result<PinStateFlags, TransportError> {
+            self.mock.read_pins()
+        }
+
+        fn state(&self) -> PortState {
+            self.mock.state()
+        }
+    }
+
+    #[test]
+    fn a_pin_sequence_applies_steps_in_order_and_keeps_reading() {
+        let config = PipelineConfig {
+            port_id: 1,
+            slab_bytes: 4096,
+            queue_chunks: 64,
+            ..Default::default()
+        };
+        let (transport, pin_history, _) = TracingTransport::new(MockTransport::new(500_000));
+        let mut pipeline = Pipeline::start(config, Box::new(transport));
+        let mut consumers = pipeline.take_consumers();
+        let mut logger = consumers.remove(0);
+
+        let steps = vec![
+            PinStep {
+                dtr: Some(false),
+                rts: Some(true),
+                wait_ms: 20,
+            },
+            PinStep {
+                dtr: Some(true),
+                rts: Some(false),
+                wait_ms: 20,
+            },
+        ];
+
+        let final_pins = pipeline
+            .run_pin_sequence(steps)
+            .expect("sequence completes");
+
+        assert_eq!(
+            final_pins & PinStateFlags::DTR.0,
+            PinStateFlags::DTR.0,
+            "DTR must be set at the end"
+        );
+        assert_eq!(
+            final_pins & PinStateFlags::RTS.0,
+            0,
+            "RTS must be cleared at the end"
+        );
+        assert_eq!(pipeline.stats().pins_out, final_pins);
+
+        let history = pin_history.lock().unwrap().clone();
+        assert_eq!(
+            history,
+            vec![PinStateFlags::RTS.0, PinStateFlags::DTR.0],
+            "pin steps must apply in specified order"
+        );
+
+        let mut read_chunks = 0;
+        while let Ok(slab) = logger.pop() {
+            assert!(!slab.bytes().is_empty());
+            read_chunks += 1;
+        }
+        assert!(
+            read_chunks > 0,
+            "incoming bytes must still be captured into logger ring during sequence"
+        );
+        assert!(pipeline.stats().bytes > 0);
+
+        pipeline.stop();
+    }
+
+    #[test]
+    fn paced_write_delivers_all_chunks_without_dropping_reads() {
+        let config = PipelineConfig {
+            port_id: 2,
+            slab_bytes: 4096,
+            queue_chunks: 64,
+            ..Default::default()
+        };
+        let (transport, _, write_history) = TracingTransport::new(MockTransport::new(500_000));
+        let mut pipeline = Pipeline::start(config, Box::new(transport));
+        let mut consumers = pipeline.take_consumers();
+        let mut logger = consumers.remove(0);
+
+        let data = vec![0xABu8; 250];
+        let chunk_size = 100;
+        let pace = Duration::from_millis(20);
+        let wait = Duration::from_secs(5);
+
+        let written = pipeline
+            .write_paced(data.clone(), chunk_size, pace, wait)
+            .expect("paced write succeeds");
+
+        assert_eq!(written, 250);
+
+        let recorded = write_history.lock().unwrap().clone();
+        assert_eq!(
+            recorded.len(),
+            3,
+            "250 bytes split by 100 must yield 3 chunks"
+        );
+        assert_eq!(recorded[0].len(), 100);
+        assert_eq!(recorded[1].len(), 100);
+        assert_eq!(recorded[2].len(), 50);
+        assert_eq!(recorded.concat(), data);
+
+        let mut read_chunks = 0;
+        while let Ok(slab) = logger.pop() {
+            assert!(!slab.bytes().is_empty());
+            read_chunks += 1;
+        }
+        assert!(
+            read_chunks > 0,
+            "reads must continue during paced pauses without being dropped"
+        );
+
+        pipeline.stop();
+    }
 }
