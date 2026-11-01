@@ -46,3 +46,19 @@ export function toPicker(): void {
   // The bundle's own entry point, not the engine's.
   location.replace('desktop.html')
 }
+
+/**
+ * Save the vault in a format the person can open elsewhere (FR-STO-02).
+ *
+ * In the shell there is no download shelf, so the shell writes the file beside the vault
+ * and returns its path. In a browser the route itself answers with an attachment.
+ */
+export async function exportVault(format: string): Promise<string | null> {
+  const shell = bridge()
+  if (shell) return shell.invoke<string>('export_vault', { format })
+  const link = document.createElement('a')
+  link.href = api(`/api/vault/export?format=${encodeURIComponent(format)}`)
+  link.download = ''
+  link.click()
+  return null
+}

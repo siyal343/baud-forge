@@ -21,7 +21,7 @@ Five formats over a whole vault, in one forward pass:
 | `pcapng` | a Wireshark section and interface, one enhanced packet block per record |
 | `parquet` | refused by name, because nothing needs it yet |
 
-Not in this stage: an export route on the HTTP server, or a button in the window.
+Three ways to reach it: the CLI, a route on the engine, and a control in the window's ribbon.
 
 ## Behaviour
 
@@ -35,6 +35,14 @@ Not in this stage: an export route on the HTTP server, or a button in the window
    `if_tsresol` option, and the interface is named `bforge-uart`.
 5. `parquet` returns an error that names CSV and JSON Lines as the equivalent, rather than
    writing a file that is not Parquet.
+6. `GET /api/vault/export?format=…` answers the same bytes as an attachment, with a
+   `Content-Disposition` filename taken from the vault and a type per format. An unknown name
+   is a `400` that lists the names.
+7. `export…` in the ribbon offers the four formats. In a browser it follows the route; in the
+   window the shell writes the file beside the vault and prints the path in the header, because
+   a webview has no download shelf.
+8. `--query "export=csv"` records for four seconds and then saves, so one launch produces a
+   file for a script.
 
 ## Measured
 
@@ -72,10 +80,20 @@ section length intact, and Parquet refused.
 cargo test -p bforge-storage --test export
 ```
 
+## Measured through the window
+
+Two runs against the live engine:
+
+| Path | Result |
+| --- | --- |
+| route, while recording | `200`, `text/csv`, `bforge-gui-1793520375.csv`, 47 354 records, 6.7 MB |
+| ribbon control, Saleae | `wrote C:\...forge-gui-1793520598.saleae.csv`, 2 757 records, 180 kB |
+
 ## Limits, recorded
 
 - Export walks the reader record by record, and the reader seeks per payload. A sequential
   cursor would remove the seeks; see the deferred entry.
+- The route builds the body in memory. A capture larger than the server's memory would fail;
+  chunked writing is the next step if that ever happens.
 - Timestamps come from the vault, so a capture recorded with a zero epoch exports times that
   start at zero.
-- There is no export route on the server and no button in the window yet.

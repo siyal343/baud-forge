@@ -432,6 +432,16 @@ tbody tr.faulty td:last-child { color: var(--fault); }
 }
 .scrubber button.active { color: var(--valid); border-color: var(--valid); }
 .scrubber button.transport { color: var(--text); font-size: 11px; min-width: 28px; }
+.ribbon select.chip.action {
+  background: var(--panel);
+  border: 1px solid var(--line);
+  color: var(--text);
+  font: inherit;
+  padding: 2px 6px;
+  border-radius: 4px;
+}
+.ribbon select.chip.action:hover:not(:disabled) { border-color: var(--accent, #39d); color: #fff; }
+.ribbon .chip.export-note { color: var(--valid, #4ec9b0); }
 
 .plot { display: grid; grid-template-rows: minmax(0, 1fr) auto; min-height: 0; padding: 0 12px 8px; }
 

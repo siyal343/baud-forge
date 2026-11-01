@@ -19,13 +19,7 @@ record: `STATUS.md` holds the state, `DEFERRED.md` holds the gaps with reasons.
 
 ## The three things worth doing next, in order
 
-### 1. Export (FR-STO-02) — done for the CLI, missing from the window
-
-`bforge export` writes CSV, JSON Lines, Saleae CSV and PCAPNG (spec 0044, six tests, measured
-on a 285 740 record vault). What remains: an export route on the server and a button in the
-window (D-108), and a sequential cursor so the CLI stops seeking per record (D-110, D-68).
-
-### 2. Live transmit rows (D-79) — the last honesty gap in the bus view
+### 1. Live transmit rows (D-79) — the last honesty gap in the bus view
 
 A bridge's writes are recorded as transmit and visible in a scrubbed window, but the live
 stream shows only what the reader received. On a tap, half the traffic is missing until you
@@ -34,12 +28,16 @@ stop and scrub. The fix is to feed forwarded bytes through a transmit stream so 
 
 Estimate: half a session.
 
-### 3. A vault picker in the window (D-78)
+### 2. A vault picker in the window (D-78)
 
 The shell records to a path it chose. Open any existing vault, or choose where to record, and
 the window becomes a reviewer for yesterday's capture, not only a monitor.
 
 Estimate: half a session.
+
+Export is done on all three paths (spec 0044): CLI, engine route, ribbon control. The only
+follow-up is a sequential cursor so a 285 740 record vault stops taking twelve seconds
+(D-110, D-68).
 
 ## Then, by value
 

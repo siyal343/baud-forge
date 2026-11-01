@@ -19,6 +19,7 @@ struct Running {
     port: u16,
     stop: Arc<AtomicBool>,
     workspace: PathBuf,
+    vault: PathBuf,
 }
 
 #[derive(Default)]
@@ -252,6 +253,7 @@ fn start(app: &tauri::AppHandle, path: &Path) -> Result<String, String> {
         port,
         stop,
         workspace: path.to_path_buf(),
+        vault: vault.clone(),
     });
     remember(path);
     Ok(format!("http://127.0.0.1:{port}"))
@@ -352,6 +354,36 @@ fn stop_workspace(app: tauri::AppHandle) {
     app.state::<Engine>().stop();
 }
 
+/// Write the vault beside itself in a format the person can open elsewhere (FR-STO-02).
+///
+/// The window has no download shelf, so this writes the file and reports where it went
+/// rather than handing bytes to a browser.
+#[tauri::command]
+fn export_vault(app: tauri::AppHandle, format: String) -> Result<String, String> {
+    let vault = {
+        let running = app.state::<Engine>();
+        let guard = running.running.lock().unwrap();
+        guard
+            .as_ref()
+            .map(|running| running.vault.clone())
+            .ok_or("no session to export")?
+    };
+    let Some(format) = bforge_storage::format_from_name(&format) else {
+        return Err(format!(
+            "unknown format; use {}",
+            bforge_storage::FORMAT_NAMES
+        ));
+    };
+    let mut reader = bforge_storage::LogReader::open(&vault)
+        .map_err(|error| format!("{}: {error}", vault.display()))?;
+    let out = vault.with_extension(bforge_storage::format_extension(format));
+    let mut file =
+        std::fs::File::create(&out).map_err(|error| format!("{}: {error}", out.display()))?;
+    bforge_storage::export(&mut reader, format, &mut file)
+        .map_err(|error| format!("{}: {error}", out.display()))?;
+    Ok(out.display().to_string())
+}
+
 #[tauri::command]
 fn engine_state(app: tauri::AppHandle) -> Option<String> {
     app.state::<Engine>()
@@ -377,6 +409,7 @@ fn main() {
             demo_workspace,
             start_workspace,
             stop_workspace,
+            export_vault,
             engine_state
         ])
         .setup(|app| {

@@ -3,7 +3,7 @@ import { Telemetry, SERIES_COLOURS } from './components/Telemetry'
 import type { TraceMode } from './components/Telemetry'
 import { WindowControls } from './components/WindowControls'
 import { createFeed } from './lib/feed'
-import { api, inShell, stopSession, toPicker } from './lib/shell'
+import { api, exportVault, inShell, stopSession, toPicker } from './lib/shell'
 import type { FieldRow, SymbolHit, TailRow } from './lib/types'
 import './index.css'
 
@@ -336,6 +336,7 @@ export default function App() {
     const shared = params.get('at')
     if (params.get('rows') === 'stack') setStackRows(true)
     const autoPlay = params.get('play') === '1'
+    const autoExport = params.get('export')
     const sharedBridge = params.get('bridge')
     if (sharedBridge !== null) setBridge(sharedBridge)
     // `?typed=1` opens on the typed form, which is also the only way to capture it
@@ -349,6 +350,12 @@ export default function App() {
       if (at() === null) void refreshSpan()
     }, 3000)
     onCleanup(() => clearInterval(timer))
+
+    if (autoExport) {
+      // Record for a moment, then save: `--query "export=csv"` makes one launch a file.
+      const save = setTimeout(() => void saveExport(autoExport), 4000)
+      onCleanup(() => clearTimeout(save))
+    }
 
     if (autoPlay) {
       // Wait for a span worth playing rather than starting against an empty vault.
@@ -447,6 +454,23 @@ export default function App() {
   }
 
   const [yieldNote, setYieldNote] = createSignal<string | null>(null)
+  const [exportNote, setExportNote] = createSignal<string | null>(null)
+  const [exporting, setExporting] = createSignal(false)
+
+  async function saveExport(format: string) {
+    if (!format || exporting()) return
+    setExporting(true)
+    setExportNote('writing…')
+    try {
+      const path = await exportVault(format)
+      // The browser saves the file itself and reports nothing here.
+      setExportNote(path ? `wrote ${path}` : `saving ${format}`)
+    } catch (error) {
+      setExportNote(String(error))
+    } finally {
+      setExporting(false)
+    }
+  }
 
   async function yieldPort() {
     const port = ports().find((candidate) => candidate.state === 'open')?.id ?? ports()[0]?.id
@@ -557,7 +581,25 @@ export default function App() {
         >
           yield
         </button>
+        <select
+          class="chip action export"
+          disabled={exporting() || !session()}
+          title="save the vault as a file"
+          value=""
+          onChange={(event) => {
+            const format = event.currentTarget.value
+            event.currentTarget.value = ''
+            void saveExport(format)
+          }}
+        >
+          <option value="">export…</option>
+          <option value="csv">CSV</option>
+          <option value="jsonl">JSON Lines</option>
+          <option value="saleae">Saleae CSV</option>
+          <option value="pcapng">PCAPNG</option>
+        </select>
         <Show when={yieldNote()}>{(note) => <span class="chip">{note()}</span>}</Show>
+        <Show when={exportNote()}>{(note) => <span class="chip export-note">{note()}</span>}</Show>
         <For each={feed.snapshot()?.bridges ?? []}>
           {(bridge) => (
             <span class="chip bridge" classList={{ forward: bridge.forward }}>

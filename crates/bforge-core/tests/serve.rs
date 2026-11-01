@@ -926,3 +926,60 @@ fn a_vault_window_can_be_seeked_by_time() {
     client.join().expect("client");
     assert!(stats.requests >= 3, "{stats:?}");
 }
+
+/// FR-STO-02 over HTTP: the vault leaves as a file, with the name and type a client saves.
+#[test]
+fn a_vault_exports_over_http_with_a_filename() {
+    let device = device();
+    let config = workspace(&device);
+    let ports = session_ports_from_config(&config, &[]).expect("ports");
+    let vault =
+        std::env::temp_dir().join(format!("bforge-serve-export-{}.bflog", std::process::id()));
+    let _ = std::fs::remove_file(&vault);
+    let _ = std::fs::remove_file(bforge_storage::index_path(&vault));
+
+    let mut session =
+        Session::start(ports, Some(&vault), None).expect("session records to the vault");
+    session.enable_decode(&config.ports).expect("decode");
+
+    let server = Server::bind("127.0.0.1:0".parse().unwrap())
+        .expect("bind")
+        .with_vault(bforge_core::serve::VaultSource {
+            path: vault.clone(),
+            ports: config.ports.clone(),
+        });
+    let address = server.local_addr().unwrap().to_string();
+
+    let client = std::thread::spawn(move || {
+        std::thread::sleep(Duration::from_millis(700));
+
+        let (status, body) = get(&address, "/api/vault/export?format=csv");
+        assert!(status.contains("200"), "{status} {body}");
+        assert!(
+            body.starts_with("seq,timestamp_ns,seconds,port,direction"),
+            "a CSV header: {body}"
+        );
+        assert!(body.lines().count() > 2, "rows after the header: {body}");
+
+        let (status, body) = get(&address, "/api/vault/export?format=jsonl");
+        assert!(status.contains("200"), "{status} {body}");
+        assert!(
+            body.starts_with("{\"seq\":0,"),
+            "a JSON object per line: {body}"
+        );
+
+        // A name nobody defined is a client error that says what the names are.
+        let (status, body) = get(&address, "/api/vault/export?format=xlsx");
+        assert!(status.contains("400"), "{status} {body}");
+        assert!(body.contains("csv, jsonl"), "{body}");
+
+        let _ = std::fs::remove_file(&vault);
+        let _ = std::fs::remove_file(bforge_storage::index_path(&vault));
+    });
+
+    let stats = server
+        .run(session, Some(Duration::from_secs(2)))
+        .expect("serve");
+    client.join().expect("client");
+    assert!(stats.requests >= 3, "{stats:?}");
+}

@@ -422,6 +422,10 @@ fn handle(mut stream: TcpStream, shared: Arc<Shared>, stop: Arc<AtomicBool>) {
         vault_frames(&mut stream, &shared, target);
         return;
     }
+    if method == "GET" && path == "/api/vault/export" {
+        vault_export(&mut stream, &shared, target);
+        return;
+    }
     if method == "POST" && path == "/api/yield" {
         let body = read_body(&mut reader, content_length);
         yield_port(&mut stream, &shared, &body);
@@ -900,6 +904,66 @@ fn vault_info(stream: &mut TcpStream, shared: &Arc<Shared>, _target: &str) {
 }
 
 /// Frames decoded from a record window: the scrubber's view of the past.
+/// The whole vault in a file format the browser or a shell can save (FR-STO-02).
+///
+/// The body is assembled in memory: a 285 000 record vault is 76 MB as CSV, which a
+/// desktop browser takes without complaint. A chunked writer is the next step if a
+/// capture ever needs to be larger than the memory it is served from.
+fn vault_export(stream: &mut TcpStream, shared: &Arc<Shared>, target: &str) {
+    let source = shared.vault.lock().unwrap().clone();
+    let Some(source) = source else {
+        return respond(
+            stream,
+            "404 Not Found",
+            "application/json",
+            b"{\"error\":\"no vault\"}",
+        );
+    };
+    let query = query(target);
+    let name = query.get("format").map(String::as_str).unwrap_or("csv");
+    let Some(format) = bforge_storage::format_from_name(name) else {
+        let body = format!(
+            "{{\"error\":\"unknown format\",\"formats\":\"{}\"}}",
+            bforge_storage::FORMAT_NAMES
+        );
+        return respond(
+            stream,
+            "400 Bad Request",
+            "application/json",
+            body.as_bytes(),
+        );
+    };
+
+    let mut reader = match bforge_storage::LogReader::open(&source.path) {
+        Ok(reader) => reader,
+        Err(error) => {
+            let body = format!("{{\"error\":\"{error}\"}}");
+            return respond(stream, "409 Conflict", "application/json", body.as_bytes());
+        }
+    };
+    let mut body = Vec::new();
+    if let Err(error) = bforge_storage::export(&mut reader, format, &mut body) {
+        let body = format!("{{\"error\":\"{error}\"}}");
+        return respond(stream, "409 Conflict", "application/json", body.as_bytes());
+    }
+
+    let extension = bforge_storage::format_extension(format);
+    let stem = source
+        .path
+        .file_stem()
+        .map(|stem| stem.to_string_lossy().to_string())
+        .unwrap_or_else(|| "vault".to_string());
+    let content_type = match format {
+        bforge_storage::ExportFormat::Csv | bforge_storage::ExportFormat::SaleaeCsv => {
+            "text/csv; charset=utf-8"
+        }
+        bforge_storage::ExportFormat::JsonLines => "application/x-ndjson",
+        bforge_storage::ExportFormat::PcapNg => "application/vnd.tcpdump.pcap",
+        bforge_storage::ExportFormat::Parquet => "application/octet-stream",
+    };
+    respond_download(stream, content_type, &format!("{stem}.{extension}"), &body);
+}
+
 fn vault_frames(stream: &mut TcpStream, shared: &Arc<Shared>, target: &str) {
     let source = shared.vault.lock().unwrap().clone();
     let Some(source) = source else {
@@ -1095,6 +1159,23 @@ fn respond_preflight(stream: &mut TcpStream) {
     let _ = stream.write_all(b"\r\n");
     let _ = stream.flush();
 }
+/// A body the browser should save rather than display.
+fn respond_download(stream: &mut TcpStream, content_type: &str, filename: &str, body: &[u8]) {
+    let head = [
+        "HTTP/1.1 200 OK\r\n",
+        &format!("Content-Type: {content_type}\r\n"),
+        &format!("Content-Disposition: attachment; filename=\"{filename}\"\r\n"),
+        &format!("Content-Length: {}\r\n", body.len()),
+        "Access-Control-Allow-Origin: *\r\n",
+        "Cache-Control: no-store\r\n",
+        "Connection: close\r\n\r\n",
+    ]
+    .concat();
+    let _ = stream.write_all(head.as_bytes());
+    let _ = stream.write_all(body);
+    let _ = stream.flush();
+}
+
 fn respond(stream: &mut TcpStream, status: &str, content_type: &str, body: &[u8]) {
     let head = format!(
         "HTTP/1.1 {status}\r\n\
