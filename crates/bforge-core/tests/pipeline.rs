@@ -104,7 +104,10 @@ fn slow_consumer_overruns_do_not_stop_the_logger() {
     // The dissector end goes away, which is the worst case for a slow stage.
     drop(consumers);
 
-    let deadline = Instant::now() + Duration::from_secs(5);
+    // The deadline is generous because it is a wall clock: a loaded machine slowed a build
+    // enough to trip a five-second budget once, with no stall in the code. It still catches a
+    // real stall, which never recovers.
+    let deadline = Instant::now() + Duration::from_secs(30);
     let mut expected = 0u64;
     while expected < 500 {
         match logger.pop() {

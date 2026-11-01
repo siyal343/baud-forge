@@ -1,5 +1,9 @@
 # What is next
 
+> **Taking over this project?** Start at [`handoff/README.md`](handoff/README.md). That directory
+> maps the code, the conventions, the traps and the remaining work for an agent or a person who
+> is new to the tree.
+
 Written 1 November 2026. The tree is at `v0.7.0` plus the work since, all pushed and green
 (271 tests, CI 9/9): the standalone shell, geometry, session menu, field tree, GPU band, time
 seek, bit rails, stacked rows and playback. Releases are paused by the user, so `v0.8.0` is

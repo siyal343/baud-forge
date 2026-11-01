@@ -67,6 +67,12 @@ with no ports over an existing `.bflog`, and the window lands at its end. `bforg
 For frontend development, `cd ui && npm run dev` proxies the engine with hot reload
 ([`ui/README.md`](ui/README.md)).
 
+## Handoff
+
+If you are picking this project up — as a person or as an agent — read
+[`handoff/README.md`](handoff/README.md) first: state, architecture, conventions, build commands,
+remaining work, invariants and the traps that have already cost time.
+
 ## Platforms
 
 | Target | Triple | CI coverage |
