@@ -40,6 +40,7 @@ state through one contract (F1.7).
 | S8b assert fields | D-15 | done | a 6 s recording from the board decodes to 122 frames and passes 5 field, protocol and count checks |
 | S9 sockets | F1.2.7 (TCP, UDP, config) | done | simulator over loopback: tail decodes, record stores 60 frames, assert passes 3 of 3, no hardware |
 | S10 native packs | F3.4 (CCSDS/PUS, CSP, Modbus; MAVLink deferred) | done | 12 pack tests on hand-built fixtures; a CCSDS packet in a vault decodes and passes assert rules with no schema file |
+| S43 stacked rows | D-106 (two magnitudes at once) | done | v_batt_mv 8263..7336 above gyro_z 0.86..0.17, each with its own grid and name; a launch nonce stops the webview serving a stale bundle |
 | S42 bit rails | D-63 (bits instead of numbers) | done | `--plot obc.flags:bits,eps.channel:lane` draws an 8-bit rail and a state lane; chips carry the mode; the narrow tier scrolls instead of hiding the plot |
 | S41 time seek | D-68 (the scrubber speaks seconds) | done | `?t_ms=8000` resolved to record 5032 at 7 998 513 µs; the timeline reads "15.1 s recorded" and follows the growing recording |
 | S40 GPU plots | D-63 (band 3B on the GPU) | done | the band reports `webgl`, draws traces on a GPU canvas with a 2D overlay, and turns discrete fields into state lanes; canvas remains the fallback |
@@ -591,7 +592,21 @@ S42 notes:
 - Bit rails answer the question a flags word always raises: which bit, when.
 - A 640x480 window used to lose the plot band entirely; that tier scrolls now.
 
-Next action: stacked rows (D-106), or stop and release. Releases remain paused by the user. `serve` is the only interface it needs, so the
+S43 notes:
+
+- Rows are assigned in trace order and each keeps its own scale, grid and label; lanes and
+  rails stay in the shared strip because they have no magnitude.
+- An afternoon went to a false failure: two captures said "No numeric fields yet." while the
+  engine sent series every tick. The webview was serving a cached bundle; the navigation URL
+  now carries a per-launch nonce.
+- The diagnostic that found it (a footer counter of received SSE frames) is removed; the
+  lesson is in spec 0042.
+
+Band 3B is now complete: GPU traces, stacked rows with their own scales, state lanes, bit
+rails, a cursor across all of them, and a timeline in seconds.
+
+Next action: nothing on band 3B. Releases remain paused by the user; say release when the
+tree is where you want it. `serve` is the only interface it needs, so the
 work can be done in Edge with hot reload, and the Tauri shell wraps the same files
 afterwards. The engine has published the contract since S4; this is the first phase
 where a change to a panel can be seen without a desktop build.

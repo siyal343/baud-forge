@@ -166,6 +166,8 @@ export default function App() {
   const [bridge, setBridge] = createSignal<string | null>(null)
   // Which renderer the band got: WebGL when the machine has it, canvas otherwise.
   const [renderer, setRenderer] = createSignal<'webgl' | 'canvas'>('canvas')
+  // One row per measurement when a person wants two magnitudes read at once.
+  const [stackRows, setStackRows] = createSignal(false)
   const bytesOf = (text: string) =>
     text.replace(/0x/gi, '').replace(/[\s:,]/g, '').length / 2
   const bridges = () => feed.snapshot()?.bridges ?? []
@@ -288,6 +290,7 @@ export default function App() {
       )
     }
     const shared = params.get('at')
+    if (params.get('rows') === 'stack') setStackRows(true)
     const sharedBridge = params.get('bridge')
     if (sharedBridge !== null) setBridge(sharedBridge)
     // `?typed=1` opens on the typed form, which is also the only way to capture it
@@ -608,6 +611,15 @@ export default function App() {
         <section class="plot-band">
           <div class="stream-head">
             <h2>Telemetry</h2>
+            <button
+              type="button"
+              class="chip action"
+              classList={{ on: stackRows() }}
+              onClick={() => setStackRows(!stackRows())}
+              title="one row per measurement, each with its own scale"
+            >
+              {stackRows() ? 'rows: stacked' : 'rows: 1'}
+            </button>
             <span class="hint" title="which renderer the band is using">{renderer()}</span>
             <Show when={plotKeys().length > 0} fallback={<span class="hint">No numeric fields yet.</span>}>
               <select
@@ -618,7 +630,7 @@ export default function App() {
                 }}
                 aria-label="add a trace"
               >
-                <option value="">plot a field…</option>
+                <option value="">plot a field… ({plotKeys().length})</option>
                 <For each={plotKeys().filter((key) => !plottedKeys().some((entry) => entry.key === key))}>
                   {(key) => <option value={key}>{key}</option>}
                 </For>
@@ -684,7 +696,7 @@ export default function App() {
             </span>
           </div>
           <Show when={traces().length > 0} fallback={<span class="hint"></span>}>
-            <Telemetry series={traces()} onRenderer={setRenderer} />
+            <Telemetry series={traces()} stack={stackRows()} onRenderer={setRenderer} />
           </Show>
         </section>
       </div>

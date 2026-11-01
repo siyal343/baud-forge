@@ -23,6 +23,7 @@ export function createFeed() {
   // Batches the engine had to replace because this client was too far behind.
   const [missed, setMissed] = createSignal(0)
 
+
   const source = new EventSource(api('/api/events'))
 
   source.addEventListener('open', () => setLink('live'))
@@ -54,17 +55,22 @@ export function createFeed() {
   })
 
   source.addEventListener('series', (message) => {
-    const updates = JSON.parse((message as MessageEvent<string>).data) as SeriesUpdate[]
-    setLink('live')
-    setSeries((current) => {
-      const next = { ...current }
-      for (const update of updates) {
-        const key = `${update.port}.${update.field}`
-        const ring = (next[key] ?? []).concat(update.values)
-        next[key] = ring.length > SERIES_SAMPLES ? ring.slice(ring.length - SERIES_SAMPLES) : ring
-      }
-      return next
-    })
+    // A malformed frame is dropped rather than allowed to stop the feed.
+    try {
+      const parsed = JSON.parse((message as MessageEvent<string>).data) as SeriesUpdate[]
+      setLink('live')
+      setSeries((current) => {
+        const next = { ...current }
+        for (const update of parsed) {
+          const key = `${update.port}.${update.field}`
+          const ring = (next[key] ?? []).concat(update.values)
+          next[key] = ring.length > SERIES_SAMPLES ? ring.slice(ring.length - SERIES_SAMPLES) : ring
+        }
+        return next
+      })
+    } catch {
+      // A truncated or unknown frame is ignored; the next one corrects the picture.
+    }
   })
 
   source.addEventListener('sampled', (message) => {

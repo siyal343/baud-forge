@@ -102,6 +102,7 @@ body {
   padding: 1px 8px;
 }
 .chip.action:hover { color: var(--text); border-color: var(--dim); }
+.chip.action.on { color: var(--tx); border-color: var(--tx); }
 .chip.action.yield { color: var(--yield); border-color: var(--yield); }
 .chip.action:disabled { cursor: default; color: var(--dim); border-color: var(--line); }
 .chip.connecting { color: var(--yield); border-color: var(--yield); }
