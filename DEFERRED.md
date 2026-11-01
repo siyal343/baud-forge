@@ -107,7 +107,6 @@ The plan lives in [IMPLEMENTATION.md](IMPLEMENTATION.md), progress in
 | D-112 | Protobuf fields have no names | The wire carries field numbers and wire types, not names, so a protobuf row reads `field_7`. Applying a `.proto` needs a parser for it and a workspace setting that points at the file. | The first request to name protobuf fields | A capture shows the shape of a message but not the meaning of a field. |
 | D-111 | A reviewed vault has no schema | Review mode reads records as rows because the vault does not store the workspace configuration. Decoding a reviewed capture needs a sidecar or the original `.bforge.toml` beside it. | A sidecar written at record time | A review shows bytes, not fields. |
 | D-109 | Parquet is refused by name | FR-STO-02 lists Parquet. It needs a columnar writer and a compression codec as dependencies, and nobody has asked for the format; CSV and JSON Lines carry the same columns. | A request for Parquet from an analysis pipeline | A script that asks for Parquet gets an error that names the alternatives. |
-| D-110 | Export inherits the reader's per-record seek | Records are read one at a time, so a 285 740 record vault took 12.0 s as CSV. A sequential cursor would read header and payload in one pass (D-14). | The sequential cursor API | Long vaults export slower than the disk allows. |
 | D-107 | Rows are assigned in trace order | Stacked rows come out in the order traces were added, not grouped by unit or magnitude, and a row cannot be dragged to a different position or resized. | A row model the person can edit, once someone asks for it | Two traces of the same unit can end up in different rows. |
 | D-60 | The served page is a placeholder, not the six-band workbench | The page exists to prove that the contract reaches a screen with live numbers. The UI guide describes bands, panels and interaction that a single HTML file cannot carry honestly. | The SolidJS frontend from `specs/UI-UX-Guide.md` | The GUI surface matrix stays unmet for the bands; the session, ports and events are visible. |
 | D-58 | Modbus functions beyond coils and registers | 0x0F, 0x10 and the diagnostic functions have their own layouts and their own error cases. | Demand from a Modbus user | An uncommon function shows address, function and CRC only. |
@@ -146,6 +145,7 @@ The plan lives in [IMPLEMENTATION.md](IMPLEMENTATION.md), progress in
 | — | Live transmit rows for a forwarding bridge (was D-79) | `specs/0045` |
 | — | Vault picker and read-only review mode (was D-78) | `specs/0046` |
 | — | Schema-less protobuf decoding, the protobuf half of D-56 | `specs/0047` |
+| — | Sequential cursor for a whole-file pass, twice the export speed (was D-110) | `specs/0044` |
 | — | TCP, UDP and a device simulator in the config (F1.2.7) | `specs/0016` |
 | — | CCSDS with PUS, CSP and Modbus RTU (most of F3.4) | `specs/0017` |
 | — | The UI contract over loopback HTTP with server-sent events (F1.7.2) | `specs/0018` |

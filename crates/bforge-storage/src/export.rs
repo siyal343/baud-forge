@@ -73,26 +73,27 @@ pub fn export(
     }
     .map_err(io)?;
 
-    let total = reader.chunks();
-    let mut next = 0u64;
-    while next < total {
-        let batch = reader.window(next, 512)?;
-        if batch.is_empty() {
-            break;
+    // One forward pass: the reader's cursor moves with the file instead of seeking to every
+    // payload, which is what a window wants and a whole export does not.
+    let mut failure: Option<StorageError> = None;
+    reader.for_each(0, |record| {
+        let written = match format {
+            ExportFormat::PcapNg => write_pcapng_packet(out, record),
+            ExportFormat::Csv => out.write_all(csv_row(record).as_bytes()),
+            ExportFormat::JsonLines => out.write_all(json_line(record).as_bytes()),
+            ExportFormat::SaleaeCsv => out.write_all(saleae_row(record).as_bytes()),
+            ExportFormat::Parquet => unreachable!("refused above"),
+        };
+        if let Err(error) = written {
+            failure = Some(io(error));
+            return false;
         }
-        for record in &batch {
-            let written = match format {
-                ExportFormat::PcapNg => write_pcapng_packet(out, record),
-                ExportFormat::Csv => out.write_all(csv_row(record).as_bytes()),
-                ExportFormat::JsonLines => out.write_all(json_line(record).as_bytes()),
-                ExportFormat::SaleaeCsv => out.write_all(saleae_row(record).as_bytes()),
-                ExportFormat::Parquet => unreachable!("refused above"),
-            };
-            written.map_err(io)?;
-            report.records += 1;
-            report.payload_bytes += record.payload.len() as u64;
-        }
-        next += batch.len() as u64;
+        report.records += 1;
+        report.payload_bytes += record.payload.len() as u64;
+        true
+    })?;
+    if let Some(error) = failure {
+        return Err(error);
     }
 
     out.flush().map_err(io)?;

@@ -48,11 +48,15 @@ Three ways to reach it: the CLI, a route on the engine, and a control in the win
 
 A 30.8 MB vault, 285 740 records, 21.6 MB of payload:
 
-| Format | Time | Output |
-| --- | --- | --- |
-| csv | 12.0 s | 76.7 MB |
-| jsonl | 8.4 s | 103.4 MB |
-| pcapng | 5.8 s | 31.9 MB |
+| Format | Time, seeking | Time, sequential | Output |
+| --- | --- | --- | --- |
+| csv | 12.0 s | **5.5 s** | 76.7 MB |
+| jsonl | 8.4 s | **4.4 s** | 103.4 MB |
+| pcapng | 5.8 s | **3.4 s** | 31.9 MB |
+
+The second column is after `LogReader::for_each` replaced the window walk (D-110): the cursor
+moves forward with the file instead of seeking to each payload. Both runs produce
+byte-identical output, checked with `cmp` on all three formats.
 
 The PCAPNG output was checked with an independent parser, not only with its own test: one
 section, one interface, 285 740 packet blocks, a block walk that lands exactly on the file
@@ -91,8 +95,6 @@ Two runs against the live engine:
 
 ## Limits, recorded
 
-- Export walks the reader record by record, and the reader seeks per payload. A sequential
-  cursor would remove the seeks; see the deferred entry.
 - The route builds the body in memory. A capture larger than the server's memory would fail;
   chunked writing is the next step if that ever happens.
 - Timestamps come from the vault, so a capture recorded with a zero epoch exports times that

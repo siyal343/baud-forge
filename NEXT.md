@@ -26,9 +26,9 @@ the envelope (stx, length, sequence, system, component, message id, checksum) is
 message bodies come from the dialect. The next decoder is the envelope first, then the common
 message set.
 
-Export is done on all three paths (spec 0044): CLI, engine route, ribbon control. The only
-follow-up is a sequential cursor so a 285 740 record vault stops taking twelve seconds
-(D-110, D-68).
+Export is done on all three paths (spec 0044): CLI, engine route, ribbon control, and now in
+half the time, because a whole-file pass walks the file forward instead of seeking per payload
+(D-110 closed).
 
 The vault picker and review mode are done too (spec 0046): the window opens a finished `.bflog`
 read-only and lands at its end. A reviewed capture shows bytes rather than fields, because the

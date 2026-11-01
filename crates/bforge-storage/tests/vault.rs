@@ -372,3 +372,66 @@ fn a_time_seek_lands_on_the_first_record_at_or_after_it() {
     let _ = std::fs::remove_file(&path);
     let _ = std::fs::remove_file(bforge_storage::index_path(&path));
 }
+
+/// The sequential cursor: every record once, in order, with the right payload.
+#[test]
+fn a_forward_pass_reads_every_record_once() {
+    let path = std::env::temp_dir().join(format!("bforge-for-each-{}.bflog", std::process::id()));
+    let _ = std::fs::remove_file(&path);
+    let mut writer = LogWriter::create(&path, LogHeader::default()).unwrap();
+    let payloads: Vec<Vec<u8>> = (0..50u8)
+        .map(|index| vec![index; (index as usize % 7) + 1])
+        .collect();
+    for (index, payload) in payloads.iter().enumerate() {
+        writer
+            .append(
+                &RawChunk {
+                    seq_id: index as u64,
+                    timestamp_ns: 1_000 * (index as u64 + 1),
+                    port_id: (index % 2) as u16,
+                    direction: Direction::Rx,
+                    line_state: PinStateFlags::default(),
+                    payload_offset: 0,
+                    payload_len: payload.len() as u32,
+                },
+                payload,
+            )
+            .unwrap();
+    }
+    writer.seal().unwrap();
+
+    let mut reader = LogReader::open(&path).unwrap();
+    let mut seen = Vec::new();
+    let visited = reader
+        .for_each(0, |record| {
+            seen.push((record.chunk.seq_id, record.payload.clone()));
+            true
+        })
+        .unwrap();
+    assert_eq!(visited, 50);
+    assert_eq!(seen.len(), 50);
+    for (index, (seq, payload)) in seen.iter().enumerate() {
+        assert_eq!(*seq, index as u64);
+        assert_eq!(*payload, payloads[index], "payload for record {index}");
+    }
+
+    // A visitor that stops ends the pass, and the offset it was given points at the payload.
+    let mut first_offset = None;
+    let visited = reader
+        .for_each(10, |record| {
+            assert_eq!(record.chunk.seq_id, 10);
+            first_offset = Some(record.chunk.payload_offset);
+            false
+        })
+        .unwrap();
+    assert_eq!(visited, 1);
+    let mut file = std::fs::File::open(&path).unwrap();
+    let mut byte = [0u8; 1];
+    std::io::Seek::seek(&mut file, std::io::SeekFrom::Start(first_offset.unwrap())).unwrap();
+    std::io::Read::read_exact(&mut file, &mut byte).unwrap();
+    assert_eq!(byte[0], payloads[10][0]);
+
+    // Past the end is an empty pass, not an error.
+    assert_eq!(reader.for_each(9_999, |_| true).unwrap(), 0);
+    let _ = std::fs::remove_file(&path);
+}
