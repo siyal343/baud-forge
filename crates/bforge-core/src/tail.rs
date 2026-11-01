@@ -95,8 +95,7 @@ pub struct FieldRow {
 #[derive(Debug, Clone, PartialEq, serde::Serialize)]
 pub struct TailRow {
     pub port: String,
-    /// Which way the bytes travelled. A live session sees receive only; a bridge
-    /// writes the other direction and the vault records both.
+    /// Which way the bytes travelled. A bridge adds a transmit row for what it forwards.
     pub direction: Direction,
     pub timestamp_us: u64,
     /// Time since the previous frame on this port.
@@ -259,6 +258,21 @@ impl Tail {
     }
 }
 
+/// A row for bytes the engine itself sent, such as a bridge forwarding to the other port.
+///
+/// It carries no fields and no rules: the engine wrote the bytes, so there is nothing to
+/// decode and no delta to report against the port's own receive stream.
+pub fn sent_row(port: &str, timestamp_ns: u64, bytes: &[u8]) -> TailRow {
+    build_row(
+        port,
+        Direction::Tx,
+        timestamp_ns,
+        None,
+        None,
+        bytes.to_vec(),
+    )
+}
+
 /// One row, shared by the live tail and the vault decoder.
 fn build_row(
     port: &str,
@@ -388,6 +402,30 @@ pub fn decode_window(
             row.direction = record.chunk.direction;
             rows.push(row);
         }
+    }
+    Ok(rows)
+}
+
+/// A window with no workspace behind it: every record is one row, undecoded.
+///
+/// Reviewing a vault without its `.bforge.toml` still shows the traffic, because the
+/// vault stores one framed chunk per record. Nothing is guessed about framing or fields.
+pub fn raw_window(
+    reader: &mut bforge_storage::LogReader,
+    at: u64,
+    count: usize,
+) -> Result<Vec<TailRow>, DecodeError> {
+    let mut rows = Vec::new();
+    for record in reader.window(at, count)? {
+        let port = format!("port {}", record.chunk.port_id);
+        rows.push(build_row(
+            &port,
+            record.chunk.direction,
+            record.chunk.timestamp_ns,
+            None,
+            None,
+            record.payload.clone(),
+        ));
     }
     Ok(rows)
 }

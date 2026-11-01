@@ -317,6 +317,42 @@ impl Session {
         Ok(session)
     }
 
+    /// A session with no ports and no writer, for reading a finished vault.
+    ///
+    /// The engine still serves the contract and the frame window; nothing records, so a
+    /// review cannot damage the file it opens. The vault itself is registered with the
+    /// server, not with this session.
+    pub fn review() -> Self {
+        Self {
+            mode: "review",
+            ports: Vec::new(),
+            writer: None,
+            vault: String::new(),
+            started: Instant::now(),
+            started_epoch_ns: 0,
+            chunks: 0,
+            payload_bytes: 0,
+            elf: None,
+            bus: EventBus::new(),
+            last_stats: Instant::now(),
+            last_chunks: 0,
+            control: None,
+            yield_requests: Vec::new(),
+            streams: Vec::new(),
+            faults: std::sync::Mutex::new(std::collections::HashMap::new()),
+            image: None,
+            bridges: Vec::new(),
+            outboxes: Vec::new(),
+            script: None,
+            rx_script: None,
+            encoders: Vec::new(),
+            frames: std::collections::VecDeque::new(),
+            frames_dropped: 0,
+            chunks_received_dropped: 0,
+            series: SeriesSet::new(),
+        }
+    }
+
     /// Subscribe to the event stream before pumping.
     pub fn subscribe(&self) -> std::sync::mpsc::Receiver<UiEvent> {
         self.bus.subscribe()
@@ -450,6 +486,14 @@ impl Session {
     }
 
     /// Take the frames completed since the last call, oldest first.
+    fn push_frame(&mut self, row: TailRow) {
+        if self.frames.len() >= FRAME_QUEUE {
+            self.frames.pop_front();
+            self.frames_dropped += 1;
+        }
+        self.frames.push_back(row);
+    }
+
     pub fn take_frames(&mut self) -> Vec<TailRow> {
         self.frames.drain(..).collect()
     }
@@ -620,11 +664,7 @@ impl Session {
                             row.symbols = symbolize_for(image, &row);
                         }
                         self.series.sample(&row);
-                        if self.frames.len() >= FRAME_QUEUE {
-                            self.frames.pop_front();
-                            self.frames_dropped += 1;
-                        }
-                        self.frames.push_back(row);
+                        self.push_frame(row);
                     }
                 }
                 self.chunks += 1;
@@ -659,6 +699,10 @@ impl Session {
     }
 
     fn publish_stats_if_due(&mut self) {
+        // A review has no ports and no writer, so a stats event every interval is noise.
+        if self.ports.is_empty() && self.writer.is_none() {
+            return;
+        }
         let now = Instant::now();
         if now.duration_since(self.last_stats) < STATS_INTERVAL {
             return;
@@ -1039,6 +1083,10 @@ impl Session {
                     .posted
                     .fetch_add(len, std::sync::atomic::Ordering::Relaxed);
                 self.bridges[bridge_index].view.forwarded += len;
+                // The workbench shows what left the engine, not only what arrived: a
+                // bridged session that looked receive-only was D-79.
+                let row = crate::tail::sent_row(&self.ports[to].info.id, now_ns, &bytes);
+                self.push_frame(row);
                 // The vault records what the engine was told to send, so a bridged
                 // session is auditable; `failed` says how much a transport refused.
                 if let Some(writer) = self.writer.as_mut() {

@@ -19,31 +19,28 @@ record: `STATUS.md` holds the state, `DEFERRED.md` holds the gaps with reasons.
 
 ## The three things worth doing next, in order
 
-### 1. Live transmit rows (D-79) — the last honesty gap in the bus view
+### 1. Another decoder: protobuf, MAVLink or defmt
 
-A bridge's writes are recorded as transmit and visible in a scrubbed window, but the live
-stream shows only what the reader received. On a tap, half the traffic is missing until you
-stop and scrub. The fix is to feed forwarded bytes through a transmit stream so they appear as
-`Tx` rows as they leave.
-
-Estimate: half a session.
-
-### 2. A vault picker in the window (D-78)
-
-The shell records to a path it chose. Open any existing vault, or choose where to record, and
-the window becomes a reviewer for yesterday's capture, not only a monitor.
-
-Estimate: half a session.
+The SRS names all three. Each is one dependency and one pack behind the existing `Dissector`
+seam, so the cost is the schema: a `.proto` file, a dialect XML, or the defmt table from the
+ELF.
 
 Export is done on all three paths (spec 0044): CLI, engine route, ribbon control. The only
 follow-up is a sequential cursor so a 285 740 record vault stops taking twelve seconds
 (D-110, D-68).
 
+The vault picker and review mode are done too (spec 0046): the window opens a finished `.bflog`
+read-only and lands at its end. A reviewed capture shows bytes rather than fields, because the
+vault does not carry its workspace (D-111).
+
+Live transmit rows are done too (spec 0045): a forwarding bridge's writes appear as `tx` rows
+as they leave. A typed send from the forge does not, which is the small next step if anyone
+notices.
+
 ## Then, by value
 
 | Item | Why | Estimate |
 | --- | --- | --- |
-| Another decoder: protobuf, MAVLink, or defmt | The SRS names all three; each is one dependency and one pack behind the existing `Dissector` seam. Pick by whoever asks | 1 session each |
 | Hardware triggers (DTR/RTS pulses, the ribbon pin matrix) | Milestone 4, and the guide's band 1 promises it | 1 session |
 | Session diff | Milestone 4; compare two vaults by decoded field | 1–2 sessions |
 | Signed builds (SignPath Foundation) | Free for OSI projects; the pipeline is ready, the application is a human step (D-95) | a form, then a CI change |

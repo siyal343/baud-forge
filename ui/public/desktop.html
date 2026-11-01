@@ -84,6 +84,8 @@
       }
       li button:hover { border-color: var(--tx); }
       .status { margin-top: 16px; color: var(--dim); min-height: 1.4em; }
+      .vault-row { margin-top: 12px; justify-content: space-between; }
+      .vault-row button { padding: 4px 10px; font-size: 12px; }
       .status.err { color: var(--fault); }
       .status.ok { color: var(--ok); }
       footer { margin-top: 18px; color: var(--dim); font-size: 11px; }
@@ -106,6 +108,12 @@
         <div class="row">
           <button id="open" type="button">Open workspace…</button>
           <button id="demo" type="button">Try a demo</button>
+          <button id="review" type="button">Open a vault…</button>
+        </div>
+        <div class="row vault-row">
+          <span class="path" id="vault">records to a temporary file</span>
+          <button id="pickVault" type="button">Vault…</button>
+          <button id="clearVault" type="button">Temporary</button>
         </div>
         <div class="status" id="status"></div>
         <ul id="recent"></ul>
@@ -127,6 +135,15 @@
         status.className = 'status' + (kind ? ' ' + kind : '');
       }
 
+      let chosenVault = null;
+
+      function showVault() {
+        const label = document.getElementById('vault');
+        label.textContent = chosenVault ? chosenVault : 'records to a temporary file';
+        label.style.color = chosenVault ? 'var(--text)' : '';
+        document.getElementById('clearVault').disabled = !chosenVault;
+      }
+
       async function start(path) {
         if (!invoke) {
           say('This page needs the desktop application.', 'err');
@@ -134,7 +151,7 @@
         }
         say('starting ' + path + ' …');
         try {
-          const base = await invoke('start_workspace', { path });
+          const base = await invoke('start_workspace', { path, vault: chosenVault });
           say('engine on ' + base, 'ok');
           // The workbench is bundled with the app; the engine is only its API.
           window.location.replace('index.html?api=' + encodeURIComponent(base));
@@ -187,6 +204,37 @@
           say(String(error), 'err');
         }
       };
+
+      document.getElementById('pickVault').onclick = async () => {
+        try {
+          const picked = await invoke('pick_vault', { suggest: 'session.bflog' });
+          if (picked) {
+            chosenVault = picked;
+            showVault();
+          }
+        } catch (error) {
+          say(String(error), 'err');
+        }
+      };
+
+      document.getElementById('clearVault').onclick = () => {
+        chosenVault = null;
+        showVault();
+      };
+
+      document.getElementById('review').onclick = async () => {
+        try {
+          const path = await invoke('pick_vault', { suggest: 'session.bflog' });
+          if (!path) return;
+          say('opening ' + path + ' …');
+          const base = await invoke('start_review', { path });
+          window.location.replace('index.html?api=' + encodeURIComponent(base) + '&review=1');
+        } catch (error) {
+          say(String(error), 'err');
+        }
+      };
+
+      showVault();
 
       const shellWindow = window.__TAURI__?.window?.getCurrentWindow?.();
       document.getElementById('min').onclick = () => shellWindow?.minimize();

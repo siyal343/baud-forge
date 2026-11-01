@@ -1009,6 +1009,16 @@ fn vault_frames(stream: &mut TcpStream, shared: &Arc<Shared>, target: &str) {
 
     let records = reader.chunks();
     let mut rows = Vec::new();
+    if source.ports.is_empty() {
+        // A review has no workspace, so a record is a row and nothing is decoded.
+        match crate::tail::raw_window(&mut reader, at, count) {
+            Ok(decoded) => rows = decoded,
+            Err(error) => {
+                let body = format!("{{\"error\":\"{error}\"}}");
+                return respond(stream, "409 Conflict", "application/json", body.as_bytes());
+            }
+        }
+    }
     for port in &source.ports {
         match crate::tail::decode_window(&mut reader, port, at, count) {
             Ok(decoded) => rows.extend(decoded),

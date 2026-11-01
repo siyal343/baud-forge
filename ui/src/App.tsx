@@ -337,6 +337,7 @@ export default function App() {
     if (params.get('rows') === 'stack') setStackRows(true)
     const autoPlay = params.get('play') === '1'
     const autoExport = params.get('export')
+    const reviewing = params.get('review') === '1'
     const sharedBridge = params.get('bridge')
     if (sharedBridge !== null) setBridge(sharedBridge)
     // `?typed=1` opens on the typed form, which is also the only way to capture it
@@ -350,6 +351,25 @@ export default function App() {
       if (at() === null) void refreshSpan()
     }, 3000)
     onCleanup(() => clearInterval(timer))
+
+    if (reviewing) {
+      // A finished recording has nowhere to stream to, so open at its end. The duration
+      // comes from the vault itself: the three-second poll would land at a stale end.
+      void (async () => {
+        try {
+          const response = await fetch(api('/api/vault'))
+          if (!response.ok) return
+          const body = (await response.json()) as { duration_ms?: number }
+          const end = body.duration_ms ?? 0
+          if (end <= 0) return
+          setSpanMs(end)
+          setAt(end)
+          void loadWindow(end)
+        } catch {
+          // A review of a damaged vault keeps the timeline at zero.
+        }
+      })()
+    }
 
     if (autoExport) {
       // Record for a moment, then save: `--query "export=csv"` makes one launch a file.

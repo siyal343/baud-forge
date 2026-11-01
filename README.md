@@ -57,6 +57,10 @@ cargo build -p bforge-gui --release
 bforge-gui examples/esp32-demo.toml --vault demo.bflog
 ```
 
+The picker page can also open a finished vault read-only: **Open a vault…** starts an engine
+with no ports over an existing `.bflog`, and the window lands at its end. `bforge-gui --review
+--vault capture.bflog` does the same from a shortcut.
+
 For frontend development, `cd ui && npm run dev` proxies the engine with hot reload
 ([`ui/README.md`](ui/README.md)).
 

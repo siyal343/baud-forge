@@ -983,3 +983,58 @@ fn a_vault_exports_over_http_with_a_filename() {
     client.join().expect("client");
     assert!(stats.requests >= 3, "{stats:?}");
 }
+
+/// Review mode: a vault with no workspace beside it still reads as rows.
+#[test]
+fn a_vault_without_a_workspace_reads_as_records() {
+    let path = std::env::temp_dir().join(format!("bforge-review-{}.bflog", std::process::id()));
+    let _ = std::fs::remove_file(&path);
+    let mut writer =
+        bforge_storage::LogWriter::create(&path, bforge_storage::LogHeader::default()).unwrap();
+    for index in 0..5u64 {
+        writer
+            .append(
+                &bforge_storage::RawChunk {
+                    seq_id: index,
+                    timestamp_ns: 1_000_000 * (index + 1),
+                    port_id: 0,
+                    direction: bforge_hal::Direction::Rx,
+                    line_state: bforge_hal::PinStateFlags::default(),
+                    payload_offset: 0,
+                    payload_len: 3,
+                },
+                b"abc",
+            )
+            .unwrap();
+    }
+    writer.seal().unwrap();
+
+    let server = Server::bind("127.0.0.1:0".parse().unwrap())
+        .expect("bind")
+        .with_vault(bforge_core::serve::VaultSource {
+            path: path.clone(),
+            ports: Vec::new(),
+        });
+    let address = server.local_addr().unwrap().to_string();
+    let session = Session::review();
+
+    let client = std::thread::spawn(move || {
+        std::thread::sleep(Duration::from_millis(300));
+        let (status, body) = get(&address, "/api/vault/frames?at=0&count=10");
+        assert!(status.contains("200"), "{status} {body}");
+        assert!(body.contains("\"port\":\"port 0\""), "{body}");
+        assert!(body.contains("\"len\":3"), "{body}");
+        assert!(body.contains("\"hex\":\"61 62 63\""), "{body}");
+        assert!(
+            body.contains("\"fields\":[]"),
+            "nothing is decoded without a workspace: {body}"
+        );
+        let _ = std::fs::remove_file(&path);
+    });
+
+    let stats = server
+        .run(session, Some(Duration::from_secs(2)))
+        .expect("serve");
+    client.join().expect("client");
+    assert!(stats.requests >= 1, "{stats:?}");
+}

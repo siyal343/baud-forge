@@ -125,6 +125,24 @@ fn a_forwarding_bridge_carries_bytes_both_ways() {
         "{:?}",
         snapshot.bridges[0]
     );
+
+    // D-79: what the bridge wrote is in the live stream, not only in the vault.
+    let frames = session.take_frames();
+    let sent: Vec<_> = frames
+        .iter()
+        .filter(|row| row.direction == bforge_hal::Direction::Tx)
+        .collect();
+    assert!(
+        !sent.is_empty(),
+        "a transmit row per forwarded chunk: {frames:?}"
+    );
+    let first = sent[0];
+    assert!(
+        first.port == "obc" || first.port == "eps",
+        "the row names the port the bytes left through: {first:?}"
+    );
+    assert!(first.len > 0, "{first:?}");
+    assert!(first.hex.contains(' '), "bytes as hex: {first:?}");
     session.seal().expect("seal");
 }
 

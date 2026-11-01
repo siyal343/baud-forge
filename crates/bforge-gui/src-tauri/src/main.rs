@@ -18,7 +18,8 @@ use std::sync::{Arc, Mutex};
 struct Running {
     port: u16,
     stop: Arc<AtomicBool>,
-    workspace: PathBuf,
+    /// `None` in review mode, where an existing vault is read and nothing records.
+    workspace: Option<PathBuf>,
     vault: PathBuf,
 }
 
@@ -193,7 +194,7 @@ fn remember(path: &Path) {
 }
 
 /// Start a session from a workspace, and return the URL it serves.
-fn start(app: &tauri::AppHandle, path: &Path) -> Result<String, String> {
+fn start(app: &tauri::AppHandle, path: &Path, vault: Option<PathBuf>) -> Result<String, String> {
     let engine = app.state::<Engine>();
     engine.stop();
 
@@ -201,7 +202,7 @@ fn start(app: &tauri::AppHandle, path: &Path) -> Result<String, String> {
         std::fs::read_to_string(path).map_err(|error| format!("{}: {error}", path.display()))?;
     let config: ProjectConfig =
         toml::from_str(&text).map_err(|error| format!("{}: {error}", path.display()))?;
-    let vault = default_vault();
+    let vault = vault.unwrap_or_else(default_vault);
 
     let ports = session_ports_from_config(&config, &[]).map_err(|error| error.to_string())?;
     let mut session = Session::start(ports, Some(&vault), config.workspace.elf_path.clone())
@@ -252,8 +253,8 @@ fn start(app: &tauri::AppHandle, path: &Path) -> Result<String, String> {
     *engine.running.lock().unwrap() = Some(Running {
         port,
         stop,
-        workspace: path.to_path_buf(),
-        vault: vault.clone(),
+        workspace: Some(path.to_path_buf()),
+        vault,
     });
     remember(path);
     Ok(format!("http://127.0.0.1:{port}"))
@@ -299,8 +300,65 @@ fn demo_workspace(app: tauri::AppHandle) -> Result<String, String> {
 }
 
 #[tauri::command]
-fn start_workspace(app: tauri::AppHandle, path: String) -> Result<String, String> {
-    start(&app, Path::new(&path))
+fn start_workspace(
+    app: tauri::AppHandle,
+    path: String,
+    vault: Option<String>,
+) -> Result<String, String> {
+    start(&app, Path::new(&path), vault.map(PathBuf::from))
+}
+
+/// Choose where the next session records. The name comes from the workspace.
+#[tauri::command]
+fn pick_vault(suggest: String) -> Option<String> {
+    rfd::FileDialog::new()
+        .add_filter("BaudForge vault", &["bflog"])
+        .set_title("Where should this session record?")
+        .set_file_name(&suggest)
+        .save_file()
+        .map(|path| path.display().to_string())
+}
+
+/// Open a recorded vault to read it: no ports, no recording, the file is not written.
+///
+/// The session is started without a writer, so review cannot damage the file it opens.
+#[tauri::command]
+fn start_review(app: tauri::AppHandle, path: String) -> Result<String, String> {
+    let vault = PathBuf::from(&path);
+    bforge_storage::LogReader::open(&vault).map_err(|error| format!("{}: {error}", path))?;
+
+    let engine = app.state::<Engine>();
+    engine.stop();
+
+    let session = Session::review();
+    let server = Server::bind("127.0.0.1:0".parse().expect("an address"))
+        .map_err(|error| error.to_string())?;
+    let port = server
+        .local_addr()
+        .map_err(|error| error.to_string())?
+        .port();
+    let server = match ui_directory() {
+        Some(directory) => server.with_ui(directory),
+        None => server,
+    };
+    let server = server.with_vault(VaultSource {
+        path: vault.clone(),
+        ports: Vec::new(),
+    });
+    let stop = server.stop_handle();
+    std::thread::spawn(move || {
+        if let Err(error) = server.run(session, None) {
+            eprintln!("bforge-gui: the review engine stopped: {error}");
+        }
+    });
+
+    *engine.running.lock().unwrap() = Some(Running {
+        port,
+        stop,
+        workspace: None,
+        vault,
+    });
+    Ok(format!("http://127.0.0.1:{port}"))
 }
 
 /// Load the bundled workbench, pointed at an engine and optionally at traces.
@@ -395,7 +453,11 @@ fn engine_state(app: tauri::AppHandle) -> Option<String> {
             format!(
                 "http://127.0.0.1:{}/ {}",
                 running.port,
-                running.workspace.display()
+                running
+                    .workspace
+                    .as_ref()
+                    .map(|path| path.display().to_string())
+                    .unwrap_or_else(|| "review".to_string())
             )
         })
 }
@@ -405,6 +467,8 @@ fn main() {
         .manage(Engine::default())
         .invoke_handler(tauri::generate_handler![
             pick_workspace,
+            pick_vault,
+            start_review,
             recent_workspaces,
             demo_workspace,
             start_workspace,
@@ -423,6 +487,8 @@ fn main() {
             let mut rows: Option<String> = None;
             let mut query: Option<String> = None;
             let mut workspace: Option<PathBuf> = None;
+            let mut vault_arg: Option<PathBuf> = None;
+            let mut review = false;
             while let Some(argument) = args.next() {
                 let text = argument.to_string_lossy().to_string();
                 if text == "--plot" {
@@ -431,13 +497,39 @@ fn main() {
                     rows = args.next().map(|value| value.to_string_lossy().to_string());
                 } else if text == "--query" {
                     query = args.next().map(|value| value.to_string_lossy().to_string());
+                } else if text == "--vault" {
+                    vault_arg = args.next().map(PathBuf::from);
+                } else if text == "--review" {
+                    review = true;
                 } else if !text.starts_with("--") {
                     workspace = Some(PathBuf::from(argument));
                 }
             }
+            // `--review` with a vault, or a vault that is not a workspace, opens read-only.
+            let reviewing = vault_arg
+                .clone()
+                .filter(|path| review || !path.extension().is_some_and(|kind| kind == "toml"));
+            if let Some(vault) = reviewing {
+                let handle = app.handle().clone();
+                match start_review(handle, vault.display().to_string()) {
+                    Ok(base) => {
+                        if let Some(window) = app.get_webview_window("main") {
+                            let _ = open_workbench(
+                                &window,
+                                &base,
+                                plot.as_deref(),
+                                rows.as_deref(),
+                                Some("review=1"),
+                            );
+                        }
+                    }
+                    Err(error) => eprintln!("bforge-gui: {error}"),
+                }
+                return Ok(());
+            }
             if let Some(path) = workspace {
                 let handle = app.handle().clone();
-                match start(&handle, &path) {
+                match start(&handle, &path, vault_arg) {
                     Ok(base) => {
                         if let Some(window) = app.get_webview_window("main") {
                             let _ = open_workbench(
