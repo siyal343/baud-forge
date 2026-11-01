@@ -124,6 +124,10 @@ fn serve(
     target: &dyn ControlTarget,
     request_timeout: Duration,
 ) -> std::io::Result<()> {
+    // A socket accepted from a non-blocking listener inherits that mode on macOS and the
+    // BSDs (Linux does not), so the first read would return `WouldBlock` and the caller would
+    // get an empty reply. This is what made the control test fail on macos-aarch64 only.
+    stream.set_nonblocking(false)?;
     stream.set_read_timeout(Some(request_timeout))?;
     stream.set_write_timeout(Some(request_timeout))?;
 

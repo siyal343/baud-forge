@@ -12,6 +12,7 @@
 //! and full crash recovery are F1.3.4, F1.3.5 and F1.3.7. The reader builds its
 //! sparse index in memory on open, at one entry per 1024 chunks.
 
+pub mod export;
 pub mod format;
 pub mod index;
 pub mod reader;
@@ -20,6 +21,7 @@ pub mod writer;
 use bforge_hal::{Direction, PinStateFlags};
 use serde::{Deserialize, Serialize};
 
+pub use export::{ExportReport, FORMAT_NAMES, export, format_extension, format_from_name};
 pub use format::LogHeader;
 pub use format::{HEADER_LEN, INDEX_STRIDE, MAGIC, RECORD_HEADER_LEN, SEGMENT_LEN};
 pub use index::{INDEX_MAGIC, index_path};

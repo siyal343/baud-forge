@@ -32,6 +32,8 @@ Commands:
          [--port <id>]... [--duration 5s] [--fields] [--json]
   assert <vault> -r <rules>     Check a vault against a TOML rule file
          [-c <workspace> --port <id>] [--json]
+  export <vault> --format <f>   Write the vault as csv, jsonl, saleae or pcapng
+         [--out <file>]
   vault info <vault>            Report records, bytes, index source, damage
   vault repair <vault>          Truncate a killed session to its last record
   yield -c <file> --port <id>   Release the port so a flash tool can use it
@@ -68,6 +70,7 @@ fn main() -> ExitCode {
         Some("serve") => serve(&args[1..]),
         Some("tail") => tail(&args[1..]),
         Some("assert") => assert_vault(&args[1..]),
+        Some("export") => export_vault(&args[1..]),
         Some("vault") => vault(&args[1..]),
         Some("yield") => yield_port(&args[1..]),
         Some(other) => usage_error(&format!("unknown command `{other}`")),
@@ -734,6 +737,57 @@ fn assert_vault(args: &[String]) -> ExitCode {
         ExitCode::SUCCESS
     } else {
         ExitCode::FAILURE
+    }
+}
+
+fn export_vault(args: &[String]) -> ExitCode {
+    let mut args = Args::new(args);
+    let Some(path) = args.positional() else {
+        return usage_error("export needs a vault file");
+    };
+    let format_name = args.value("--format").unwrap_or_else(|| "csv".to_string());
+    let Some(format) = bforge_storage::format_from_name(&format_name) else {
+        return usage_error(&format!(
+            "unknown format `{format_name}`; use {}",
+            bforge_storage::FORMAT_NAMES
+        ));
+    };
+    let out_path = match args.value("--out") {
+        Some(out) => std::path::PathBuf::from(out),
+        None => {
+            std::path::PathBuf::from(&path).with_extension(bforge_storage::format_extension(format))
+        }
+    };
+
+    let mut reader = match LogReader::open(&path) {
+        Ok(reader) => reader,
+        Err(error) => {
+            eprintln!("error: {path}: {error}");
+            return ExitCode::FAILURE;
+        }
+    };
+    let mut file = match std::fs::File::create(&out_path) {
+        Ok(file) => file,
+        Err(error) => {
+            eprintln!("error: {}: {error}", out_path.display());
+            return ExitCode::FAILURE;
+        }
+    };
+    match bforge_storage::export(&mut reader, format, &mut file) {
+        Ok(report) => {
+            println!(
+                "{}: {} records, {} payload bytes to {} ({format_name})",
+                path,
+                report.records,
+                report.payload_bytes,
+                out_path.display()
+            );
+            ExitCode::SUCCESS
+        }
+        Err(error) => {
+            eprintln!("error: {path}: {error}");
+            ExitCode::FAILURE
+        }
     }
 }
 

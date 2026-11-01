@@ -19,19 +19,11 @@ record: `STATUS.md` holds the state, `DEFERRED.md` holds the gaps with reasons.
 
 ## The three things worth doing next, in order
 
-### 1. Export (FR-STO-02) — the largest unmet requirement
+### 1. Export (FR-STO-02) — done for the CLI, missing from the window
 
-Nothing in the project exports a vault. The SRS asks for **PCAPNG, CSV, Parquet, JSON Lines and
-Saleae CSV**, and `ExportFormat` already exists as an enum in `bforge-storage` with no
-implementation behind it. This is the biggest hole a user would notice: a capture that cannot
-leave the tool.
-
-Plan: `bforge export <vault> --format csv|jsonl|pcapng|saleae --out <file>` and a matching
-route (`GET /api/vault/export?format=csv`) so the window can offer it. CSV and JSON Lines first
-(an hour each), then Saleae CSV, then PCAPNG (a link type and per-record framing), Parquet last
-(a real dependency, and the least asked for).
-
-Estimate: 1–2 sessions.
+`bforge export` writes CSV, JSON Lines, Saleae CSV and PCAPNG (spec 0044, six tests, measured
+on a 285 740 record vault). What remains: an export route on the server and a button in the
+window (D-108), and a sequential cursor so the CLI stops seeking per record (D-110, D-68).
 
 ### 2. Live transmit rows (D-79) — the last honesty gap in the bus view
 

@@ -11,9 +11,9 @@ errors, delays and truncation into a live link.
 
 Binary name: `bforge`.
 
-## Status: 0.5.2, usable today
+## Status: 0.8.0, usable today
 
-Ten releases in, and a stranger can install it: the Windows installer is on the
+Thirteen releases in, and a stranger can install it: the Windows installer is on the
 [releases page](https://github.com/siyal343/baud-forge/releases/latest), every release
 carries `SHA256SUMS.txt`, and the command line runs on Windows, macOS and Linux. What a
 person cannot do yet, with reasons: [`DEFERRED.md`](DEFERRED.md). Current state and
@@ -27,6 +27,8 @@ What works today:
 
 - **Record, replay, tail, assert, yield, vault repair** on serial ports (USB
   identity or device path) and on TCP client, TCP server and UDP.
+- **Export** a vault as CSV, JSON Lines, Saleae CSV or PCAPNG for Wireshark:
+  `bforge export loop.bflog --format pcapng`.
 - **Six framing modes**: delimiter, COBS, SLIP, Intel HEX, sync word plus length,
   idle gap. Checksums CRC-8, CRC-16/CCITT-FALSE and CRC-32C.
 - **Dissection** with a C header parser (packed structs, bitfields, enums, arrays,
@@ -38,8 +40,9 @@ What works today:
   instruction budget, so a fault can depend on the bytes (`examples/flip-last-byte.lua`).
 - **Bridges**: a passive tap or an inline forward between two ports.
 - **A workbench** in the browser or in a window: live stream, decoded fields with
-  field-to-byte highlighting, a plot, a scrubber over the vault, the forge, the
-  fault row and a paired bus view.
+  field-to-byte highlighting, a WebGL telemetry band with stacked rows, state lanes
+  and bit rails, a scrubber by time with playback, the forge, the fault row and a
+  paired bus view.
 
 ![The workbench](docs/screenshots/workbench.png)
 
