@@ -10,13 +10,13 @@
     "windows": [
       {
         "title": "BaudForge",
-        "width": 1440,
-        "height": 900,
-        "minWidth": 640,
-        "minHeight": 480,
+        "width": 1200,
+        "height": 760,
+        "minWidth": 800,
+        "minHeight": 540,
         "url": "desktop.html",
-        "decorations": false,
-        "titleBarStyle": "Overlay"
+        "decorations": true,
+        "resizable": true
       }
     ],
     "security": {

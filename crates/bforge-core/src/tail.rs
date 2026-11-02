@@ -14,6 +14,7 @@ use bforge_dissect::{DecodedField, DissectorIr, cheader, exec};
 use bforge_framer::{ByteMachine, HeaderLength, IdleGap, LengthWidth, machine_for};
 use bforge_hal::Direction;
 use std::collections::HashMap;
+use std::path::{Path, PathBuf};
 use std::sync::Arc;
 use std::time::{Duration, Instant};
 
@@ -430,6 +431,44 @@ pub fn raw_window(
     Ok(rows)
 }
 
+/// Read a file path, checking the given path, exe-relative paths, and workspace parent paths.
+pub fn read_dissector_file(file: &str) -> Result<String, TailError> {
+    let path = Path::new(file);
+    if path.is_file() {
+        return std::fs::read_to_string(path)
+            .map_err(|error| TailError::Settings(format!("cannot read {file}: {error}")));
+    }
+
+    // Try resolving relative to current executable directory ancestors
+    if let Ok(exe) = std::env::current_exe() {
+        if let Some(dir) = exe.parent() {
+            let candidates = [
+                dir.join(file),
+                dir.join("../../").join(file),
+                dir.join("../../../").join(file),
+            ];
+            for candidate in candidates {
+                if candidate.is_file() {
+                    return std::fs::read_to_string(&candidate).map_err(|error| {
+                        TailError::Settings(format!("cannot read {}: {error}", candidate.display()))
+                    });
+                }
+            }
+        }
+    }
+
+    // Try resolving relative to CARGO_MANIFEST_DIR (dev / test mode)
+    let manifest_candidate = PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../../").join(file);
+    if manifest_candidate.is_file() {
+        return std::fs::read_to_string(&manifest_candidate).map_err(|error| {
+            TailError::Settings(format!("cannot read {}: {error}", manifest_candidate.display()))
+        });
+    }
+
+    std::fs::read_to_string(path)
+        .map_err(|error| TailError::Settings(format!("cannot read {file}: {error}")))
+}
+
 /// Compile a port's C header into the IR, for decoding and for encoding.
 pub fn c_header_ir(specification: &crate::DissectorConfig) -> Result<DissectorIr, TailError> {
     let file = specification
@@ -440,8 +479,7 @@ pub fn c_header_ir(specification: &crate::DissectorConfig) -> Result<DissectorIr
         .root_struct
         .as_deref()
         .ok_or_else(|| TailError::Settings("c_header needs a root_struct".into()))?;
-    let text = std::fs::read_to_string(file)
-        .map_err(|error| TailError::Settings(format!("cannot read {file}: {error}")))?;
+    let text = read_dissector_file(file)?;
     let header =
         cheader::parse(&text).map_err(|error| TailError::Settings(format!("{file}: {error}")))?;
     cheader::compile(&header, root, file)
@@ -524,8 +562,7 @@ pub fn tail_config(port: &PortConfig) -> Result<TailConfig, TailError> {
             if name == "protobuf"
                 && let Some(file) = specification.file.as_deref()
             {
-                let text = std::fs::read_to_string(file)
-                    .map_err(|error| TailError::Settings(format!("cannot read {file}: {error}")))?;
+                let text = read_dissector_file(file)?;
                 let schema = bforge_dissect::packs::protobuf::parse_proto(
                     &text,
                     specification.root_struct.as_deref(),
@@ -535,8 +572,7 @@ pub fn tail_config(port: &PortConfig) -> Result<TailConfig, TailError> {
             } else if name == "mavlink"
                 && let Some(file) = specification.file.as_deref()
             {
-                let text = std::fs::read_to_string(file)
-                    .map_err(|error| TailError::Settings(format!("cannot read {file}: {error}")))?;
+                let text = read_dissector_file(file)?;
                 let dialect = bforge_dissect::packs::mavlink::parse_xml(&text)
                     .map_err(|error| TailError::Settings(format!("{file}: {error}")))?;
                 Some(Decoder::Pack(Pack::MavlinkDialect(dialect)))
@@ -552,8 +588,7 @@ pub fn tail_config(port: &PortConfig) -> Result<TailConfig, TailError> {
         }
         Some(specification) if specification.kind == "protobuf" => {
             if let Some(file) = specification.file.as_deref() {
-                let text = std::fs::read_to_string(file)
-                    .map_err(|error| TailError::Settings(format!("cannot read {file}: {error}")))?;
+                let text = read_dissector_file(file)?;
                 let schema = bforge_dissect::packs::protobuf::parse_proto(
                     &text,
                     specification.root_struct.as_deref(),

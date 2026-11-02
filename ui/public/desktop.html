@@ -49,32 +49,43 @@
         overflow-x: hidden;
       }
 
-      /* 40px Frameless Instrument Titlebar */
-      .titlebar {
-        position: fixed;
-        top: 0;
-        left: 0;
-        right: 0;
-        height: 40px;
+      /* Main Launcher View */
+      body {
+        margin: 0;
+        padding: 0;
+        min-height: 100%;
+        background-color: var(--bg-canvas);
+        color: var(--text-primary);
+        font-family: var(--font-sans);
+        overflow-y: auto;
+        overflow-x: hidden;
+      }
+
+      main {
+        width: min(920px, 94vw);
+        margin: 0 auto;
+        padding: 24px 20px 48px;
+        box-sizing: border-box;
+      }
+
+      .launcher-header {
         display: flex;
         align-items: center;
         justify-content: space-between;
-        padding: 0 10px 0 16px;
+        padding-bottom: 16px;
+        margin-bottom: 20px;
         border-bottom: 1px solid var(--border-hairline);
-        background: var(--bg-surface-1);
-        -webkit-app-region: drag;
-        z-index: 100;
       }
 
-      .titlebar-left {
+      .launcher-brand {
         display: flex;
         align-items: center;
         gap: 10px;
       }
 
       .status-led {
-        width: 7px;
-        height: 7px;
+        width: 8px;
+        height: 8px;
         border-radius: 50%;
         background: var(--sig-rx);
         box-shadow: 0 0 8px var(--sig-rx);
@@ -86,15 +97,15 @@
         50% { opacity: 0.55; transform: scale(0.92); }
       }
 
-      .titlebar-title {
-        font-size: 11px;
-        font-weight: 600;
+      .brand-title {
+        font-size: 13px;
+        font-weight: 700;
         letter-spacing: 0.12em;
         text-transform: uppercase;
         color: var(--text-primary);
       }
 
-      .titlebar-badge {
+      .brand-badge {
         font-family: var(--font-mono);
         font-size: 10px;
         color: var(--text-muted);
@@ -104,51 +115,10 @@
         padding: 1px 6px;
       }
 
-      .titlebar .controls {
-        display: flex;
-        align-items: center;
-        gap: 3px;
-        -webkit-app-region: no-drag;
-      }
-
-      .titlebar .controls button {
-        width: 28px;
-        height: 24px;
-        background: transparent;
-        border: 1px solid transparent;
-        border-radius: 4px;
-        color: var(--text-muted);
-        display: inline-flex;
-        align-items: center;
-        justify-content: center;
-        cursor: pointer;
-        transition: color 120ms ease, background-color 120ms ease, border-color 120ms ease;
-        padding: 0;
-      }
-
-      .titlebar .controls button:hover {
-        color: var(--text-primary);
-        background: var(--bg-surface-3);
-        border-color: var(--border-hairline);
-      }
-
-      .titlebar .controls button.close:hover {
-        color: var(--sig-fault);
-        background: var(--sig-fault-dim);
-        border-color: rgba(244, 63, 94, 0.35);
-      }
-
-      /* Main Launcher View */
-      body {
-        padding-top: 40px;
-        display: flex;
-        align-items: center;
-        justify-content: center;
-      }
-
-      main {
-        width: min(840px, 94vw);
-        padding: 32px 0 24px;
+      .brand-version {
+        font-family: var(--font-mono);
+        font-size: 11px;
+        color: var(--sig-tx);
       }
 
       .hero-header {
@@ -827,38 +797,24 @@
     </style>
   </head>
   <body>
-    <div class="titlebar" data-tauri-drag-region>
-      <div class="titlebar-left">
-        <div class="status-led" aria-hidden="true"></div>
-        <span class="titlebar-title">BAUDFORGE // HIL WORKBENCH</span>
-        <span class="titlebar-badge">v0.8</span>
-      </div>
-      <div class="controls">
-        <button type="button" id="min" title="minimise">
-          <svg width="10" height="10" viewBox="0 0 10 10" fill="none" stroke="currentColor" stroke-width="1.4" stroke-linecap="round">
-            <line x1="1.5" y1="5" x2="8.5" y2="5" />
-          </svg>
-        </button>
-        <button type="button" id="max" title="maximise">
-          <svg width="10" height="10" viewBox="0 0 10 10" fill="none" stroke="currentColor" stroke-width="1.4" stroke-linejoin="round">
-            <rect x="1.5" y="1.5" width="7" height="7" rx="0.5" />
-          </svg>
-        </button>
-        <button type="button" id="close" class="close" title="close">
-          <svg width="10" height="10" viewBox="0 0 10 10" fill="none" stroke="currentColor" stroke-width="1.4" stroke-linecap="round">
-            <line x1="1.5" y1="1.5" x2="8.5" y2="8.5" />
-            <line x1="8.5" y1="1.5" x2="1.5" y2="8.5" />
-          </svg>
-        </button>
-      </div>
-    </div>
+    
 
-    <main>
+        <main>
+      <header class="launcher-header">
+        <div class="launcher-brand">
+          <div class="status-led" aria-hidden="true"></div>
+          <span class="brand-title">BAUDFORGE</span>
+          <span class="brand-badge">HIL WORKBENCH</span>
+        </div>
+        <div class="brand-version">v0.8.0</div>
+      </header>
       <div class="hero-header">
         <div class="instrument-tag">HARDWARE-IN-THE-LOOP SERIAL &amp; PROTOCOL WORKBENCH</div>
         <h1>BaudForge</h1>
         <p class="lead">Open a workspace to start the engine, run a dual-port simulator demo, or inspect a recorded vault.</p>
       </div>
+
+      <div class="status" id="status" style="margin-bottom: 16px;"></div>
 
       <div class="panel">
         <div class="quick-connect-card">
@@ -1090,7 +1046,7 @@
           <ul id="recent"></ul>
         </div>
 
-        <div class="status" id="status"></div>
+        
       </div>
 
       <footer>
@@ -1238,7 +1194,7 @@
               const dest = ((url.startsWith('http://') || url.startsWith('https://')) && !url.includes('index.html') && !url.includes('?'))
                 ? ('index.html?api=' + encodeURIComponent(url))
                 : url;
-              window.location.href = dest;
+              window.location.replace(dest);
             }
           } catch (error) {
             say(String(error.message || error), 'err');
@@ -1283,14 +1239,14 @@
             const base = await invoker('start_workspace', { path, vault: chosenVault });
             say('engine on ' + base, 'ok');
             const url = 'index.html?api=' + encodeURIComponent(base) + '&preset=' + encodeURIComponent(presetName);
-            window.location.href = url;
+            window.location.replace(url);
           } catch (error) {
             say(String(error.message || error), 'err');
           }
         } else {
           // Web preview / fallback mode
           const url = 'index.html?preset=' + encodeURIComponent(presetName);
-          window.location.href = url;
+          window.location.replace(url);
         }
       }
 
@@ -1331,7 +1287,7 @@
           if (preset) {
             dest += '&preset=' + encodeURIComponent(preset);
           }
-          window.location.href = dest;
+          window.location.replace(dest);
         } catch (error) {
           say(String(error), 'err');
         }
@@ -1418,10 +1374,7 @@
 
       showVault();
 
-      const shellWindow = window.__TAURI__?.window?.getCurrentWindow?.();
-      document.getElementById('min').onclick = () => shellWindow?.minimize();
-      document.getElementById('max').onclick = () => shellWindow?.toggleMaximize();
-      document.getElementById('close').onclick = () => shellWindow?.close();
+      // Native window decorations handle minimize, maximize, and close.
 
       refreshDevices();
       loadRecent();

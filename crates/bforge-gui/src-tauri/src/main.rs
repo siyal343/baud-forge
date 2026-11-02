@@ -151,10 +151,13 @@ fn restore_geometry(window: impl GeometryWindow) {
         return;
     };
     let _ = window.set_size(tauri::PhysicalSize::new(
-        geometry.width.max(640),
-        geometry.height.max(480),
+        geometry.width.clamp(800, 1920),
+        geometry.height.clamp(540, 1080),
     ));
-    let _ = window.set_position(tauri::PhysicalPosition::new(geometry.x, geometry.y));
+    let _ = window.set_position(tauri::PhysicalPosition::new(
+        geometry.x.max(0),
+        geometry.y.max(0),
+    ));
 }
 
 /// The workspace list, kept beside the application's other settings.
@@ -292,6 +295,9 @@ fn demo_workspace(app: tauri::AppHandle) -> Result<String, String> {
         beside
             .clone()
             .map(|dir| dir.join("examples/loopback-demo.bforge.toml")),
+        beside
+            .clone()
+            .map(|dir| dir.join("../../examples/loopback-demo.bforge.toml")),
         Some(
             PathBuf::from(env!("CARGO_MANIFEST_DIR"))
                 .join("../../../examples/loopback-demo.bforge.toml"),
