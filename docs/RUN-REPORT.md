@@ -30,8 +30,8 @@ The application is running with the loopback demonstration workspace: [`examples
 | Component | Executable | PID | Port / Address | Status |
 | :--- | :--- | :--- | :--- | :--- |
 | **BaudForge Desktop GUI** | `bforge-gui.exe` | `10288` | Local HTTP: `http://127.0.0.1:61730` | **Running** (Active Window + WebView2) |
-| **Simulated Device 1 (`obc`)** | `s8_device_sim.exe` | `14276` | `127.0.0.1:9100` (50 Hz) | **Streaming** (COBS IMU packets) |
-| **Simulated Device 2 (`eps`)** | `s8_device_sim.exe` | `16312` | `127.0.0.1:9101` (50 Hz) | **Streaming** (COBS IMU packets) |
+| **Simulated Device 1 (`obc`)** | `s8_device_sim.exe` | `2540` | `127.0.0.1:9100` (50 Hz) | **Streaming** (COBS IMU packets) |
+| **Simulated Device 2 (`eps`)** | `s8_device_sim.exe` | `11048` | `127.0.0.1:9101` (50 Hz) | **Streaming** (COBS IMU packets) |
 
 ---
 
@@ -40,10 +40,10 @@ The application is running with the loopback demonstration workspace: [`examples
 Verified via `GET http://127.0.0.1:61730/api/snapshot`:
 - **Session Mode:** `record`
 - **Session Vault:** Auto-created temporary session log
-- **Frames Ingested:** >500 chunks, >12.5 kB decoded payload
+- **Frames Ingested:** >520 chunks, >13 kB decoded payload
 - **Port `obc` State:** `open` (zero drops)
 - **Port `eps` State:** `open` (zero drops)
-- **HIL Bridge `link`:** Forwarding live packets between `obc` and `eps` (>6.2 kB forwarded)
+- **HIL Bridge `link`:** Forwarding live packets between `obc` and `eps` (>6.5 kB forwarded)
 
 ---
 
@@ -81,5 +81,5 @@ Verified via `GET http://127.0.0.1:61730/api/snapshot`:
 To cleanly stop the active session and background processes:
 
 ```powershell
-Stop-Process -Id 10288, 14276, 16312 -Force
+Stop-Process -Id 10288, 2540, 11048 -Force
 ```
