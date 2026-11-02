@@ -421,9 +421,21 @@ impl eframe::App for BaudForgeApp {
                 let temp = 42.0 + 2.5 * (t * 0.3).sin();
                 telemetry_signals.insert("temp".to_string(), temp);
             }
+            if !telemetry_signals.contains_key("ax") {
+                let ax = 0.45 * (t * 3.0).sin();
+                telemetry_signals.insert("ax".to_string(), ax);
+            }
+            if !telemetry_signals.contains_key("ay") {
+                let ay = 0.30 * (t * 2.5 + 0.5).cos();
+                telemetry_signals.insert("ay".to_string(), ay);
+            }
             if !telemetry_signals.contains_key("az") {
                 let az = 0.98 + 0.12 * (t * 2.1).sin();
                 telemetry_signals.insert("az".to_string(), az);
+            }
+            if !telemetry_signals.contains_key("gz") {
+                let gz = 1.20 * (t * 4.0).sin();
+                telemetry_signals.insert("gz".to_string(), gz);
             }
         }
 
@@ -438,6 +450,9 @@ impl eframe::App for BaudForgeApp {
         }
 
         self.tab_viewer.dashboard.update_signals(&telemetry_signals);
+
+        let now_sec = ctx.input(|i| i.time);
+        self.tab_viewer.scope.push_sample(now_sec, &telemetry_signals);
 
         // 3. Transmit pending commands requested by user controls
         if let Some(cmd) = self.tab_viewer.pending_tx.take() {

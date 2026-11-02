@@ -1,4 +1,4 @@
-use egui::{self, epaint::CornerRadius, Color32, Margin, RichText, Stroke, StrokeKind, Ui, Vec2};
+use egui::{self, epaint::CornerRadius, Color32, Margin, RichText, Stroke, Ui, Vec2};
 use crate::layout::TabId;
 use crate::theme::{
     COLOR_BORDER_HAIRLINE, COLOR_SIGNAL_FAULT, COLOR_SIGNAL_RX, COLOR_SIGNAL_TRIGGER,
@@ -53,6 +53,7 @@ pub struct BaudForgeTabViewer {
     pub hex_highlight_range: Option<std::ops::Range<usize>>,
 
     // Telemetry Scope State
+    pub scope: crate::scope::ScopeManager,
     pub scope_channels: [bool; 4],
     pub scope_timebase_ms: f32,
     pub scope_trigger_source: usize,
@@ -66,12 +67,7 @@ pub struct BaudForgeTabViewer {
     pub last_decoded_packet: Option<crate::dissect::DecodedPacket>,
 
     // HIL Bridge State
-    pub hil_port_a: String,
-    pub hil_port_b: String,
-    pub hil_ber_rate: f32,
-    pub hil_drop_pct: f32,
-    pub hil_jitter_ms: u32,
-    pub hil_bridge_active: bool,
+    pub hil: crate::hil::HilBridgeState,
 
     // Dashboards State
     pub dashboard: crate::dashboard::DashboardManager,
@@ -81,10 +77,7 @@ pub struct BaudForgeTabViewer {
     pub dash_power_ok: bool,
 
     // Vault Scrubber State
-    pub vault_progress: f32,
-    pub vault_playing: bool,
-    pub vault_frame_index: usize,
-    pub vault_total_frames: usize,
+    pub vault: crate::vault::VaultManager,
 
     // Workspace Config State
     pub ws_path: String,
@@ -159,6 +152,7 @@ impl Default for BaudForgeTabViewer {
             hex_selected_offset: Some(0),
             hex_highlight_range: None,
 
+            scope: crate::scope::ScopeManager::default(),
             scope_channels: [true, true, false, false],
             scope_timebase_ms: 10.0,
             scope_trigger_source: 0,
@@ -170,12 +164,7 @@ impl Default for BaudForgeTabViewer {
             dissector_schema,
             last_decoded_packet,
 
-            hil_port_a: "COM3 (DUT Target)".to_string(),
-            hil_port_b: "COM4 (HIL Loopback)".to_string(),
-            hil_ber_rate: 0.0,
-            hil_drop_pct: 0.0,
-            hil_jitter_ms: 0,
-            hil_bridge_active: true,
+            hil: crate::hil::HilBridgeState::default(),
 
             dashboard: crate::dashboard::default_dashboard(),
             dash_rpm: 4820.0,
@@ -183,10 +172,7 @@ impl Default for BaudForgeTabViewer {
             dash_bus_volts: 24.1,
             dash_power_ok: true,
 
-            vault_progress: 38.5,
-            vault_playing: false,
-            vault_frame_index: 4820,
-            vault_total_frames: 12500,
+            vault: crate::vault::VaultManager::default(),
 
             ws_path: "./workspaces/cubesat_imu.bforge.toml".to_string(),
             ws_baud: 921600,
@@ -873,91 +859,21 @@ impl BaudForgeTabViewer {
             ui,
             "[SCOPE]",
             "Telemetry Oscilloscope",
-            "TRIGGER LOCKED",
-            COLOR_SIGNAL_RX,
+            if self.scope.paused {
+                "PAUSED"
+            } else if self.scope.trigger.is_triggered {
+                "TRIGGER LOCKED"
+            } else {
+                "ACQUIRING"
+            },
+            if self.scope.paused {
+                COLOR_TEXT_MUTED
+            } else {
+                COLOR_SIGNAL_RX
+            },
         );
 
-        // Scope controls toolbar
-        ui.horizontal(|ui| {
-            ui.label(RichText::new("Channels:").color(COLOR_TEXT_MUTED));
-            ui.checkbox(&mut self.scope_channels[0], RichText::new("CH1 (Roll)").color(COLOR_SIGNAL_TX));
-            ui.checkbox(&mut self.scope_channels[1], RichText::new("CH2 (Pitch)").color(COLOR_SIGNAL_RX));
-            ui.checkbox(&mut self.scope_channels[2], RichText::new("CH3 (Yaw)").color(COLOR_SIGNAL_TRIGGER));
-            ui.checkbox(&mut self.scope_channels[3], RichText::new("CH4 (Accel Z)").color(COLOR_SIGNAL_FAULT));
-        });
-
-        ui.horizontal(|ui| {
-            ui.label(RichText::new("Timebase:").color(COLOR_TEXT_MUTED));
-            ui.add(egui::Slider::new(&mut self.scope_timebase_ms, 1.0..=100.0).suffix(" ms/div"));
-
-            ui.separator();
-            ui.label(RichText::new("Trigger:").color(COLOR_TEXT_MUTED));
-            ui.radio_value(&mut self.scope_trigger_rising, true, "Rising");
-            ui.radio_value(&mut self.scope_trigger_rising, false, "Falling");
-        });
-
-        ui.separator();
-
-        // Waveform plot area (Mock visualization grid)
-        let available_size = ui.available_size();
-        let (rect, _response) = ui.allocate_exact_size(
-            Vec2::new(available_size.x, (available_size.y - 10.0_f32).max(180.0_f32)),
-            egui::Sense::hover(),
-        );
-
-        let painter = ui.painter_at(rect);
-        painter.rect_filled(rect, 4.0_f32, COLOR_SURFACE_CARD);
-        painter.rect_stroke(
-            rect,
-            4.0_f32,
-            Stroke::new(1.0_f32, COLOR_BORDER_HAIRLINE),
-            StrokeKind::Inside,
-        );
-
-        // Draw oscilloscope grid lines
-        let divisions_x = 10;
-        let divisions_y = 6;
-        for i in 1..divisions_x {
-            let x = rect.left() + (rect.width() / divisions_x as f32) * i as f32;
-            painter.line_segment(
-                [egui::pos2(x, rect.top()), egui::pos2(x, rect.bottom())],
-                Stroke::new(0.5_f32, COLOR_BORDER_HAIRLINE),
-            );
-        }
-        for i in 1..divisions_y {
-            let y = rect.top() + (rect.height() / divisions_y as f32) * i as f32;
-            painter.line_segment(
-                [egui::pos2(rect.left(), y), egui::pos2(rect.right(), y)],
-                Stroke::new(0.5_f32, COLOR_BORDER_HAIRLINE),
-            );
-        }
-
-        // Draw mock waveform sine curves
-        if self.scope_channels[0] {
-            let points: Vec<egui::Pos2> = (0..100)
-                .map(|i| {
-                    let norm_x = i as f32 / 100.0_f32;
-                    let x = rect.left() + norm_x * rect.width();
-                    let wave = (norm_x * 12.0_f32).sin();
-                    let y = rect.center().y + wave * 40.0_f32;
-                    egui::pos2(x, y)
-                })
-                .collect();
-            painter.line(points, Stroke::new(1.5_f32, COLOR_SIGNAL_TX));
-        }
-
-        if self.scope_channels[1] {
-            let points: Vec<egui::Pos2> = (0..100)
-                .map(|i| {
-                    let norm_x = i as f32 / 100.0_f32;
-                    let x = rect.left() + norm_x * rect.width();
-                    let wave = (norm_x * 8.0_f32 + 1.2_f32).cos();
-                    let y = rect.center().y + wave * 30.0_f32;
-                    egui::pos2(x, y)
-                })
-                .collect();
-            painter.line(points, Stroke::new(1.5_f32, COLOR_SIGNAL_RX));
-        }
+        self.scope.show(ui);
     }
 
     /// Helper rendering a field node in the protocol dissector tree.
@@ -1168,47 +1084,12 @@ impl BaudForgeTabViewer {
 
     /// Render Tab: HIL Bridge & Fault Injection.
     fn render_hil_bridge(&mut self, ui: &mut Ui) {
-        let status = if self.hil_bridge_active { "BRIDGE ACTIVE" } else { "BYPASS IDLE" };
-        let status_color = if self.hil_bridge_active { COLOR_SIGNAL_RX } else { COLOR_SIGNAL_TRIGGER };
+        let status = if self.hil.is_active { "BRIDGE ACTIVE" } else { "BYPASS IDLE" };
+        let status_color = if self.hil.is_active { COLOR_SIGNAL_RX } else { COLOR_SIGNAL_TRIGGER };
 
         Self::render_header(ui, "[HIL-RIG]", "Hardware-In-The-Loop Bridge", status, status_color);
 
-        ui.group(|ui| {
-            ui.label(RichText::new("PORT ROUTING MATRIX").color(COLOR_TEXT_PRIMARY).strong());
-            ui.horizontal(|ui| {
-                ui.label(RichText::new("Primary Target (DUT):").color(COLOR_TEXT_MUTED));
-                ui.label(RichText::new(&self.hil_port_a).color(COLOR_SIGNAL_TX).monospace());
-            });
-            ui.horizontal(|ui| {
-                ui.label(RichText::new("Secondary Target (HIL):").color(COLOR_TEXT_MUTED));
-                ui.label(RichText::new(&self.hil_port_b).color(COLOR_SIGNAL_RX).monospace());
-            });
-
-            let toggle_btn = if self.hil_bridge_active { "⏹ Disarm Bridge" } else { "⚡ Arm Bridge" };
-            if ui.button(RichText::new(toggle_btn).strong()).clicked() {
-                self.hil_bridge_active = !self.hil_bridge_active;
-            }
-        });
-
-        ui.add_space(8.0);
-        ui.group(|ui| {
-            ui.label(RichText::new("REAL-TIME FAULT INJECTION").color(COLOR_SIGNAL_FAULT).strong());
-
-            ui.horizontal(|ui| {
-                ui.label("Bit Error Rate (BER):");
-                ui.add(egui::Slider::new(&mut self.hil_ber_rate, 0.0..=5.0).suffix(" %"));
-            });
-
-            ui.horizontal(|ui| {
-                ui.label("Packet Drop Rate:");
-                ui.add(egui::Slider::new(&mut self.hil_drop_pct, 0.0..=100.0).suffix(" %"));
-            });
-
-            ui.horizontal(|ui| {
-                ui.label("Transmission Jitter:");
-                ui.add(egui::Slider::new(&mut self.hil_jitter_ms, 0..=500).suffix(" ms"));
-            });
-        });
+        self.hil.show(ui);
     }
 
     /// Render Tab: Dashboards & Gauges.
@@ -1329,56 +1210,18 @@ impl BaudForgeTabViewer {
 
     /// Render Tab: Vault Review & Scrubber.
     fn render_vault_scrubber(&mut self, ui: &mut Ui) {
+        let status = if self.vault.is_recording { "RECORDING" } else { "INDEXED" };
+        let status_color = if self.vault.is_recording { COLOR_SIGNAL_FAULT } else { COLOR_SIGNAL_TX };
+
         Self::render_header(
             ui,
             "[VAULT]",
             "Vault Review & Scrubber (.bflog)",
-            "INDEXED",
-            COLOR_SIGNAL_TX,
+            status,
+            status_color,
         );
 
-        ui.horizontal(|ui| {
-            let play_label = if self.vault_playing { "⏸ Pause" } else { "▶ Play" };
-            if ui.button(RichText::new(play_label).strong()).clicked() {
-                self.vault_playing = !self.vault_playing;
-            }
-
-            if ui.button("⏮ First").clicked() {
-                self.vault_progress = 0.0;
-                self.vault_frame_index = 0;
-            }
-
-            if ui.button("◀ Step").clicked() {
-                self.vault_frame_index = self.vault_frame_index.saturating_sub(1);
-            }
-
-            if ui.button("Step ▶").clicked() {
-                self.vault_frame_index = (self.vault_frame_index + 1).min(self.vault_total_frames);
-            }
-
-            if ui.button("⏭ Last").clicked() {
-                self.vault_progress = 100.0;
-                self.vault_frame_index = self.vault_total_frames;
-            }
-
-            ui.label(
-                RichText::new(format!(
-                    "Frame: {} / {}",
-                    self.vault_frame_index, self.vault_total_frames
-                ))
-                .monospace()
-                .color(COLOR_TEXT_PRIMARY),
-            );
-        });
-
-        ui.add_space(4.0);
-        ui.horizontal(|ui| {
-            ui.label(RichText::new("Timeline:").color(COLOR_TEXT_MUTED));
-            ui.add(egui::Slider::new(&mut self.vault_progress, 0.0..=100.0).suffix(" %"));
-        });
-
-        ui.separator();
-        ui.label(RichText::new("Vault File: ./vaults/2026-11-02_imu_session.bflog (24.8 MB, 12,500 records)").color(COLOR_TEXT_MUTED));
+        self.vault.show(ui);
     }
 
     /// Render Tab: Workspace Configuration.
