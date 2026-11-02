@@ -23,6 +23,10 @@ jobs:
       # Empty when the repository has no certificate, which skips the signing steps.
       WINDOWS_CERTIFICATE: ${{ secrets.WINDOWS_CERTIFICATE }}
       WINDOWS_CERTIFICATE_PASSWORD: ${{ secrets.WINDOWS_CERTIFICATE_PASSWORD }}
+      SIGNPATH_API_TOKEN: ${{ secrets.SIGNPATH_API_TOKEN }}
+      SIGNPATH_ORGANIZATION_ID: ${{ secrets.SIGNPATH_ORGANIZATION_ID }}
+      SIGNPATH_PROJECT_SLUG: ${{ secrets.SIGNPATH_PROJECT_SLUG || 'baud-forge' }}
+      SIGNPATH_SIGNING_POLICY_SLUG: ${{ secrets.SIGNPATH_SIGNING_POLICY_SLUG || 'release-signing' }}
       MACOS_CERTIFICATE: ${{ secrets.MACOS_CERTIFICATE }}
       MACOS_CERTIFICATE_PASSWORD: ${{ secrets.MACOS_CERTIFICATE_PASSWORD }}
       MACOS_IDENTITY: ${{ secrets.MACOS_IDENTITY }}
@@ -69,8 +73,26 @@ jobs:
           else
             cp "$base" "dist/bforge-${{ matrix.name }}"
           fi
-      - name: Sign the Windows binary
-        if: runner.os == 'Windows' && env.WINDOWS_CERTIFICATE != ''
+      - name: Upload unsigned Windows binary for SignPath
+        if: runner.os == 'Windows' && env.SIGNPATH_API_TOKEN != ''
+        uses: actions/upload-artifact@v4
+        with:
+          name: unsigned-bforge-${{ matrix.name }}
+          path: dist/bforge-${{ matrix.name }}.exe
+          if-no-files-found: error
+      - name: Sign the Windows binary with SignPath Foundation
+        if: runner.os == 'Windows' && env.SIGNPATH_API_TOKEN != ''
+        uses: signpath/github-action-submit-signing-request@v1
+        with:
+          api-token: ${{ secrets.SIGNPATH_API_TOKEN }}
+          organization-id: ${{ secrets.SIGNPATH_ORGANIZATION_ID }}
+          project-slug: ${{ env.SIGNPATH_PROJECT_SLUG }}
+          signing-policy-slug: ${{ env.SIGNPATH_SIGNING_POLICY_SLUG }}
+          github-artifact-id: unsigned-bforge-${{ matrix.name }}
+          wait-for-completion: true
+          output-artifact-directory: dist
+      - name: Sign the Windows binary with PFX certificate
+        if: runner.os == 'Windows' && env.WINDOWS_CERTIFICATE != '' && env.SIGNPATH_API_TOKEN == ''
         shell: pwsh
         run: |
           # `.pfx` as base64 in the secret; signtool ships with the runner's Windows SDK.
@@ -106,6 +128,7 @@ jobs:
       - name: Collect the binaries
         uses: actions/download-artifact@v4
         with:
+          pattern: bforge-*
           path: dist
           merge-multiple: true
       - name: List what will be published
@@ -133,6 +156,10 @@ jobs:
     env:
       WINDOWS_CERTIFICATE: ${{ secrets.WINDOWS_CERTIFICATE }}
       WINDOWS_CERTIFICATE_PASSWORD: ${{ secrets.WINDOWS_CERTIFICATE_PASSWORD }}
+      SIGNPATH_API_TOKEN: ${{ secrets.SIGNPATH_API_TOKEN }}
+      SIGNPATH_ORGANIZATION_ID: ${{ secrets.SIGNPATH_ORGANIZATION_ID }}
+      SIGNPATH_PROJECT_SLUG: ${{ secrets.SIGNPATH_PROJECT_SLUG || 'baud-forge' }}
+      SIGNPATH_SIGNING_POLICY_SLUG: ${{ secrets.SIGNPATH_SIGNING_POLICY_SLUG || 'release-signing' }}
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-node@v4
@@ -149,8 +176,26 @@ jobs:
       - name: Build the installer
         working-directory: crates/bforge-gui
         run: ../../ui/node_modules/.bin/tauri build --target x86_64-pc-windows-msvc --bundles nsis
-      - name: Sign the installer
-        if: env.WINDOWS_CERTIFICATE != ''
+      - name: Upload unsigned installer for SignPath
+        if: env.SIGNPATH_API_TOKEN != ''
+        uses: actions/upload-artifact@v4
+        with:
+          name: unsigned-baudforge-installer
+          path: target/x86_64-pc-windows-msvc/release/bundle/nsis/*.exe
+          if-no-files-found: error
+      - name: Sign the installer with SignPath Foundation
+        if: env.SIGNPATH_API_TOKEN != ''
+        uses: signpath/github-action-submit-signing-request@v1
+        with:
+          api-token: ${{ secrets.SIGNPATH_API_TOKEN }}
+          organization-id: ${{ secrets.SIGNPATH_ORGANIZATION_ID }}
+          project-slug: ${{ env.SIGNPATH_PROJECT_SLUG }}
+          signing-policy-slug: ${{ env.SIGNPATH_SIGNING_POLICY_SLUG }}
+          github-artifact-id: unsigned-baudforge-installer
+          wait-for-completion: true
+          output-artifact-directory: target/x86_64-pc-windows-msvc/release/bundle/nsis
+      - name: Sign the installer with PFX certificate
+        if: env.WINDOWS_CERTIFICATE != '' && env.SIGNPATH_API_TOKEN == ''
         shell: pwsh
         run: |
           $pfx = Join-Path $env:RUNNER_TEMP 'cert.pfx'

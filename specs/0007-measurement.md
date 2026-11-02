@@ -73,7 +73,32 @@ RESULT: PASS - 0 dropped bytes
 That is 288 MB in 60 s, 4.8 MB/s across the four ports, 5 segment rotations, and
 zero gaps.
 
-Memory, 512 MiB vault:
+Nightly stress, 4 ports, 12 Mbaud each, 600 seconds (Linux `ubuntu-latest`, GitHub Actions run `41297037316`):
+
+```text
+recorded 683104 chunks, 2879993903 bytes in 600.0 s, 4.80 MB/s
+vault target/nightly-stress.bflog: 2901.9 MB, 44 segment(s)
+resident: baseline 2.6 MiB, peak 5.6 MiB (ceiling 150.0 MiB)
+
+    port   chunks      bytes   gaps
+  port 0   170774  719999301      0
+  port 1   170772  719999247      0
+  port 2   170771  719995922      0
+  port 3   170787  719999433      0
+
+total 683104 chunks, 2879993903 bytes of frame payload, 0 sequence gap(s)
+```
+
+That is 2.90 GB in 600 s (10 minutes), 4.80 MB/s across four ports, 44 segment
+rotations, 5.6 MiB peak resident memory, and zero sequence gaps. Note: run
+`41297037316` exposed a post-loop accounting bug in `s5_stress.rs` where
+`session.snapshot()` was called before `session.seal()`, and `seal()` drained one
+additional chunk (`683104` vs `683103`) while `nightly.yml` masked the exit code
+behind `| tee`. Both `s5_stress.rs` (now comparing `report.chunks` from the
+forward `for_each` cursor against `written.chunks`) and `nightly.yml`
+(`set -euo pipefail`) are fixed.
+
+Memory, 512 MiB vault (Windows):
 
 ```text
 built 512.3 MiB in 1.76 s (292 MiB/s), file 537133312 bytes
@@ -87,6 +112,20 @@ estimate: a 100 GB file holds 1638400 records and needs 1600 index entries, abou
 RESULT: PASS - flat memory over the whole file
 ```
 
+Memory, 1024 MiB (1 GiB) vault after `for_each` cursor (`0044`, Linux `ubuntu-latest`, GitHub Actions run `41297037316`):
+
+```text
+built 1024.5 MiB in 2.36 s (434 MiB/s), file 1074266368 bytes
+resident before open: 2.2 MiB
+opened in 0.00 s: 16384 records, 16 index entries (0.4 KiB)
+read 16384 records, 1024.0 MiB of payload in 0.78 s (1311 MiB/s)
+resident: baseline 2.2 MiB, peak 18.2 MiB, growth 16.0 MiB
+file is 1024.5 MiB, so the peak is 1.78% of the file
+estimate: a 100 GB file holds 1638400 records and needs 1600 index entries, about 37.5 KiB
+
+RESULT: PASS - flat memory over the whole file
+```
+
 The 100 GB figure is an **estimate from the index stride**, not a measurement. It
 is printed with the word estimate for that reason.
 
@@ -94,19 +133,17 @@ is printed with the word estimate for that reason.
 
 | Requirement | Target | Measured | State |
 | --- | --- | --- | --- |
-| Sustained ingestion | 12 Mbaud, 4 ports, 0 dropped | 4.8 MB/s, 0 gaps, 60 s | met on the mock source |
-| Resident memory | 150 MiB with a 100 GB file | 21.5 MiB peak with a 512 MiB file | met at 1/200 of the target size |
-| Segment rotation | 64 MB segments | 5 segments in a 290 MB vault | met |
-| Reader speed | not specified | 25 MiB/s | slow, see below |
+| Sustained ingestion | 12 Mbaud, 4 ports, 0 dropped | 4.80 MB/s, 0 gaps, 600 s (2.90 GB, 5.6 MiB RSS) | met on the mock source |
+| Resident memory | 150 MiB with a 100 GB file | 18.2 MiB peak with a 1024 MiB file (1.78% of file) | met at 1/100 of the target size |
+| Segment rotation | 64 MB segments | 44 segments in a 2.90 GB vault | met |
+| Reader speed | not specified | 1311 MiB/s (after `0044` cursor) | met |
 
 ## Findings
 
-1. **Rotation works**: 290 MB produced 5 segments, and the seal synced the tail.
-2. **The reader is slow for scanning.** 25 MiB/s comes from seeking twice per
-   record (header and payload) with a fresh allocation each time. A window is
-   fast enough for the GUI, but a full scan of 100 GB would take about 68
-   minutes. A sequential cursor API belongs with F2.3, where the window scrolls;
-   the sparse index already gives it the entry points it needs.
+1. **Rotation works**: 2.90 GB produced 44 segments, and the seal synced the tail.
+2. **The forward cursor (`0044`) solved reader throughput.** Read speed rose from
+   25 MiB/s (seeking twice per record) to 1,311 MiB/s on a 1 GiB vault (0.78 s
+   total scan time).
 3. **The index is small enough to stop worrying about.** One entry per 1024
    records at 24 bytes is 37.5 KiB for 100 GB of 64 KiB records.
 4. **Hardware throughput is still unmeasured.** The stress source is the mock

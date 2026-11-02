@@ -21,6 +21,6 @@ Written 2 November 2026. Both fast-build waves are complete and green:
 
 | Item | Why | Action required |
 | --- | --- | --- |
-| Signed builds (SignPath Foundation) | Free for OSI projects; CI signing hooks are ready (`D-95`) | Submit the SignPath application form and add repository secrets |
-| Long soak on hardware (`D-05`) | Multi-hour hardware soak on a physical bench | Run on the provisioned VPS / physical UART bench |
+| Signed builds (SignPath Foundation) | Free for OSI projects; SignPath and `.pfx` CI hooks are wired in `.github/workflows/release.yml` (`D-95`) | Paste the pre-filled table from `docs/SIGNING.md` into the SignPath form and add `SIGNPATH_API_TOKEN` + `SIGNPATH_ORGANIZATION_ID` |
+| Long soak on hardware (`D-05`) | 600 s / 2.90 GB and 1 GiB memory soak verified in CI (`specs/0007`); physical multi-hour hardware soak needs a bench | Plug in the ESP32-C3 or run `deploy/lab-setup.sh` on a Linux VPS (`docs/VPS-LAB.md`) |
 | 50 µs MITM latency (`D-11`) | Oscilloscope measurement between physical UART RX and TX pins | Measure with two UART adapters and a scope |

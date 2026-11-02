@@ -1,18 +1,20 @@
 # Signing the release
 
-What a signed binary buys, what it costs, and how to turn it on. Nothing here is done
-yet: this repository publishes **unsigned** binaries plus a checksum file, because a
-certificate is a purchase only the project owner can make.
+What a signed binary buys, what it costs, and how to turn it on. This repository
+publishes **unsigned** binaries plus a checksum file until a certificate or SignPath
+Foundation project is connected, because a certificate or foundation application is an
+action only the project owner can take.
 
 ## What is already in place
 
 | Item | State |
 | --- | --- |
 | `SHA256SUMS.txt` on every release | **done** — `publish` writes it from the files it uploads |
-| Windows signing hook | **ready** — runs only when `WINDOWS_CERTIFICATE` is set |
-| macOS signing hook | **ready** — runs only when `MACOS_CERTIFICATE` is set |
-| Installer signing | **ready** — same hook in the `desktop` job |
-| Certificate | **not bought** |
+| SignPath Foundation GitHub Action hook | **ready** — runs when `SIGNPATH_API_TOKEN` is set |
+| Windows `.pfx` signing hook | **ready** — runs when `WINDOWS_CERTIFICATE` is set |
+| macOS signing hook | **ready** — runs when `MACOS_CERTIFICATE` is set |
+| Installer signing (SignPath + `.pfx`) | **ready** — wired in the `desktop` job |
+| Certificate / SignPath approval | **awaiting maintainer submission** |
 
 A reader can verify a download today:
 
@@ -29,8 +31,8 @@ Get-FileHash .\BaudForge_0.5.1_x64-setup.exe -Algorithm SHA256
 ## What signing changes
 
 An unsigned `.exe` shows *"Windows protected your PC"* — SmartScreen — until it collects
-enough reputation. A signed binary shows the publisher's name, and an EV certificate skips
-the reputation wait. That warning is the whole reason to buy one.
+enough reputation. A signed binary shows the publisher's name. That warning is the whole
+reason to sign Windows artefacts.
 
 ## How open-source projects cross this gate without paying
 
@@ -41,7 +43,7 @@ they are, with the facts as Microsoft and SignPath state them today.
 
 SignPath issues the certificate in the foundation's name and vouches that the binary was
 built from the public repository by that repository's CI. The private key never leaves
-their HSM, and the signing step runs in the pipeline (a GitHub Action).
+their HSM, and the signing step runs in the pipeline (`signpath/github-action-submit-signing-request@v1`).
 
 Conditions, from <https://signpath.org/terms.html>:
 
@@ -57,15 +59,41 @@ What this repository must have before applying, and now has:
 
 | Requirement | State |
 | --- | --- |
-| Public repository | ✅ |
+| Public repository | ✅ `https://github.com/siyal343/baud-forge` |
 | OSI licence file | ✅ `LICENSE`, `LICENSE-APACHE`, `LICENSE-MIT` (MIT OR Apache-2.0) |
 | A release to sign | ✅ `v0.5.1` and earlier |
 | Documentation of what it does | ✅ `README.md`, `docs/QUICKSTART.md` |
-| CI on GitHub-hosted agents | ✅ all jobs |
-| Windows artefacts to sign | ✅ `bforge-windows-x86_64.exe`, `BaudForge_<v>_x64-setup.exe` |
+| CI on GitHub-hosted agents | ✅ all jobs in `.github/workflows/release.yml` |
+| Windows artefacts to sign | ✅ `bforge-windows-x86_64.exe`, `bforge-windows-aarch64.exe`, `BaudForge_<v>_x64-setup.exe` |
+| SignPath GitHub Action wired | ✅ `.github/workflows/release.yml` (`build` and `desktop` jobs) |
 
 SignPath signs **EXE and MSI**, so the NSIS installer and the CLI binaries are both in
 scope. A macOS or Linux signature is not part of the programme.
+
+#### Ready-to-Paste SignPath Foundation Application
+
+Submit the form at <https://about.signpath.io/product/open-source> (or <https://signpath.org/apply.html>) using these exact values:
+
+| Field | Value to Paste |
+| --- | --- |
+| **Project Name** | `BaudForge` |
+| **Project Slug** | `baud-forge` |
+| **Project URL / Repository** | `https://github.com/siyal343/baud-forge` |
+| **License** | `MIT OR Apache-2.0` (`LICENSE`, `LICENSE-MIT`, `LICENSE-APACHE`) |
+| **Project Description** | `Open-source hardware-in-the-loop (HIL) serial workbench, protocol dissector, and multi-port flight recorder for embedded systems engineering.` |
+| **CI / Build System** | `GitHub Actions (GitHub-hosted runners only): https://github.com/siyal343/baud-forge/blob/main/.github/workflows/release.yml` |
+| **Existing Public Releases** | `https://github.com/siyal343/baud-forge/releases` |
+| **Artifacts to Sign** | `bforge-windows-x86_64.exe`, `bforge-windows-aarch64.exe`, `BaudForge_*_x64-setup.exe` (NSIS installer) |
+| **Commercial Dual-Licensing?** | `No — purely open-source under MIT OR Apache-2.0.` |
+
+Once SignPath approves the project, add these repository secrets in GitHub (`Settings -> Secrets and variables -> Actions`):
+
+| Secret | Value |
+| --- | --- |
+| `SIGNPATH_API_TOKEN` | CI user API token from SignPath |
+| `SIGNPATH_ORGANIZATION_ID` | Organization ID UUID from SignPath |
+| `SIGNPATH_PROJECT_SLUG` | `baud-forge` (optional; defaults to `baud-forge`) |
+| `SIGNPATH_SIGNING_POLICY_SLUG` | `release-signing` (optional; defaults to `release-signing`) |
 
 ### 2. Microsoft Store, MSIX — signing is free because Microsoft re-signs
 
@@ -96,19 +124,16 @@ It works, and it is what a developer expects. It is not what a stranger expects.
 - **Azure Artifact Signing for this project**: ~10 USD/month, identity-validated, and the
   individual tier is limited to the USA and Canada.
 
-## The three routes
+## The routes compared
 
 | Route | Cost, estimate | Notes |
 | --- | --- | --- |
+| SignPath.io for open source | free for OSS projects | Wired in `.github/workflows/release.yml`; requires application approval |
 | OV certificate from a CA (DigiCert, Sectigo, SSL.com) | ~200–400 USD per year | Signing a `.pfx` in CI; SmartScreen reputation builds over time |
-| EV certificate | ~400–700 USD per year | Hardware token or cloud HSM; immediate SmartScreen trust |
-| Azure Trusted Signing | ~10 USD per month, identity-verified | Cloud signing; a GitHub Action signs without a `.pfx` |
-| SignPath.io for open source | free for OSS projects | Requires an application and a public repository |
+| EV certificate | ~400–700 USD per year | Hardware token or cloud HSM |
+| Azure Trusted Signing | ~10 USD per month, identity-verified | Cloud signing; individual tier limited to US/Canada |
 
-The `.pfx` route is the least work for this repository, because the workflow already knows
-how to use one.
-
-## Turning it on
+## Turning on `.pfx` or macOS signing
 
 1. Buy a certificate and export it as a `.pfx` with a password.
 2. Base64 the file:
@@ -148,5 +173,6 @@ how to use one.
 ## Why this is the last step, not an early one
 
 Every other improvement in this project changes what the tool does. This one changes what a
-stranger's operating system says about it, and it costs money every year. It is worth doing
-once the surface stops moving — which, after 0.5.0, it has.
+stranger's operating system says about it, and it costs money every year unless signed via
+SignPath Foundation. It is worth doing once the surface stops moving — which, after 0.5.0,
+it has.

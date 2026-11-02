@@ -102,7 +102,6 @@ fn main() {
         std::thread::sleep(Duration::from_micros(200));
     }
 
-    let snapshot = session.snapshot();
     let elapsed = started.elapsed().as_secs_f64();
     let written = session.seal().unwrap();
     let peak = peak_resident_bytes().unwrap_or(peak_rss).max(peak_rss);
@@ -148,16 +147,16 @@ fn main() {
                 }
                 println!(
                     "\ntotal {} chunks, {} bytes of frame payload, {total_gaps} sequence gap(s)",
-                    snapshot.session.chunks, report.bytes
+                    report.chunks, report.bytes
                 );
                 if total_gaps > 0 {
                     println!("FAIL: the sequence has gaps, so a block was lost");
                     verdict_ok = false;
                 }
-                if snapshot.session.chunks != written.chunks {
+                if report.chunks != written.chunks || report.bytes != written.payload_bytes {
                     println!(
-                        "FAIL: the snapshot saw {} chunks, the vault holds {}",
-                        snapshot.session.chunks, written.chunks
+                        "FAIL: the vault reader saw {} chunks ({} bytes), the writer sealed {} ({} bytes)",
+                        report.chunks, report.bytes, written.chunks, written.payload_bytes
                     );
                     verdict_ok = false;
                 }
@@ -191,32 +190,31 @@ struct PortReport {
 
 struct SequenceReport {
     ports: Vec<PortReport>,
+    chunks: u64,
     bytes: u64,
 }
 
 /// Read every record and check that each port's block sequence is dense.
 fn verify_sequences(path: &str) -> Result<SequenceReport, String> {
     let mut reader = LogReader::open(path).map_err(|error| error.to_string())?;
-    let total = reader.chunks();
     let mut seen: HashMap<u16, (u64, u64, u64, u64)> = HashMap::new();
 
-    for frame in 0..total {
-        let Some(record) = reader.read_at(frame).map_err(|error| error.to_string())? else {
-            break;
-        };
-        if record.payload.len() < 8 {
-            continue;
-        }
-        let seq = u64::from_le_bytes(record.payload[..8].try_into().unwrap());
-        let entry = seen.entry(record.chunk.port_id).or_insert((0, 0, 0, seq));
-        let (chunks, bytes, gaps, expected) = entry;
-        if seq != *expected {
-            *gaps += seq.saturating_sub(*expected).max(1);
-        }
-        *expected = seq + 1;
-        *chunks += 1;
-        *bytes += record.payload.len() as u64;
-    }
+    reader
+        .for_each(0, |record| {
+            if record.payload.len() >= 8 {
+                let seq = u64::from_le_bytes(record.payload[..8].try_into().unwrap());
+                let entry = seen.entry(record.chunk.port_id).or_insert((0, 0, 0, seq));
+                let (chunks, bytes, gaps, expected) = entry;
+                if seq != *expected {
+                    *gaps += seq.saturating_sub(*expected).max(1);
+                }
+                *expected = seq + 1;
+                *chunks += 1;
+                *bytes += record.payload.len() as u64;
+            }
+            true
+        })
+        .map_err(|error| error.to_string())?;
 
     let mut ports: Vec<PortReport> = seen
         .into_iter()
@@ -228,6 +226,11 @@ fn verify_sequences(path: &str) -> Result<SequenceReport, String> {
         })
         .collect();
     ports.sort_by(|a, b| a.id.cmp(&b.id));
+    let chunks = ports.iter().map(|port| port.chunks).sum();
     let bytes = ports.iter().map(|port| port.bytes).sum();
-    Ok(SequenceReport { ports, bytes })
+    Ok(SequenceReport {
+        ports,
+        chunks,
+        bytes,
+    })
 }

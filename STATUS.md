@@ -13,7 +13,7 @@ A complete four-milestone serial monitor, protocol dissector, session differ, fi
 | Releases | 13 tags, `v0.1.0` … `v0.8.0` | `git tag` |
 | Crates | 9 workspace crates | `ls crates` |
 | Feature specs | 60 (`specs/0002` … `specs/0057`) | `ls specs/*.md` |
-| Tests | 328 passing | `cargo test --workspace --exclude bforge-gui` |
+| Tests | 330 passing | `cargo test --workspace --exclude bforge-gui` |
 | CI | 11 jobs: 5 test targets, lint, UI, desktop (Windows, Linux, macOS), macOS Intel cross-build | `.github/workflows/ci.yml` |
 
 ## What works, and the evidence
@@ -22,8 +22,8 @@ Each line was measured on this machine or verified by automated test; the figure
 
 | Capability | Evidence |
 | --- | --- |
-| Pipeline with no gaps | 4 ports × 1.2 MB/s for 60 s: 288 MB, 0 gaps, 11.9 MiB peak |
-| Vault with constant memory | 512 MiB read at 21.5 MiB peak (4.2 % of the file) |
+| Pipeline with no gaps | 4 ports × 1.2 MB/s for 600 s: 2.90 GB (44 segments), 0 gaps, 5.6 MiB peak RSS (`specs/0007`) |
+| Vault with constant memory | 1,024 MiB read at 1,311 MiB/s, 18.2 MiB peak RSS (1.78 % of the file, `specs/0007`) |
 | Export (`csv`, `jsonl`, `saleae`, `pcapng`) | 285,740 records exported via forward cursor in 3.4–5.5 s (`specs/0044`) |
 | Serial, TCP client/server, UDP | Socket simulator for CI, hotplug reconnect in 17–47 ms on Windows (`specs/0012`) |
 | Six framing modes, three checksums | Delimiter, COBS, SLIP, Intel HEX, sync+length, idle gap; CRC-8, CRC-16/CCITT-FALSE, CRC-32C |

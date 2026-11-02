@@ -33,15 +33,21 @@ jobs:
         run: cargo build --release --locked -p bforge-core --examples
 
       - name: Stress, 4 ports at 12 Mbaud
+        shell: bash
         run: |
+          set -euo pipefail
           cargo run --release --locked -q -p bforge-core --example s5_stress -- \
             --ports 4 --mbps 1.2 --seconds "${{ inputs.seconds || '600' }}" \
             --vault target/nightly-stress.bflog | tee stress.txt
+          rm -f target/nightly-stress.bflog*
 
       - name: Memory, large vault
+        shell: bash
         run: |
+          set -euo pipefail
           cargo run --release --locked -q -p bforge-core --example s5_memory -- \
             --size-mb "${{ inputs.size_mb || '1024' }}" | tee memory.txt
+          rm -f target/s5-memory.bflog*
 
       - name: Publish the numbers
         if: always()
