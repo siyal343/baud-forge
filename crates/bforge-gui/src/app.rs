@@ -357,10 +357,14 @@ impl eframe::App for BaudForgeApp {
             .unwrap_or_default();
 
         let had_events = !events.is_empty();
+        let mut telemetry_signals = std::collections::HashMap::new();
 
         for event in events {
             match event {
                 crate::session::RxEvent::Line(line) => {
+                    if line.contains("[IMU]") {
+                        crate::dashboard::parse_imu_line(&line, &mut telemetry_signals);
+                    }
                     self.tab_viewer.serial_lines.push(line);
                     if self.tab_viewer.serial_lines.len() > 5000 {
                         let excess = self.tab_viewer.serial_lines.len() - 5000;
@@ -369,7 +373,10 @@ impl eframe::App for BaudForgeApp {
                     self.tab_viewer.serial_autoscroll = true;
                 }
                 crate::session::RxEvent::Bytes(bytes) => {
-                    self.tab_viewer.hex_data = bytes;
+                    self.tab_viewer.hex_data = bytes.clone();
+                    self.tab_viewer.last_decoded_packet =
+                        crate::dissect::decode_packet(&bytes, &self.tab_viewer.dissector_schema);
+                    self.tab_viewer.dissector_packet_count += 1;
                 }
                 crate::session::RxEvent::Stats {
                     rx_bytes,
@@ -396,7 +403,43 @@ impl eframe::App for BaudForgeApp {
             }
         }
 
-        // 2. Transmit pending commands requested by user controls
+        // 2. Telemetry signals extraction & simulated waveforms
+        telemetry_signals.insert("rate".to_string(), self.packets_per_sec as f32);
+        let is_connected = self.session_status == SessionStatus::Connected;
+        telemetry_signals.insert("sync".to_string(), if is_connected { 1.0 } else { 0.0 });
+        telemetry_signals.insert("fault".to_string(), 0.0);
+
+        let is_demo = self.port_name.contains("DEMO") || self.port_name.contains("Simulated");
+        if is_demo || (is_connected && !telemetry_signals.contains_key("rpm")) {
+            let t = ctx.input(|i| i.time) as f32;
+            let rpm = (7200.0 + 2600.0 * (t * 1.2).sin() + 450.0 * (t * 3.8).cos()).clamp(0.0, 12000.0);
+            let volts = (24.1 + 0.6 * (t * 0.6).sin()).clamp(0.0, 36.0);
+            telemetry_signals.insert("rpm".to_string(), rpm);
+            telemetry_signals.insert("volts".to_string(), volts);
+
+            if !telemetry_signals.contains_key("temp") {
+                let temp = 42.0 + 2.5 * (t * 0.3).sin();
+                telemetry_signals.insert("temp".to_string(), temp);
+            }
+            if !telemetry_signals.contains_key("az") {
+                let az = 0.98 + 0.12 * (t * 2.1).sin();
+                telemetry_signals.insert("az".to_string(), az);
+            }
+        }
+
+        if let Some(&rpm) = telemetry_signals.get("rpm") {
+            self.tab_viewer.dash_rpm = rpm;
+        }
+        if let Some(&temp) = telemetry_signals.get("temp") {
+            self.tab_viewer.dash_temp_c = temp;
+        }
+        if let Some(&volts) = telemetry_signals.get("volts") {
+            self.tab_viewer.dash_bus_volts = volts;
+        }
+
+        self.tab_viewer.dashboard.update_signals(&telemetry_signals);
+
+        // 3. Transmit pending commands requested by user controls
         if let Some(cmd) = self.tab_viewer.pending_tx.take() {
             if let Some(ref session) = self.active_session {
                 session.send_tx(cmd);
@@ -414,8 +457,8 @@ impl eframe::App for BaudForgeApp {
                     .show_inside(ui, &mut self.tab_viewer);
             });
 
-        // 3. Request continuous repaint while streaming or when events arrive
-        if self.active_session.is_some() || had_events {
+        // 4. Request continuous repaint while streaming or when events arrive
+        if self.active_session.is_some() || had_events || is_demo {
             ctx.request_repaint_after(std::time::Duration::from_millis(16));
         }
     }

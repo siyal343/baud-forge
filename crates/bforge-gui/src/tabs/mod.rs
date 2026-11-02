@@ -50,6 +50,7 @@ pub struct BaudForgeTabViewer {
     // Hex Inspector State
     pub hex_data: Vec<u8>,
     pub hex_selected_offset: Option<usize>,
+    pub hex_highlight_range: Option<std::ops::Range<usize>>,
 
     // Telemetry Scope State
     pub scope_channels: [bool; 4],
@@ -61,6 +62,8 @@ pub struct BaudForgeTabViewer {
     // Protocol Dissector State
     pub dissector_filter: String,
     pub dissector_packet_count: usize,
+    pub dissector_schema: crate::dissect::DissectorSchema,
+    pub last_decoded_packet: Option<crate::dissect::DecodedPacket>,
 
     // HIL Bridge State
     pub hil_port_a: String,
@@ -71,6 +74,7 @@ pub struct BaudForgeTabViewer {
     pub hil_bridge_active: bool,
 
     // Dashboards State
+    pub dashboard: crate::dashboard::DashboardManager,
     pub dash_rpm: f32,
     pub dash_temp_c: f32,
     pub dash_bus_volts: f32,
@@ -90,25 +94,38 @@ pub struct BaudForgeTabViewer {
 
 impl Default for BaudForgeTabViewer {
     fn default() -> Self {
-        let sample_hex: Vec<u8> = vec![
-            0xBA, 0xDE, 0x01, 0x00, 0x30, 0x00, 0x3F, 0x80,
-            0x00, 0x00, 0xBF, 0x00, 0x00, 0x00, 0x3E, 0xAA,
-            0xAB, 0xCD, 0x12, 0x34, 0x56, 0x78, 0x9A, 0xBC,
-            0xDE, 0xF0, 0x11, 0x22, 0x33, 0x44, 0x55, 0x66,
-            0x77, 0x88, 0x99, 0xAA, 0xBB, 0xCC, 0xDD, 0xEE,
-            0x00, 0x01, 0x02, 0x03, 0x04, 0x05, 0x7F, 0x83,
-            0xA1, 0x2E, 0x55, 0xAA, 0xFF, 0x00, 0xAA, 0x55,
-            0x01, 0x23, 0x45, 0x67, 0x89, 0xAB, 0xCD, 0xEF,
-        ];
+        let mut sample_hex = Vec::with_capacity(48);
+        sample_hex.extend_from_slice(&[0xBA, 0xDE]); // sync 0xBADE
+        sample_hex.extend_from_slice(&1042u32.to_le_bytes()); // seq 1042
+        sample_hex.extend_from_slice(&0.02f32.to_le_bytes()); // ax
+        sample_hex.extend_from_slice(&0.01f32.to_le_bytes()); // ay
+        sample_hex.extend_from_slice(&9.81f32.to_le_bytes()); // az
+        sample_hex.extend_from_slice(&0.012f32.to_le_bytes()); // gp
+        sample_hex.extend_from_slice(&(-0.045f32).to_le_bytes()); // gq
+        sample_hex.extend_from_slice(&0.003f32.to_le_bytes()); // gr
+        sample_hex.extend_from_slice(&0.0f32.to_le_bytes()); // qx
+        sample_hex.extend_from_slice(&0.7071f32.to_le_bytes()); // qy
+        sample_hex.extend_from_slice(&0.0f32.to_le_bytes()); // qz
+        sample_hex.extend_from_slice(&3650i16.to_le_bytes()); // temp_raw (36.50 C)
+        let crc = bforge_framer::checksum::crc32c(&sample_hex);
+        sample_hex.extend_from_slice(&crc.to_le_bytes()); // crc32
 
         let available_ports = crate::hardware::scan_available_ports();
+        let selected_port_idx = available_ports
+            .iter()
+            .position(|p| p.vid_pid.is_some() && !p.port_name.contains("LOOPBACK"))
+            .or_else(|| available_ports.iter().position(|p| p.vid_pid.is_some()))
+            .unwrap_or(0);
+
+        let dissector_schema = crate::dissect::DissectorSchema::BuiltinImu;
+        let last_decoded_packet = crate::dissect::decode_packet(&sample_hex, &dissector_schema);
         let (sniff_tx, sniff_rx) = crossbeam_channel::unbounded();
 
         Self {
             pending_action: None,
 
             available_ports,
-            selected_port_idx: 0,
+            selected_port_idx,
             selected_baud: 115200,
             custom_baud_str: "115200".to_string(),
             selected_framing: "Line-Delimited (\\n)".to_string(),
@@ -140,6 +157,7 @@ impl Default for BaudForgeTabViewer {
 
             hex_data: sample_hex,
             hex_selected_offset: Some(0),
+            hex_highlight_range: None,
 
             scope_channels: [true, true, false, false],
             scope_timebase_ms: 10.0,
@@ -149,6 +167,8 @@ impl Default for BaudForgeTabViewer {
 
             dissector_filter: String::new(),
             dissector_packet_count: 14820,
+            dissector_schema,
+            last_decoded_packet,
 
             hil_port_a: "COM3 (DUT Target)".to_string(),
             hil_port_b: "COM4 (HIL Loopback)".to_string(),
@@ -157,6 +177,7 @@ impl Default for BaudForgeTabViewer {
             hil_jitter_ms: 0,
             hil_bridge_active: true,
 
+            dashboard: crate::dashboard::default_dashboard(),
             dash_rpm: 4820.0,
             dash_temp_c: 42.6,
             dash_bus_volts: 24.1,
@@ -668,6 +689,13 @@ impl BaudForgeTabViewer {
             if let Some(offset) = self.hex_selected_offset {
                 ui.label(RichText::new(format!("Offset: 0x{offset:04X} ({offset})")).color(COLOR_SIGNAL_TX).monospace());
             }
+            if let Some(ref range) = self.hex_highlight_range {
+                ui.label(
+                    RichText::new(format!("Dissector Highlight: 0x{:02X}..0x{:02X} ({}B)", range.start, range.end, range.len()))
+                        .color(COLOR_SIGNAL_TRIGGER)
+                        .monospace(),
+                );
+            }
         });
 
         ui.separator();
@@ -685,18 +713,46 @@ impl BaudForgeTabViewer {
                     for (col_idx, byte) in chunk.iter().enumerate() {
                         let byte_offset = row_offset + col_idx;
                         let is_selected = self.hex_selected_offset == Some(byte_offset);
+                        let is_highlighted = self
+                            .hex_highlight_range
+                            .as_ref()
+                            .map_or(false, |r| r.contains(&byte_offset));
 
-                        let text = format!("{byte:02X}");
-                        let mut rich = RichText::new(text).monospace();
-                        if is_selected {
-                            rich = rich.color(COLOR_SIGNAL_TX).strong();
+                        let text_color = if is_selected {
+                            COLOR_SIGNAL_TRIGGER
+                        } else if is_highlighted {
+                            COLOR_TEXT_PRIMARY
                         } else if *byte == 0xBA || *byte == 0xDE {
-                            rich = rich.color(COLOR_SIGNAL_TRIGGER);
+                            COLOR_SIGNAL_TRIGGER
                         } else {
-                            rich = rich.color(COLOR_TEXT_PRIMARY);
-                        }
+                            COLOR_TEXT_MUTED
+                        };
 
-                        if ui.selectable_label(is_selected, rich).clicked() {
+                        let fill_color = if is_selected || is_highlighted {
+                            COLOR_SURFACE_CARD
+                        } else {
+                            Color32::TRANSPARENT
+                        };
+
+                        let stroke = if is_selected {
+                            Stroke::new(1.5_f32, COLOR_SIGNAL_TRIGGER)
+                        } else if is_highlighted {
+                            Stroke::new(1.5_f32, COLOR_SIGNAL_TX)
+                        } else {
+                            Stroke::NONE
+                        };
+
+                        let btn = egui::Button::new(
+                            RichText::new(format!("{byte:02X}"))
+                                .monospace()
+                                .color(text_color)
+                                .strong(),
+                        )
+                        .fill(fill_color)
+                        .stroke(stroke)
+                        .min_size(Vec2::new(20.0, 18.0));
+
+                        if ui.add(btn).clicked() {
                             self.hex_selected_offset = Some(byte_offset);
                         }
                     }
@@ -705,18 +761,110 @@ impl BaudForgeTabViewer {
                     ui.label(RichText::new("|").color(COLOR_BORDER_HAIRLINE));
 
                     // ASCII representation
-                    let mut ascii_repr = String::with_capacity(chunk.len());
-                    for byte in chunk {
-                        if *byte >= 32 && *byte <= 126 {
-                            ascii_repr.push(*byte as char);
+                    for (col_idx, byte) in chunk.iter().enumerate() {
+                        let byte_offset = row_offset + col_idx;
+                        let is_selected = self.hex_selected_offset == Some(byte_offset);
+                        let is_highlighted = self
+                            .hex_highlight_range
+                            .as_ref()
+                            .map_or(false, |r| r.contains(&byte_offset));
+
+                        let ch = if *byte >= 32 && *byte <= 126 {
+                            *byte as char
                         } else {
-                            ascii_repr.push('.');
+                            '.'
+                        };
+
+                        let text_color = if is_selected {
+                            COLOR_SIGNAL_TRIGGER
+                        } else if is_highlighted {
+                            COLOR_TEXT_PRIMARY
+                        } else {
+                            COLOR_TEXT_MUTED
+                        };
+
+                        let fill_color = if is_selected || is_highlighted {
+                            COLOR_SURFACE_CARD
+                        } else {
+                            Color32::TRANSPARENT
+                        };
+
+                        let stroke = if is_selected {
+                            Stroke::new(1.0_f32, COLOR_SIGNAL_TRIGGER)
+                        } else if is_highlighted {
+                            Stroke::new(1.0_f32, COLOR_SIGNAL_TX)
+                        } else {
+                            Stroke::NONE
+                        };
+
+                        let btn = egui::Button::new(
+                            RichText::new(ch.to_string())
+                                .monospace()
+                                .color(text_color)
+                                .strong(),
+                        )
+                        .fill(fill_color)
+                        .stroke(stroke)
+                        .min_size(Vec2::new(10.0, 18.0));
+
+                        if ui.add(btn).clicked() {
+                            self.hex_selected_offset = Some(byte_offset);
                         }
                     }
-                    ui.label(RichText::new(ascii_repr).color(COLOR_TEXT_MUTED).monospace());
                 });
             }
         });
+
+        if let Some(offset) = self.hex_selected_offset {
+            if offset < self.hex_data.len() {
+                let byte = self.hex_data[offset];
+                let ch = if byte >= 32 && byte <= 126 { byte as char } else { '.' };
+                let float_val = if offset + 4 <= self.hex_data.len() {
+                    Some(f32::from_le_bytes(self.hex_data[offset..offset + 4].try_into().unwrap()))
+                } else {
+                    None
+                };
+                let u16_val = if offset + 2 <= self.hex_data.len() {
+                    Some(u16::from_le_bytes(self.hex_data[offset..offset + 2].try_into().unwrap()))
+                } else {
+                    None
+                };
+                let u32_val = if offset + 4 <= self.hex_data.len() {
+                    Some(u32::from_le_bytes(self.hex_data[offset..offset + 4].try_into().unwrap()))
+                } else {
+                    None
+                };
+
+                ui.add_space(4.0);
+                ui.group(|ui| {
+                    ui.horizontal_wrapped(|ui| {
+                        ui.label(RichText::new("BYTE INSPECT:").color(COLOR_SIGNAL_TX).strong());
+                        ui.separator();
+                        ui.label(RichText::new(format!("Offset: 0x{offset:04X} ({offset})")).color(COLOR_TEXT_PRIMARY).monospace());
+                        ui.separator();
+                        ui.label(RichText::new(format!("Hex: 0x{byte:02X}")).color(COLOR_SIGNAL_TX).monospace());
+                        ui.separator();
+                        ui.label(RichText::new(format!("Dec: {byte} (u8), {} (i8)", byte as i8)).color(COLOR_TEXT_PRIMARY).monospace());
+                        ui.separator();
+                        ui.label(RichText::new(format!("Bin: 0b{byte:08b}")).color(COLOR_SIGNAL_TRIGGER).monospace());
+                        ui.separator();
+                        ui.label(RichText::new(format!("ASCII: '{ch}'")).color(COLOR_TEXT_PRIMARY).monospace());
+                        if let Some(f) = float_val {
+                            ui.separator();
+                            ui.label(RichText::new(format!("Float32 (LE): {f:+.4e} ({f:+.4})")).color(COLOR_SIGNAL_RX).monospace());
+                        }
+                        if let Some(u) = u16_val {
+                            ui.separator();
+                            ui.label(RichText::new(format!("UInt16 (LE): {u} (0x{u:04X})")).color(COLOR_TEXT_MUTED).monospace());
+                        }
+                        if let Some(u) = u32_val {
+                            ui.separator();
+                            ui.label(RichText::new(format!("UInt32 (LE): {u} (0x{u:08X})")).color(COLOR_TEXT_MUTED).monospace());
+                        }
+                    });
+                });
+            }
+        }
     }
 
     /// Render Tab: Telemetry Oscilloscope.
@@ -812,6 +960,79 @@ impl BaudForgeTabViewer {
         }
     }
 
+    /// Helper rendering a field node in the protocol dissector tree.
+    fn render_dissector_field_node(
+        ui: &mut Ui,
+        field: &crate::dissect::DecodedField,
+        filter: &str,
+        new_highlight: &mut Option<std::ops::Range<usize>>,
+        new_selected: &mut Option<usize>,
+    ) {
+        let filter_lower = filter.trim().to_lowercase();
+        let matches_filter = filter_lower.is_empty()
+            || field.name.to_lowercase().contains(&filter_lower)
+            || field.type_name.to_lowercase().contains(&filter_lower)
+            || field.value_str.to_lowercase().contains(&filter_lower)
+            || field.children.iter().any(|c| c.name.to_lowercase().contains(&filter_lower));
+
+        if !matches_filter {
+            return;
+        }
+
+        if field.children.is_empty() {
+            let row = ui.horizontal(|ui| {
+                ui.label(RichText::new("•").color(COLOR_TEXT_MUTED));
+                ui.label(RichText::new(&field.type_name).color(COLOR_TEXT_MUTED).small());
+                ui.label(RichText::new(&field.name).color(COLOR_TEXT_PRIMARY).strong());
+                ui.label(RichText::new("=").color(COLOR_TEXT_MUTED));
+                ui.label(RichText::new(&field.value_str).color(COLOR_SIGNAL_TX).monospace());
+
+                ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
+                    ui.label(
+                        RichText::new(format!(
+                            "0x{:02X}..0x{:02X} ({}B)",
+                            field.byte_offset,
+                            field.byte_offset + field.byte_len,
+                            field.byte_len
+                        ))
+                        .color(COLOR_TEXT_MUTED)
+                        .small()
+                        .monospace(),
+                    );
+                });
+            }).response;
+
+            if row.hovered() || row.clicked() {
+                *new_highlight = Some(field.byte_offset..field.byte_offset + field.byte_len);
+                if row.clicked() {
+                    *new_selected = Some(field.byte_offset);
+                }
+            }
+        } else {
+            let header_text = format!(
+                "{} {}: {}",
+                field.type_name, field.name, field.value_str
+            );
+
+            let header_resp = egui::CollapsingHeader::new(
+                RichText::new(header_text).color(COLOR_TEXT_PRIMARY).strong(),
+            )
+            .default_open(true)
+            .show(ui, |ui| {
+                for child in &field.children {
+                    Self::render_dissector_field_node(ui, child, filter, new_highlight, new_selected);
+                }
+            });
+
+            if header_resp.header_response.hovered() || header_resp.header_response.clicked() {
+                *new_highlight = Some(field.byte_offset..field.byte_offset + field.byte_len);
+                if header_resp.header_response.clicked() {
+                    *new_selected = Some(field.byte_offset);
+                }
+            }
+        }
+    }
+
     /// Render Tab: Protocol Dissector Lab.
     fn render_protocol_dissector(&mut self, ui: &mut Ui) {
         Self::render_header(
@@ -822,6 +1043,62 @@ impl BaudForgeTabViewer {
             COLOR_SIGNAL_TX,
         );
 
+        // Top bar: Schema selector buttons
+        ui.horizontal(|ui| {
+            ui.label(RichText::new("Schema:").color(COLOR_TEXT_MUTED).strong());
+
+            let is_imu = matches!(self.dissector_schema, crate::dissect::DissectorSchema::BuiltinImu);
+            let imu_btn = egui::Button::new(
+                RichText::new("[Built-in IMU 9-DoF]")
+                    .color(if is_imu { COLOR_SIGNAL_TX } else { COLOR_TEXT_PRIMARY })
+                    .strong(),
+            )
+            .fill(if is_imu { COLOR_SURFACE_CARD } else { Color32::TRANSPARENT });
+
+            if ui.add(imu_btn).clicked() {
+                self.dissector_schema = crate::dissect::DissectorSchema::BuiltinImu;
+                self.last_decoded_packet = crate::dissect::decode_packet(&self.hex_data, &self.dissector_schema);
+            }
+
+            let is_c = matches!(self.dissector_schema, crate::dissect::DissectorSchema::CustomCHeader(_));
+            let c_btn = egui::Button::new(
+                RichText::new("[Load C Header .h...]")
+                    .color(if is_c { COLOR_SIGNAL_TX } else { COLOR_TEXT_PRIMARY }),
+            )
+            .fill(if is_c { COLOR_SURFACE_CARD } else { Color32::TRANSPARENT });
+
+            if ui.add(c_btn).clicked() {
+                if let Some(path) = rfd::FileDialog::new()
+                    .add_filter("C Header", &["h", "hpp", "c"])
+                    .pick_file()
+                {
+                    let path_str = path.to_string_lossy().to_string();
+                    self.dissector_schema = crate::dissect::DissectorSchema::CustomCHeader(path_str);
+                    self.last_decoded_packet = crate::dissect::decode_packet(&self.hex_data, &self.dissector_schema);
+                }
+            }
+
+            let is_proto = matches!(self.dissector_schema, crate::dissect::DissectorSchema::CustomProtobuf(_));
+            let proto_btn = egui::Button::new(
+                RichText::new("[Load Protobuf...]")
+                    .color(if is_proto { COLOR_SIGNAL_TX } else { COLOR_TEXT_PRIMARY }),
+            )
+            .fill(if is_proto { COLOR_SURFACE_CARD } else { Color32::TRANSPARENT });
+
+            if ui.add(proto_btn).clicked() {
+                if let Some(path) = rfd::FileDialog::new()
+                    .add_filter("Protobuf Schema", &["proto", "bin", "desc"])
+                    .pick_file()
+                {
+                    let path_str = path.to_string_lossy().to_string();
+                    self.dissector_schema = crate::dissect::DissectorSchema::CustomProtobuf(path_str);
+                    self.last_decoded_packet = crate::dissect::decode_packet(&self.hex_data, &self.dissector_schema);
+                }
+            }
+        });
+
+        ui.add_space(4.0);
+
         ui.horizontal(|ui| {
             ui.label(RichText::new("Search Fields:").color(COLOR_TEXT_MUTED));
             ui.text_edit_singleline(&mut self.dissector_filter);
@@ -830,52 +1107,63 @@ impl BaudForgeTabViewer {
 
         ui.separator();
 
-        // Dissector packet field tree
-        egui::ScrollArea::vertical().show(ui, |ui| {
-            ui.collapsing("📦 Frame Header [Offset 0x00..0x06]", |ui| {
-                ui.horizontal(|ui| {
-                    ui.label(RichText::new("Sync Word:").color(COLOR_TEXT_MUTED));
-                    ui.label(RichText::new("0xBAUD").color(COLOR_SIGNAL_TX).monospace());
-                    ui.label("(type: u16, value: 0xBAUD [MATCH])");
-                });
-                ui.horizontal(|ui| {
-                    ui.label(RichText::new("Packet ID:").color(COLOR_TEXT_MUTED));
-                    ui.label(RichText::new("0x01").color(COLOR_TEXT_PRIMARY).monospace());
-                    ui.label("(type: u8, descriptor: IMU_TELEMETRY)");
-                });
-                ui.horizontal(|ui| {
-                    ui.label(RichText::new("Payload Length:").color(COLOR_TEXT_MUTED));
-                    ui.label(RichText::new("48 bytes").color(COLOR_TEXT_PRIMARY).monospace());
-                    ui.label("(type: u16)");
-                });
+        if self.last_decoded_packet.is_none() && !self.hex_data.is_empty() {
+            self.last_decoded_packet = crate::dissect::decode_packet(&self.hex_data, &self.dissector_schema);
+        }
+
+        let mut new_highlight = None;
+        let mut new_selected = None;
+
+        if let Some(ref packet) = self.last_decoded_packet {
+            // Status Badges
+            ui.horizontal(|ui| {
+                ui.label(RichText::new(format!("Active: {}", packet.schema_name)).color(COLOR_TEXT_PRIMARY).strong());
+                ui.separator();
+
+                // Sync word badge
+                if packet.sync_valid {
+                    ui.label(RichText::new("[SYNC 0xBADE OK]").color(COLOR_SIGNAL_RX).strong());
+                } else {
+                    ui.label(RichText::new("[SYNC MISMATCH]").color(COLOR_SIGNAL_FAULT).strong());
+                }
+
+                ui.separator();
+
+                // CRC verification badge
+                if packet.crc_valid {
+                    ui.label(RichText::new("[CRC32 OK]").color(COLOR_SIGNAL_RX).strong());
+                } else {
+                    ui.label(RichText::new("[CRC MISMATCH]").color(COLOR_SIGNAL_FAULT).strong());
+                }
+
+                ui.separator();
+                ui.label(RichText::new(format!("[Payload: {} bytes]", packet.payload_len)).color(COLOR_TEXT_MUTED));
             });
 
-            ui.collapsing("📐 Payload Fields [Offset 0x06..0x36]", |ui| {
-                ui.horizontal(|ui| {
-                    ui.label(RichText::new("Quaternion [W, X, Y, Z]:").color(COLOR_TEXT_MUTED));
-                    ui.label(RichText::new("[0.7071, 0.0000, 0.7071, 0.0000]").color(COLOR_SIGNAL_RX).monospace());
-                    ui.label("(float32 x 4)");
-                });
-                ui.horizontal(|ui| {
-                    ui.label(RichText::new("Gyro Angular Velocity:").color(COLOR_TEXT_MUTED));
-                    ui.label(RichText::new("[+0.012, -0.045, +0.003] rad/s").color(COLOR_TEXT_PRIMARY).monospace());
-                    ui.label("(float32 x 3)");
-                });
-                ui.horizontal(|ui| {
-                    ui.label(RichText::new("Linear Acceleration:").color(COLOR_TEXT_MUTED));
-                    ui.label(RichText::new("[+0.02, +0.01, +9.81] m/s²").color(COLOR_TEXT_PRIMARY).monospace());
-                    ui.label("(float32 x 3)");
-                });
-            });
+            ui.separator();
 
-            ui.collapsing("🛡 Checksum & Trailer [Offset 0x36..0x3A]", |ui| {
-                ui.horizontal(|ui| {
-                    ui.label(RichText::new("CRC32-Castagnoli:").color(COLOR_TEXT_MUTED));
-                    ui.label(RichText::new("0x7F83A12E").color(COLOR_SIGNAL_RX).monospace());
-                    ui.label(RichText::new("[VALID]").color(COLOR_SIGNAL_RX).strong());
-                });
+            // Field Tree View
+            egui::ScrollArea::vertical().show(ui, |ui| {
+                for field in &packet.fields {
+                    Self::render_dissector_field_node(
+                        ui,
+                        field,
+                        &self.dissector_filter,
+                        &mut new_highlight,
+                        &mut new_selected,
+                    );
+                }
             });
-        });
+        } else {
+            ui.label(RichText::new("No packet decoded. Ensure bytes match schema format.").color(COLOR_TEXT_MUTED));
+        }
+
+        if new_highlight.is_some() {
+            self.hex_highlight_range = new_highlight;
+        }
+        if new_selected.is_some() {
+            self.hex_selected_offset = new_selected;
+        }
     }
 
     /// Render Tab: HIL Bridge & Fault Injection.
@@ -925,60 +1213,117 @@ impl BaudForgeTabViewer {
 
     /// Render Tab: Dashboards & Gauges.
     fn render_dashboards(&mut self, ui: &mut Ui) {
-        Self::render_header(ui, "[DASH]", "Dashboards & Instrument Gauges", "ONLINE", COLOR_SIGNAL_RX);
+        Self::render_header(
+            ui,
+            "[DASH]",
+            "Dashboards & Instrument Gauges",
+            "ONLINE",
+            COLOR_SIGNAL_RX,
+        );
 
+        // Top toolbar
         ui.horizontal(|ui| {
-            // Card 1: Motor RPM
-            ui.group(|ui| {
-                ui.set_width(180.0);
-                ui.label(RichText::new("SPIN RATE").color(COLOR_TEXT_MUTED).small());
-                ui.label(
-                    RichText::new(format!("{:.0} RPM", self.dash_rpm))
-                        .size(22.0)
-                        .color(COLOR_SIGNAL_TX)
-                        .strong(),
-                );
-                let progress = (self.dash_rpm / 6000.0).clamp(0.0, 1.0);
-                ui.add(egui::ProgressBar::new(progress).animate(true));
-            });
-
-            // Card 2: Temperature
-            ui.group(|ui| {
-                ui.set_width(180.0);
-                ui.label(RichText::new("DUT CORE TEMP").color(COLOR_TEXT_MUTED).small());
-                ui.label(
-                    RichText::new(format!("{:.1} °C", self.dash_temp_c))
-                        .size(22.0)
-                        .color(COLOR_SIGNAL_RX)
-                        .strong(),
-                );
-                ui.label(RichText::new("Status: NOMINAL").color(COLOR_SIGNAL_RX).small());
-            });
-
-            // Card 3: Bus Voltage
-            ui.group(|ui| {
-                ui.set_width(180.0);
-                ui.label(RichText::new("BUS POWER").color(COLOR_TEXT_MUTED).small());
-                ui.label(
-                    RichText::new(format!("{:.1} V", self.dash_bus_volts))
-                        .size(22.0)
-                        .color(COLOR_SIGNAL_TRIGGER)
-                        .strong(),
-                );
-                ui.label(RichText::new("Current: 1.42 A").color(COLOR_TEXT_MUTED).small());
-            });
+            if ui.button("+ Add Gauge").clicked() {
+                let count = self.dashboard.widgets.len() + 1;
+                self.dashboard.add_widget(crate::dashboard::DashboardWidget {
+                    id: format!("gauge_{}", count),
+                    title: format!("Radial Gauge {}", count),
+                    unit: "RPM".to_string(),
+                    bound_signal: "rpm".to_string(),
+                    widget_type: crate::dashboard::WidgetType::RadialGauge {
+                        min: 0.0,
+                        max: 12000.0,
+                        warn: 9000.0,
+                        crit: 10500.0,
+                    },
+                    current_value: 0.0,
+                });
+            }
+            if ui.button("+ Add Meter").clicked() {
+                let count = self.dashboard.widgets.len() + 1;
+                self.dashboard.add_widget(crate::dashboard::DashboardWidget {
+                    id: format!("meter_{}", count),
+                    title: format!("Bar Meter {}", count),
+                    unit: "%".to_string(),
+                    bound_signal: "temp".to_string(),
+                    widget_type: crate::dashboard::WidgetType::BarMeter {
+                        min: 0.0,
+                        max: 100.0,
+                    },
+                    current_value: 0.0,
+                });
+            }
+            if ui.button("+ Add LED").clicked() {
+                let count = self.dashboard.widgets.len() + 1;
+                self.dashboard.add_widget(crate::dashboard::DashboardWidget {
+                    id: format!("led_{}", count),
+                    title: format!("Status LED {}", count),
+                    unit: "".to_string(),
+                    bound_signal: "sync".to_string(),
+                    widget_type: crate::dashboard::WidgetType::StatusLed {
+                        active_threshold: 0.5,
+                    },
+                    current_value: 0.0,
+                });
+            }
+            if ui.button("+ Add Trend Chart").clicked() {
+                let count = self.dashboard.widgets.len() + 1;
+                self.dashboard.add_widget(crate::dashboard::DashboardWidget {
+                    id: format!("chart_{}", count),
+                    title: format!("Trend Chart {}", count),
+                    unit: "g".to_string(),
+                    bound_signal: "az".to_string(),
+                    widget_type: crate::dashboard::WidgetType::RollingChart {
+                        history: Vec::with_capacity(80),
+                        max_points: 80,
+                    },
+                    current_value: 0.0,
+                });
+            }
+            ui.separator();
+            if ui.button("Reset Defaults").clicked() {
+                self.dashboard = crate::dashboard::default_dashboard();
+            }
         });
 
-        ui.add_space(10.0);
-        ui.group(|ui| {
-            ui.label(RichText::new("INDICATOR STATUS LEDS").color(COLOR_TEXT_PRIMARY).strong());
-            ui.horizontal(|ui| {
-                ui.label(RichText::new("● POWER").color(COLOR_SIGNAL_RX).strong());
-                ui.label(RichText::new("● SYNC").color(COLOR_SIGNAL_RX).strong());
-                ui.label(RichText::new("● LINK").color(COLOR_SIGNAL_TX).strong());
-                ui.label(RichText::new("● HIL").color(COLOR_SIGNAL_RX).strong());
-                ui.label(RichText::new("○ FAULT").color(COLOR_TEXT_MUTED));
-            });
+        ui.add_space(8.0);
+
+        // Responsive wrapping grid of cards
+        egui::ScrollArea::vertical().show(ui, |ui| {
+            let avail_w = ui.available_width();
+            let num_cols = if avail_w > 960.0 { 3 } else { 2 };
+            let spacing = 8.0_f32;
+            let card_w = ((avail_w - (num_cols - 1) as f32 * spacing) / num_cols as f32).max(180.0);
+
+            let mut remove_idx = None;
+            let widget_count = self.dashboard.widgets.len();
+
+            for row_start in (0..widget_count).step_by(num_cols) {
+                let row_end = (row_start + num_cols).min(widget_count);
+                ui.horizontal(|ui| {
+                    for idx in row_start..row_end {
+                        ui.allocate_ui_with_layout(
+                            Vec2::new(card_w, 0.0),
+                            egui::Layout::top_down(egui::Align::Min),
+                            |ui| {
+                                ui.set_width(card_w);
+                                let widget = &self.dashboard.widgets[idx];
+                                if crate::dashboard::render_widget_card(ui, widget) {
+                                    remove_idx = Some(idx);
+                                }
+                            },
+                        );
+                        if idx + 1 < row_end {
+                            ui.add_space(spacing);
+                        }
+                    }
+                });
+                ui.add_space(spacing);
+            }
+
+            if let Some(idx) = remove_idx {
+                self.dashboard.remove_widget(idx);
+            }
         });
     }
 
@@ -1100,5 +1445,44 @@ impl egui_dock::TabViewer for BaudForgeTabViewer {
             TabId::VaultScrubber => self.render_vault_scrubber(ui),
             TabId::WorkspaceConfig => self.render_workspace_config(ui),
         }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_tab_viewer_default_state() {
+        let viewer = BaudForgeTabViewer::default();
+
+        assert_eq!(viewer.hex_data.len(), 48, "Sample packet should be 48 bytes");
+        assert!(viewer.last_decoded_packet.is_some(), "Default packet should be decoded");
+
+        let packet = viewer.last_decoded_packet.as_ref().unwrap();
+        assert!(packet.sync_valid, "Sync word should be valid");
+        assert!(packet.crc_valid, "CRC32 should be valid");
+        assert_eq!(packet.payload_len, 48);
+        assert_eq!(packet.fields.len(), 7);
+
+        assert_eq!(viewer.dissector_schema, crate::dissect::DissectorSchema::BuiltinImu);
+        assert_eq!(viewer.hex_selected_offset, Some(0));
+        assert!(viewer.hex_highlight_range.is_none());
+    }
+
+    #[test]
+    fn test_cross_highlight_range() {
+        let mut viewer = BaudForgeTabViewer::default();
+        let packet = viewer.last_decoded_packet.as_ref().unwrap();
+
+        // Accel field is at offset 6..18
+        let accel = &packet.fields[2];
+        assert_eq!(accel.name, "accel");
+        viewer.hex_highlight_range = Some(accel.byte_offset..accel.byte_offset + accel.byte_len);
+
+        assert_eq!(viewer.hex_highlight_range, Some(6..18));
+        assert!(viewer.hex_highlight_range.as_ref().unwrap().contains(&6));
+        assert!(viewer.hex_highlight_range.as_ref().unwrap().contains(&17));
+        assert!(!viewer.hex_highlight_range.as_ref().unwrap().contains(&18));
     }
 }

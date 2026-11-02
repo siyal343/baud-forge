@@ -40,6 +40,24 @@ pub fn classify_payload_framing(bytes: &[u8]) -> String {
     }
 }
 
+/// Identifies known USB VID/PIDs and maps them to clean product descriptions.
+pub fn identify_usb_device(vid: u16, pid: u16) -> Option<&'static str> {
+    match vid {
+        0x303A => match pid {
+            0x1001 => Some("Espressif ESP32-C3 USB JTAG/Serial"),
+            0x1002 => Some("Espressif ESP32-S3 USB JTAG/Serial"),
+            _ => Some("Espressif Device"),
+        },
+        0x0483 => Some("STMicroelectronics STM32"),
+        0x10C4 => Some("Silicon Labs CP210x"),
+        0x0403 => Some("FTDI USB Serial"),
+        0x1A86 => Some("WCH CH340/CH341"),
+        0x2E8A => Some("Raspberry Pi RP2040/RP2350"),
+        0x2341 => Some("Arduino"),
+        _ => None,
+    }
+}
+
 /// Scans the system for serial ports and returns metadata.
 ///
 /// If no physical hardware ports are detected, provides friendly placeholder
@@ -52,7 +70,11 @@ pub fn scan_available_ports() -> Vec<SerialPortInfo> {
             let (manufacturer, product, vid_pid) = match &port.port_type {
                 serialport::SerialPortType::UsbPort(usb) => {
                     let vp = format!("{:04X}:{:04X}", usb.vid, usb.pid);
-                    (usb.manufacturer.clone(), usb.product.clone(), Some(vp))
+                    let recognized = identify_usb_device(usb.vid, usb.pid);
+                    let prod = recognized
+                        .map(|s| s.to_string())
+                        .or_else(|| usb.product.clone());
+                    (usb.manufacturer.clone(), prod, Some(vp))
                 }
                 _ => (None, None, None),
             };
@@ -149,5 +171,19 @@ mod tests {
     fn test_sniff_virtual_loopback() {
         let sniff = sniff_port_baud_and_framing("COM-LOOPBACK");
         assert_eq!(sniff, Some((921600, "COBS".to_string())));
+    }
+
+    #[test]
+    fn test_identify_known_usb_devices() {
+        assert_eq!(identify_usb_device(0x303A, 0x1001), Some("Espressif ESP32-C3 USB JTAG/Serial"));
+        assert_eq!(identify_usb_device(0x303A, 0x1002), Some("Espressif ESP32-S3 USB JTAG/Serial"));
+        assert_eq!(identify_usb_device(0x303A, 0x9999), Some("Espressif Device"));
+        assert_eq!(identify_usb_device(0x0483, 0x5740), Some("STMicroelectronics STM32"));
+        assert_eq!(identify_usb_device(0x10C4, 0xEA60), Some("Silicon Labs CP210x"));
+        assert_eq!(identify_usb_device(0x0403, 0x6001), Some("FTDI USB Serial"));
+        assert_eq!(identify_usb_device(0x1A86, 0x7523), Some("WCH CH340/CH341"));
+        assert_eq!(identify_usb_device(0x2E8A, 0x000A), Some("Raspberry Pi RP2040/RP2350"));
+        assert_eq!(identify_usb_device(0x2341, 0x0043), Some("Arduino"));
+        assert_eq!(identify_usb_device(0xFFFF, 0x0000), None);
     }
 }
