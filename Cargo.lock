@@ -336,7 +336,7 @@ name = "bforge-framer"
 version = "0.8.0"
 
 [[package]]
-name = "bforge-gui"
+name = "bforge-gui-legacy"
 version = "0.8.0"
 dependencies = [
  "bforge-core",
