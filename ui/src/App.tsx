@@ -2,208 +2,18 @@ import { For, Show, createEffect, createMemo, createSignal, on, onCleanup, onMou
 import { Telemetry, SERIES_COLOURS } from './components/Telemetry'
 import type { TraceMode } from './components/Telemetry'
 import { WindowControls } from './components/WindowControls'
+import { InspectorPane, sourceOf, shortName } from './components/InspectorPane'
+import { CommandPalette } from './components/CommandPalette'
+import type { CommandAction } from './components/CommandPalette'
 import { createFeed } from './lib/feed'
 import { api, exportVault, inShell, stopSession, toPicker } from './lib/shell'
-import type { FieldRow, SymbolHit, TailRow } from './lib/types'
+import type { FieldRow, TailRow } from './lib/types'
 import './index.css'
 
 const bytes = (value: number) =>
   value < 1000 ? `${value} B` : value < 1e6 ? `${(value / 1e3).toFixed(1)} kB` : `${(value / 1e6).toFixed(1)} MB`
 const seconds = (ms: number) => `${(ms / 1000).toFixed(1)} s`
 const clock = (us: number) => `${(us / 1e6).toFixed(4)} s`
-
-/** Rust symbols arrive mangled (D-44), so the badge leads with where, not what. */
-function sourceOf(hit: { file: string | null; line: number | null }): string {
-  if (!hit.file) return ''
-  // Toolchain paths are long and mixed: the last two segments are what a person
-  // recognises, on either separator.
-  const parts = hit.file.replaceAll(String.fromCharCode(92), '/').split('/').filter(Boolean)
-  const tail = parts.slice(-2).join('/')
-  return hit.line ? `${tail}:${hit.line}` : tail
-}
-
-function shortName(symbol: string): string {
-  const tail = symbol.split('::').filter(Boolean).pop() ?? symbol
-  return tail.length > 26 ? `${tail.slice(0, 23)}...` : tail
-}
-
-const HEX_WINDOW_SIZE = 512
-
-/** Bytes of a frame as separate spans, bounded to a window so large frames do not slow the DOM. */
-function HexDump(props: { row: TailRow; field: FieldRow | null }) {
-  const [offset, setOffset] = createSignal(0)
-  const bytes = createMemo(() => props.row.hex.split(' ').filter(Boolean))
-
-  createEffect(
-    on(
-      () => props.row,
-      () => setOffset(0),
-    ),
-  )
-
-  createEffect(
-    on(
-      () => props.field,
-      (field) => {
-        if (field != null) {
-          const o = field.offset
-          const cur = offset()
-          if (o < cur || o >= cur + HEX_WINDOW_SIZE) {
-            setOffset(Math.floor(o / HEX_WINDOW_SIZE) * HEX_WINDOW_SIZE)
-          }
-        }
-      },
-    ),
-  )
-
-  const slice = createMemo(() => {
-    const all = bytes()
-    if (all.length <= HEX_WINDOW_SIZE) {
-      return { items: all, baseIndex: 0, total: all.length }
-    }
-    const start = Math.min(offset(), Math.max(0, all.length - HEX_WINDOW_SIZE))
-    const end = Math.min(start + HEX_WINDOW_SIZE, all.length)
-    return { items: all.slice(start, end), baseIndex: start, total: all.length }
-  })
-
-  const inField = (index: number) =>
-    props.field != null && index >= props.field.offset && index < props.field.offset + props.field.len
-
-  return (
-    <div class="hex-container">
-      <Show when={bytes().length > HEX_WINDOW_SIZE}>
-        <div class="hex-nav">
-          <button
-            type="button"
-            class="chip action"
-            disabled={slice().baseIndex === 0}
-            onClick={() => setOffset((o) => Math.max(0, o - HEX_WINDOW_SIZE))}
-            title="show previous 512 bytes"
-          >
-            ◀ prev
-          </button>
-          <span class="hint">
-            bytes {slice().baseIndex}–{slice().baseIndex + slice().items.length} of {bytes().length}
-          </span>
-          <button
-            type="button"
-            class="chip action"
-            disabled={slice().baseIndex + slice().items.length >= bytes().length}
-            onClick={() => setOffset((o) => o + HEX_WINDOW_SIZE)}
-            title="show next 512 bytes"
-          >
-            next ▶
-          </button>
-        </div>
-      </Show>
-      <div class="hex">
-        <For each={slice().items}>
-          {(byte, i) => {
-            const index = () => slice().baseIndex + i()
-            return (
-              <span
-                class="byte"
-                classList={{ hot: inField(index()), warn: props.row.decode_error != null }}
-                title={`byte ${index()} = 0x${byte}`}
-              >
-                {byte}
-              </span>
-            )
-          }}
-        </For>
-      </div>
-    </div>
-  )
-}
-
-
-
-/** A node of the inspector's field tree, built from the dotted field names. */
-interface FieldNode {
-  name: string
-  path: string
-  field?: FieldRow
-  children: FieldNode[]
-}
-
-/** Group `gains.proportional` under `gains`, keeping array siblings distinct. */
-function buildTree(fields: FieldRow[]): FieldNode[] {
-  const root: FieldNode[] = []
-  const seen = new Map<string, number>()
-  for (const field of fields) {
-    const parts = field.name.split('.')
-    let level = root
-    let path = ''
-    parts.forEach((part, index) => {
-      path = path ? `${path}.${part}` : part
-      const last = index === parts.length - 1
-      let node = level.find((candidate) => candidate.name === part)
-      if (!node) {
-        // Repeated names are array elements: keep each one addressable.
-        const count = seen.get(path) ?? 0
-        seen.set(path, count + 1)
-        node = { name: count > 0 ? `${part}[${count}]` : part, path, children: [] }
-        level.push(node)
-      }
-      if (last) node.field = field
-      level = node.children
-    })
-  }
-  return root
-}
-
-/** One field of the tree: name, value, and a plot button on the numerics. */
-function FieldNodeRow(props: { node: FieldNode; port: string; onHover: (field: FieldRow | null) => void; onPlot: (key: string) => void }) {
-  const [open, setOpen] = createSignal(true)
-  const field = () => props.node.field
-  return (
-    <div class="node">
-      <div
-        class="field"
-        onMouseEnter={() => props.onHover(field() ?? null)}
-        onMouseLeave={() => props.onHover(null)}
-      >
-        <button
-          type="button"
-          class="twisty"
-          classList={{ leaf: props.node.children.length === 0 }}
-          onClick={() => setOpen(!open())}
-          aria-label={open() ? 'collapse' : 'expand'}
-        >
-          {props.node.children.length === 0 ? '·' : open() ? '▾' : '▸'}
-        </button>
-        <span class="name">{props.node.name}</span>
-        <Show when={field()}>
-          {(leaf) => (
-            <>
-              <span class="value">{leaf().value}</span>
-              <span class="at">@{leaf().offset}+{leaf().len}</span>
-              <Show when={leaf().value_num !== null}>
-                <button
-                  type="button"
-                  class="plot-this"
-                  title="plot this field"
-                  onClick={() => props.onPlot(`${props.port}.${leaf().name}`)}
-                >
-                  plot
-                </button>
-              </Show>
-            </>
-          )}
-        </Show>
-      </div>
-      <Show when={open() && props.node.children.length > 0}>
-        <div class="children">
-          <For each={props.node.children}>
-            {(child) => (
-              <FieldNodeRow node={child} port={props.port} onHover={props.onHover} onPlot={props.onPlot} />
-            )}
-          </For>
-        </div>
-      </Show>
-    </div>
-  )
-}
 
 interface PinStep {
   dtr?: boolean
@@ -284,14 +94,24 @@ interface DiffReport {
   missing_from_b: number
 }
 
+interface SentEntry {
+  id: string
+  time: string
+  port: string
+  bytes: number
+  summary: string
+  hex: string
+  isTyped: boolean
+  typedValues?: Record<string, string>
+  crc?: string
+  chunkSize?: string
+  paceMs?: string
+}
+
 export default function App() {
   const feed = createFeed()
   const [selected, setSelected] = createSignal<TailRow | null>(null)
   const [hovered, setHovered] = createSignal<FieldRow | null>(null)
-  // The traces on screen, in order. A person chooses them, from the picker or the
-  // inspector's plot button (the guide's signature interaction).
-  // Each trace keeps its own mode: a measurement is a line, a state is a lane, a flags
-  // word is a rail per bit.
   const [plotted, setPlotted] = createSignal<{ key: string; mode: TraceMode }[]>([])
   const [hex, setHex] = createSignal('AA 55 03')
   const [crc, setCrc] = createSignal('')
@@ -300,7 +120,7 @@ export default function App() {
   const [typed, setTyped] = createSignal(false)
   const [typedValues, setTypedValues] = createSignal<Record<string, string>>({})
   const [answer, setAnswer] = createSignal<string | null>(null)
-  const [sent, setSent] = createSignal<string[]>([])
+  const [sentHistory, setSentHistory] = createSignal<SentEntry[]>([])
   const [seqPort, setSeqPort] = createSignal<string | null>(null)
   const [customSeqText, setCustomSeqText] = createSignal('')
   const [showDiff, setShowDiff] = createSignal(false)
@@ -312,39 +132,60 @@ export default function App() {
   const [faultKind, setFaultKind] = createSignal('off')
   const [faultValue, setFaultValue] = createSignal('1.0')
   const [faultLine, setFaultLine] = createSignal<string | null>(null)
-  // Scrubbing: null means live. A number is a record ordinal in the vault.
+
+  // Stream Filtering State Signals
+  const [portFilter, setPortFilter] = createSignal<string>('all')
+  const [dirFilter, setDirFilter] = createSignal<'all' | 'rx' | 'tx'>('all')
+  const [kindFilter, setKindFilter] = createSignal<'all' | 'errors' | 'symbols'>('all')
+  const [searchQuery, setSearchQuery] = createSignal('')
+
+  // Bottom Workbench Console State Signals
+  const [consoleTab, setConsoleTab] = createSignal<'forge' | 'diff' | 'events'>('forge')
+  const [consoleCollapsed, setConsoleCollapsed] = createSignal(false)
+  const [targetPort, setTargetPort] = createSignal<string>('')
+  const [paletteOpen, setPaletteOpen] = createSignal(false)
+
+  // Timeline & Playback
   const [at, setAt] = createSignal<number | null>(null)
   const [windowRows, setWindowRows] = createSignal<TailRow[]>([])
-  // The vault's span, in milliseconds: what a timeline drags along.
   const [spanMs, setSpanMs] = createSignal(0)
-  // Playback: a timeline that advances on its own, at a chosen rate.
   const [playing, setPlaying] = createSignal(false)
   const [rate, setRate] = createSignal(1)
-  // A paired bus: one bridge's two ports, merged by time (spec 0029).
-  // `null` follows the workspace: one bridge means one bus, no choice to make.
   const [bridge, setBridge] = createSignal<string | null>(null)
-  // Which renderer the band got: WebGL when the machine has it, canvas otherwise.
   const [renderer, setRenderer] = createSignal<'webgl' | 'canvas'>('canvas')
-  // One row per measurement when a person wants two magnitudes read at once.
   const [stackRows, setStackRows] = createSignal(false)
+  const [timelineNote, setTimelineNote] = createSignal<string | null>(null)
+  const [yieldNote, setYieldNote] = createSignal<string | null>(null)
+  const [exportNote, setExportNote] = createSignal<string | null>(null)
+  const [pinNote, setPinNote] = createSignal<string | null>(null)
+  const [exporting, setExporting] = createSignal(false)
+
   const bytesOf = (text: string) =>
     text.replace(/0x/gi, '').replace(/[\s:,]/g, '').length / 2
+
+  const session = () => feed.snapshot()?.session
+  const ports = () => feed.snapshot()?.ports ?? []
   const bridges = () => feed.snapshot()?.bridges ?? []
+  const openPorts = () => ports().filter((port) => port.state === 'open').length
+
   const activeBridge = createMemo(() => {
     const chosen = bridge()
     if (chosen === 'all') return null
     if (chosen !== null) return chosen
     return bridges().length === 1 ? bridges()[0].id : null
   })
+
   const bridgePorts = createMemo(() => {
     const found = bridges().find((item) => item.id === activeBridge())
     return found ? [found.a, found.b] : null
   })
+
   const plotKeys = createMemo(() => {
     const keys = Object.keys(feed.series()).sort()
     const pair = bridgePorts()
     return pair ? keys.filter((key) => pair.includes(key.split('.')[0])) : keys
   })
+
   const plottedKeys = createMemo(() => {
     const chosen = plotted().filter((entry) => plotKeys().includes(entry.key))
     if (chosen.length > 0) return chosen
@@ -363,7 +204,6 @@ export default function App() {
     setPlotted((current) => current.filter((entry) => entry.key !== key))
   }
 
-  /** Cycle a trace between a line, a state lane and a rail per bit. */
   function cycleMode(key: string) {
     const order: TraceMode[] = ['line', 'lane', 'bits']
     setPlotted((current) =>
@@ -382,17 +222,61 @@ export default function App() {
   const [viewportHeight, setViewportHeight] = createSignal(500)
   const [follow, setFollow] = createSignal(true)
   let viewportRef: HTMLDivElement | undefined
+  let searchInputRef: HTMLInputElement | undefined
 
-  const session = () => feed.snapshot()?.session
-  const ports = () => feed.snapshot()?.ports ?? []
-  const allRows = createMemo(() => {
+  // Base rows from live feed or vault window
+  const rawRows = createMemo(() => {
     const all = at() === null ? feed.frames() : windowRows()
     const pair = bridgePorts()
     const filtered = pair ? all.filter((row) => pair.includes(row.port)) : all
     return pair ? [...filtered].sort((left, right) => left.timestamp_us - right.timestamp_us) : filtered
   })
-  const rows = allRows
 
+  // Filtered rows for 10,000-frame buffer stream
+  const allRows = createMemo(() => {
+    let list = rawRows()
+    const pFilter = portFilter()
+    if (pFilter !== 'all') {
+      list = list.filter((row) => row.port === pFilter)
+    }
+    const dFilter = dirFilter()
+    if (dFilter === 'rx') {
+      list = list.filter((row) => row.direction.toLowerCase() === 'rx')
+    } else if (dFilter === 'tx') {
+      list = list.filter((row) => row.direction.toLowerCase() !== 'rx')
+    }
+    const kFilter = kindFilter()
+    if (kFilter === 'errors') {
+      list = list.filter((row) => row.decode_error != null)
+    } else if (kFilter === 'symbols') {
+      list = list.filter((row) => row.symbols.length > 0)
+    }
+    const q = searchQuery().trim().toLowerCase()
+    if (q) {
+      list = list.filter((row) => {
+        if (row.hex.toLowerCase().includes(q)) return true
+        if (row.text && row.text.toLowerCase().includes(q)) return true
+        if (row.protocol && row.protocol.toLowerCase().includes(q)) return true
+        if (row.port.toLowerCase().includes(q)) return true
+        if (row.decode_error && row.decode_error.toLowerCase().includes(q)) return true
+        if (row.fields.some((f) => f.name.toLowerCase().includes(q) || f.value.toLowerCase().includes(q))) return true
+        if (
+          row.symbols.some(
+            (s) =>
+              s.field.toLowerCase().includes(q) ||
+              s.function.toLowerCase().includes(q) ||
+              (s.file && s.file.toLowerCase().includes(q)),
+          )
+        ) {
+          return true
+        }
+        return false
+      })
+    }
+    return list
+  })
+
+  const rows = allRows
   const totalRows = createMemo(() => allRows().length)
 
   const startIndex = createMemo(() => {
@@ -410,7 +294,6 @@ export default function App() {
 
   const topSpacer = createMemo(() => startIndex() * ROW_HEIGHT)
   const bottomSpacer = createMemo(() => Math.max(0, (totalRows() - endIndex()) * ROW_HEIGHT))
-
   const visibleRows = createMemo(() => allRows().slice(startIndex(), endIndex()))
 
   function jumpToLive() {
@@ -474,6 +357,7 @@ export default function App() {
   onCleanup(() => {
     ro?.disconnect()
   })
+
   const seriesFor = (key: string): number[] => {
     if (at() === null) return feed.series()[key] ?? []
     const [port, ...rest] = key.split('.')
@@ -491,7 +375,6 @@ export default function App() {
     plottedKeys().map((entry) => ({ key: entry.key, mode: entry.mode, values: seriesFor(entry.key) })),
   )
 
-  const [timelineNote, setTimelineNote] = createSignal<string | null>(null)
   let playTimer: ReturnType<typeof setInterval> | undefined
   let playFrom = 0
   let playClock = 0
@@ -503,7 +386,6 @@ export default function App() {
     setPlaying(false)
   }
 
-  /** Advance the window through the recording without asking for every frame. */
   function play() {
     if (spanMs() <= 0) {
       setTimelineNote('nothing recorded yet')
@@ -524,7 +406,6 @@ export default function App() {
         return
       }
       setAt(next)
-      // A window every 300 ms is what a person can read; more would be work for nothing.
       if (now - lastFetch >= 300) {
         lastFetch = now
         void loadWindow(next)
@@ -535,8 +416,6 @@ export default function App() {
   async function loadWindow(record: number) {
     setAt(record)
     try {
-      // Minutes into the session, in milliseconds: the engine seeks with its index
-      // instead of walking records.
       const response = await fetch(api(`/api/vault/frames?t_ms=${Math.round(record)}&count=400`))
       if (!response.ok) {
         setTimelineNote(`${response.status} ${await response.text()}`)
@@ -583,21 +462,16 @@ export default function App() {
     const reviewing = params.get('review') === '1'
     const sharedBridge = params.get('bridge')
     if (sharedBridge !== null) setBridge(sharedBridge)
-    // `?typed=1` opens on the typed form, which is also the only way to capture it
-    // with a headless browser.
     if (params.get('typed') === '1') chooseTyped(true)
 
     void refreshSpan()
     if (shared !== null) void loadWindow(Number(shared))
-    // The recording grows while the window is open, so the timeline follows it.
     const timer = setInterval(() => {
       if (at() === null) void refreshSpan()
     }, 3000)
     onCleanup(() => clearInterval(timer))
 
     if (reviewing) {
-      // A finished recording has nowhere to stream to, so open at its end. The duration
-      // comes from the vault itself: the three-second poll would land at a stale end.
       void (async () => {
         try {
           const response = await fetch(api('/api/vault'))
@@ -615,14 +489,11 @@ export default function App() {
     }
 
     if (autoExport) {
-      // Record for a moment, then save: `--query "export=csv"` makes one launch a file.
       const save = setTimeout(() => void saveExport(autoExport), 4000)
       onCleanup(() => clearTimeout(save))
     }
 
     if (autoPlay) {
-      // Wait for a span worth playing rather than starting against an empty vault.
-      // Ten seconds of recording is the shortest that is worth playing from the start.
       const wait = setInterval(() => {
         if (spanMs() < 10_000) return
         clearInterval(wait)
@@ -633,10 +504,7 @@ export default function App() {
   })
 
   const detail = () => selected() ?? rows().at(-1) ?? null
-  const openPorts = () => ports().filter((port) => port.state === 'open').length
 
-  // The schema the port decodes with is the schema the form sends with: one table,
-  // read and written (spec 0032).
   const schemaFields = createMemo(() => {
     const row = [...rows()].reverse().find((candidate) => candidate.fields.length > 0)
     if (!row) return []
@@ -654,31 +522,28 @@ export default function App() {
     }
   }
 
-  async function forgeSendTyped(event: SubmitEvent) {
-    event.preventDefault()
-    const port = ports()[0]?.id
+  async function doSendHex(
+    port: string,
+    hexVal: string,
+    crcVal?: string,
+    chunkValStr?: string,
+    paceValStr?: string,
+  ) {
     if (!port) {
       setAnswer('no port in this workspace')
       return
     }
-    // A number is a number; anything else is an enum label, which the engine
-    // resolves against the schema (spec 0032).
-    const values: Record<string, number | string> = {}
-    for (const [name, text] of Object.entries(typedValues())) {
-      const trimmed = text.trim()
-      if (trimmed === '') continue
-      const value = Number(trimmed)
-      values[name] = Number.isFinite(value) && trimmed !== '' ? value : trimmed
-    }
     const body: {
       port: string
-      values: Record<string, number | string>
+      hex: string
+      crc?: string
       chunk_size?: number
       pace_ms?: number
-    } = { port, values }
-    const chunkVal = parseInt(chunkSize(), 10)
+    } = { port, hex: hexVal }
+    if (crcVal) body.crc = crcVal
+    const chunkVal = parseInt(chunkValStr ?? '', 10)
     if (!isNaN(chunkVal) && chunkVal > 0) body.chunk_size = chunkVal
-    const paceVal = parseInt(paceMs(), 10)
+    const paceVal = parseInt(paceValStr ?? '', 10)
     if (!isNaN(paceVal) && paceVal > 0) body.pace_ms = paceVal
     try {
       const response = await fetch(api('/api/send'), {
@@ -691,20 +556,115 @@ export default function App() {
       if (response.ok) {
         const sentBytes = (JSON.parse(reply) as { sent: number }).sent
         const paceSuffix = body.chunk_size ? ` (paced ${body.chunk_size}B/${body.pace_ms ?? 0}ms)` : ''
-        setSent((current) =>
-          [`${new Date().toLocaleTimeString()}  ${port}  ${sentBytes} B  typed${paceSuffix}`]
-            .concat(current)
-            .slice(0, 6),
-        )
+        const newEntry: SentEntry = {
+          id: Math.random().toString(36).slice(2),
+          time: new Date().toLocaleTimeString(),
+          port,
+          bytes: sentBytes,
+          summary: `${hexVal}${paceSuffix}`,
+          hex: hexVal,
+          isTyped: false,
+          crc: crcVal,
+          chunkSize: chunkValStr,
+          paceMs: paceValStr,
+        }
+        setSentHistory((current) => [newEntry, ...current].slice(0, 10))
       }
     } catch (error) {
       setAnswer(String(error))
     }
   }
 
+  async function doSendTyped(
+    port: string,
+    fieldValues: Record<string, string>,
+    chunkValStr?: string,
+    paceValStr?: string,
+  ) {
+    if (!port) {
+      setAnswer('no port in this workspace')
+      return
+    }
+    const values: Record<string, number | string> = {}
+    for (const [name, text] of Object.entries(fieldValues)) {
+      const trimmed = text.trim()
+      if (trimmed === '') continue
+      const value = Number(trimmed)
+      values[name] = Number.isFinite(value) && trimmed !== '' ? value : trimmed
+    }
+    const body: {
+      port: string
+      values: Record<string, number | string>
+      chunk_size?: number
+      pace_ms?: number
+    } = { port, values }
+    const chunkVal = parseInt(chunkValStr ?? '', 10)
+    if (!isNaN(chunkVal) && chunkVal > 0) body.chunk_size = chunkVal
+    const paceVal = parseInt(paceValStr ?? '', 10)
+    if (!isNaN(paceVal) && paceVal > 0) body.pace_ms = paceVal
+    try {
+      const response = await fetch(api('/api/send'), {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(body),
+      })
+      const reply = await response.text()
+      setAnswer(`${response.status} ${reply}`)
+      if (response.ok) {
+        const sentBytes = (JSON.parse(reply) as { sent: number }).sent
+        const paceSuffix = body.chunk_size ? ` (paced ${body.chunk_size}B/${body.pace_ms ?? 0}ms)` : ''
+        const newEntry: SentEntry = {
+          id: Math.random().toString(36).slice(2),
+          time: new Date().toLocaleTimeString(),
+          port,
+          bytes: sentBytes,
+          summary: `typed${paceSuffix}`,
+          hex: '',
+          isTyped: true,
+          typedValues: { ...fieldValues },
+          chunkSize: chunkValStr,
+          paceMs: paceValStr,
+        }
+        setSentHistory((current) => [newEntry, ...current].slice(0, 10))
+      }
+    } catch (error) {
+      setAnswer(String(error))
+    }
+  }
+
+  async function forgeSend(event: SubmitEvent) {
+    event.preventDefault()
+    const port = targetPort() || ports()[0]?.id || ''
+    await doSendHex(port, hex(), crc(), chunkSize(), paceMs())
+  }
+
+  async function forgeSendTyped(event: SubmitEvent) {
+    event.preventDefault()
+    const port = targetPort() || ports()[0]?.id || ''
+    await doSendTyped(port, typedValues(), chunkSize(), paceMs())
+  }
+
+  async function replaySent(entry: SentEntry) {
+    setTargetPort(entry.port)
+    if (entry.isTyped && entry.typedValues) {
+      setTyped(true)
+      setTypedValues({ ...entry.typedValues })
+      if (entry.chunkSize !== undefined) setChunkSize(entry.chunkSize)
+      if (entry.paceMs !== undefined) setPaceMs(entry.paceMs)
+      await doSendTyped(entry.port, entry.typedValues, entry.chunkSize, entry.paceMs)
+    } else {
+      setTyped(false)
+      setHex(entry.hex)
+      if (entry.crc !== undefined) setCrc(entry.crc)
+      if (entry.chunkSize !== undefined) setChunkSize(entry.chunkSize)
+      if (entry.paceMs !== undefined) setPaceMs(entry.paceMs)
+      await doSendHex(entry.port, entry.hex, entry.crc, entry.chunkSize, entry.paceMs)
+    }
+  }
+
   async function armFault(event: SubmitEvent) {
     event.preventDefault()
-    const port = ports()[0]?.id
+    const port = targetPort() || ports()[0]?.id || ''
     if (!port) {
       setFaultLine('no port in this workspace')
       return
@@ -715,6 +675,7 @@ export default function App() {
     if (faultKind() === 'drop') body.drop_every = Number.isFinite(value) ? value : 2
     if (faultKind() === 'truncate') body.truncate = Number.isFinite(value) ? value : 2
     if (faultKind() === 'corrupt_crc') body.corrupt_crc = Number.isFinite(value) ? value : 4
+    if (faultKind() === 'delay') body.delay_ms = Number.isFinite(value) ? value : 50
     try {
       const response = await fetch(api('/api/fault'), {
         method: 'POST',
@@ -727,9 +688,21 @@ export default function App() {
     }
   }
 
-  const [yieldNote, setYieldNote] = createSignal<string | null>(null)
-  const [exportNote, setExportNote] = createSignal<string | null>(null)
-  const [pinNote, setPinNote] = createSignal<string | null>(null)
+  async function disarmFaults() {
+    const port = targetPort() || ports()[0]?.id || ''
+    if (!port) return
+    setFaultKind('off')
+    try {
+      const response = await fetch(api('/api/fault'), {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ port, kind: 'off' }),
+      })
+      setFaultLine(`${response.status} ${await response.text()}`)
+    } catch (error) {
+      setFaultLine(String(error))
+    }
+  }
 
   async function drivePins(port: string, dtr: boolean, rts: boolean, pulseMs?: number) {
     try {
@@ -794,7 +767,6 @@ export default function App() {
       setDiffLoading(false)
     }
   }
-  const [exporting, setExporting] = createSignal(false)
 
   async function saveExport(format: string) {
     if (!format || exporting()) return
@@ -802,7 +774,6 @@ export default function App() {
     setExportNote('writing…')
     try {
       const path = await exportVault(format)
-      // The browser saves the file itself and reports nothing here.
       setExportNote(path ? `wrote ${path}` : `saving ${format}`)
     } catch (error) {
       setExportNote(String(error))
@@ -812,7 +783,7 @@ export default function App() {
   }
 
   async function yieldPort() {
-    const port = ports().find((candidate) => candidate.state === 'open')?.id ?? ports()[0]?.id
+    const port = targetPort() || ports().find((candidate) => candidate.state === 'open')?.id || ports()[0]?.id
     if (!port) {
       setYieldNote('no port to yield')
       return
@@ -832,15 +803,86 @@ export default function App() {
 
   function focusZone(index: number) {
     const zones = ['ribbon', 'sidebar', 'stage', 'inspector', 'forge']
-    document.querySelector<HTMLElement>(`[data-zone="${zones[index] ?? 'ribbon'}"]`)?.focus()
+    const selector = `[data-zone="${zones[index] ?? 'ribbon'}"]`
+    document.querySelector<HTMLElement>(selector)?.focus()
   }
 
   onMount(() => {
     const onKey = (event: KeyboardEvent) => {
+      // Command palette: Ctrl+K or Cmd+K
+      if ((event.ctrlKey || event.metaKey) && event.key.toLowerCase() === 'k') {
+        event.preventDefault()
+        setPaletteOpen((prev) => !prev)
+        return
+      }
+
+      // Quick filter search focus: "/" when not in input
+      if (event.key === '/' && !event.ctrlKey && !event.metaKey && !event.altKey) {
+        const active = document.activeElement
+        const isInput =
+          active instanceof HTMLInputElement ||
+          active instanceof HTMLTextAreaElement ||
+          active instanceof HTMLSelectElement
+        if (!isInput && searchInputRef) {
+          event.preventDefault()
+          searchInputRef.focus()
+          searchInputRef.select()
+          return
+        }
+      }
+
+      // Stream row selection: ArrowUp / ArrowDown when not in input
+      if (event.key === 'ArrowUp' || event.key === 'ArrowDown') {
+        const active = document.activeElement
+        const isInput =
+          active instanceof HTMLInputElement ||
+          active instanceof HTMLTextAreaElement ||
+          active instanceof HTMLSelectElement
+        if (!isInput && !paletteOpen()) {
+          const currentList = allRows()
+          if (currentList.length > 0) {
+            event.preventDefault()
+            const cur = detail()
+            const idx = cur
+              ? currentList.findIndex(
+                  (r) => r === cur || (r.timestamp_us === cur.timestamp_us && r.port === cur.port),
+                )
+              : -1
+            let nextIdx = idx
+            if (event.key === 'ArrowUp') {
+              nextIdx = idx <= 0 ? currentList.length - 1 : idx - 1
+            } else {
+              nextIdx = idx === -1 || idx >= currentList.length - 1 ? 0 : idx + 1
+            }
+            const nextRow = currentList[nextIdx]
+            if (nextRow) {
+              setSelected(nextRow)
+              if (viewportRef) {
+                const rowTop = nextIdx * ROW_HEIGHT
+                const rowBottom = rowTop + ROW_HEIGHT
+                const vTop = viewportRef.scrollTop
+                const vBottom = vTop + viewportRef.clientHeight
+                if (rowTop < vTop) {
+                  viewportRef.scrollTop = rowTop
+                } else if (rowBottom > vBottom) {
+                  viewportRef.scrollTop = rowBottom - viewportRef.clientHeight
+                }
+              }
+            }
+            return
+          }
+        }
+      }
+
       if (!event.ctrlKey || event.altKey) return
       if (event.key >= '1' && event.key <= '5') {
         event.preventDefault()
-        focusZone(Number(event.key) - 1)
+        const zoneNum = Number(event.key) - 1
+        if (zoneNum === 4) {
+          setConsoleCollapsed(false)
+          setConsoleTab('forge')
+        }
+        focusZone(zoneNum)
       }
       if (event.key.toLowerCase() === 'y') {
         event.preventDefault()
@@ -851,262 +893,348 @@ export default function App() {
     onCleanup(() => window.removeEventListener('keydown', onKey))
   })
 
-  async function forgeSend(event: SubmitEvent) {
-    event.preventDefault()
-    const port = ports()[0]?.id
-    if (!port) {
-      setAnswer('no port in this workspace')
-      return
-    }
-    const body: {
-      port: string
-      hex: string
-      crc?: string
-      chunk_size?: number
-      pace_ms?: number
-    } = { port, hex: hex() }
-    if (crc()) body.crc = crc()
-    const chunkVal = parseInt(chunkSize(), 10)
-    if (!isNaN(chunkVal) && chunkVal > 0) body.chunk_size = chunkVal
-    const paceVal = parseInt(paceMs(), 10)
-    if (!isNaN(paceVal) && paceVal > 0) body.pace_ms = paceVal
-    try {
-      const response = await fetch(api('/api/send'), {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify(body),
-      })
-      const reply = await response.text()
-      setAnswer(`${response.status} ${reply}`)
-      if (response.ok) {
-        const sentBytes = (JSON.parse(reply) as { sent: number }).sent
-        const paceSuffix = body.chunk_size ? ` (paced ${body.chunk_size}B/${body.pace_ms ?? 0}ms)` : ''
-        setSent((current) =>
-          [`${new Date().toLocaleTimeString()}  ${port}  ${sentBytes} B  ${hex()}${paceSuffix}`].concat(current).slice(0, 6),
-        )
-      }
-    } catch (error) {
-      setAnswer(String(error))
-    }
-  }
+  const paletteActions = createMemo<CommandAction[]>(() => [
+    {
+      id: 'jump-live',
+      label: 'Jump to Live Stream',
+      category: 'Stream',
+      shortcut: 'L',
+      run: () => jumpToLive(),
+    },
+    {
+      id: 'toggle-follow',
+      label: follow() ? 'Pause Stream Follow' : 'Follow Live Stream',
+      category: 'Stream',
+      shortcut: 'F',
+      run: () => {
+        if (!follow()) jumpToLive()
+        else setFollow(false)
+      },
+    },
+    {
+      id: 'clear-filters',
+      label: 'Clear All Stream Filters',
+      category: 'Stream',
+      run: () => {
+        setPortFilter('all')
+        setDirFilter('all')
+        setKindFilter('all')
+        setSearchQuery('')
+      },
+    },
+    {
+      id: 'toggle-stack',
+      label: stackRows() ? 'Telemetry: Overlay Mode' : 'Telemetry: Stacked Rows',
+      category: 'Telemetry',
+      shortcut: 'S',
+      run: () => setStackRows(!stackRows()),
+    },
+    {
+      id: 'toggle-typed',
+      label: typed() ? 'Switch to Raw Hex Send' : 'Switch to Typed Field Send',
+      category: 'Transmit',
+      shortcut: 'T',
+      run: () => chooseTyped(!typed()),
+    },
+    {
+      id: 'open-forge',
+      label: 'Show Command Forge & Faults',
+      category: 'Console',
+      shortcut: 'Ctrl+5',
+      run: () => {
+        setConsoleTab('forge')
+        setConsoleCollapsed(false)
+        focusZone(4)
+      },
+    },
+    {
+      id: 'open-diff',
+      label: 'Compare Session Vault (Diff)',
+      category: 'Console',
+      run: () => {
+        setConsoleTab('diff')
+        setShowDiff(true)
+        setConsoleCollapsed(false)
+      },
+    },
+    {
+      id: 'open-events',
+      label: 'Show System Event Log',
+      category: 'Console',
+      run: () => {
+        setConsoleTab('events')
+        setConsoleCollapsed(false)
+      },
+    },
+    {
+      id: 'yield-port',
+      label: 'Yield Active Port (30s Release)',
+      category: 'Hardware',
+      shortcut: 'Ctrl+Y',
+      run: () => void yieldPort(),
+    },
+    {
+      id: 'disarm-faults',
+      label: 'Disarm All Fault Injections',
+      category: 'Faults',
+      run: () => void disarmFaults(),
+    },
+    {
+      id: 'export-csv',
+      label: 'Export Recording as CSV',
+      category: 'Export',
+      run: () => void saveExport('csv'),
+    },
+    {
+      id: 'export-jsonl',
+      label: 'Export Recording as JSON Lines',
+      category: 'Export',
+      run: () => void saveExport('jsonl'),
+    },
+    {
+      id: 'export-saleae',
+      label: 'Export Recording as Saleae CSV',
+      category: 'Export',
+      run: () => void saveExport('saleae'),
+    },
+    {
+      id: 'export-pcapng',
+      label: 'Export Recording as PCAPNG',
+      category: 'Export',
+      run: () => void saveExport('pcapng'),
+    },
+  ])
 
   return (
-    <div class="shell">
-      <header class="ribbon" data-zone="ribbon" tabindex="-1" data-tauri-drag-region>
-        <h1>BaudForge</h1>
-        <span class="chip">contract {feed.snapshot()?.contract ?? '?'}</span>
-        <span class={`chip ${feed.link()}`}>{feed.link()}</span>
-        <span class="chip">{session()?.mode ?? 'idle'}</span>
-        <span class="chip">ports {openPorts()}/{ports().length}</span>
-        <Show when={inShell()}>
-          <button
-            type="button"
-            class="chip action"
-            title="stop this session and choose another workspace"
-            onClick={async () => {
-              await stopSession()
-              toPicker()
-            }}
-          >
-            session: switch
-          </button>
-          <button
-            type="button"
-            class="chip action"
-            title="stop recording and keep the window open"
-            onClick={async () => {
-              await stopSession()
-              setYieldNote('session stopped')
-            }}
-          >
-            stop
-          </button>
-        </Show>
-        <button
-          type="button"
-          class="chip action yield"
-          onClick={yieldPort}
-          disabled={ports().length === 0}
-          title="release the port so a flash tool can use it (Ctrl+Y)"
-        >
-          yield
-        </button>
-        <select
-          class="chip action export"
-          disabled={exporting() || !session()}
-          title="save the vault as a file"
-          value=""
-          onChange={(event) => {
-            const format = event.currentTarget.value
-            event.currentTarget.value = ''
-            void saveExport(format)
-          }}
-        >
-          <option value="">export…</option>
-          <option value="csv">CSV</option>
-          <option value="jsonl">JSON Lines</option>
-          <option value="saleae">Saleae CSV</option>
-          <option value="pcapng">PCAPNG</option>
-        </select>
-        <button
-          type="button"
-          class="chip action diff-toggle"
-          classList={{ on: showDiff() }}
-          title="compare session vault against another recording"
-          onClick={() => setShowDiff((cur) => !cur)}
-        >
-          diff
-        </button>
-        <Show when={yieldNote()}>{(note) => <span class="chip">{note()}</span>}</Show>
-        <Show when={exportNote()}>{(note) => <span class="chip export-note">{note()}</span>}</Show>
-        <Show when={pinNote()}>{(note) => <span class="chip">{note()}</span>}</Show>
-        <For each={feed.snapshot()?.bridges ?? []}>
-          {(bridge) => (
-            <span class="chip bridge" classList={{ forward: bridge.forward }}>
-              {bridge.forward ? 'bridge' : 'tap'} {bridge.a}↔{bridge.b}
-              <Show when={bridge.forward}>
-                {' '}
-                {bridge.forwarded} B
-                <Show when={bridge.dropped > 0}> · dropped {bridge.dropped} B</Show>
-              </Show>
-            </span>
-          )}
-        </For>
-        <span class="grow" />
-        <span class="chip">elapsed {session() ? seconds(session()!.elapsed_ms) : '-'}</span>
-        <span class="chip">chunks {session()?.chunks ?? 0}</span>
-        <span class="chip">payload {session() ? bytes(session()!.payload_bytes) : '-'}</span>
-        <WindowControls />
-        <Show when={showDiff()}>
-          <div class="diff-panel">
-            <form class="diff-form" onSubmit={runDiff}>
-              <span class="diff-title">diff</span>
-              <input
-                class="diff-input"
-                value={diffPathA()}
-                onInput={(event) => setDiffPathA(event.currentTarget.value)}
-                placeholder={session()?.vault ? `a: ${session()!.vault}` : 'vault a (defaults to active)'}
-                title="vault a path (leave blank to use active session vault)"
-              />
-              <span class="diff-sep">vs</span>
-              <input
-                class="diff-input"
-                value={diffPathB()}
-                onInput={(event) => setDiffPathB(event.currentTarget.value)}
-                placeholder="vault b path (required)"
-                title="comparison vault b path"
-                required
-              />
-              <button type="submit" class="chip action" disabled={diffLoading() || !diffPathB().trim()}>
-                {diffLoading() ? 'comparing…' : 'compare'}
-              </button>
-              <button
-                type="button"
-                class="chip action close"
-                onClick={() => {
-                  setShowDiff(false)
-                  setDiffReport(null)
-                  setDiffError(null)
-                }}
-                title="close diff panel"
-              >
-                ✕
-              </button>
-            </form>
-            <Show when={diffError()}>
-              {(err) => <p class="diff-error">diff error: {err()}</p>}
-            </Show>
-            <Show when={diffReport()}>
-              {(report) => (
-                <div class="diff-report">
-                  <div class="diff-summary">
-                    <Show
-                      when={report().identical}
-                      fallback={<span class="chip fault">diverged</span>}
-                    >
-                      <span class="chip live">identical</span>
-                    </Show>
-                    <span class="hint">
-                      records: {report().records_a} vs {report().records_b} · frames: {report().frames_a} vs {report().frames_b}
-                      <Show when={report().missing_from_a > 0}>
-                        {` · missing in a: ${report().missing_from_a}`}
-                      </Show>
-                      <Show when={report().missing_from_b > 0}>
-                        {` · missing in b: ${report().missing_from_b}`}
-                      </Show>
-                    </span>
-                  </div>
-                  <Show when={!report().identical && report().first_divergence}>
-                    {(div) => (
-                      <div class="diff-first-divergence">
-                        <strong>first divergence:</strong> record #{div().index} on port {div().port}
-                        {' '}(t_a: {clock(div().timestamp_us_a)}, t_b: {clock(div().timestamp_us_b)})
-                        <span class="divergence-reason"> — {div().reason}</span>
-                      </div>
-                    )}
-                  </Show>
-                  <Show when={report().changed_fields.length > 0}>
-                    <div class="diff-table-wrap">
-                      <table class="diff-table">
-                        <thead>
-                          <tr>
-                            <th>frame</th>
-                            <th>port</th>
-                            <th>field</th>
-                            <th>value in a</th>
-                            <th>value in b</th>
-                          </tr>
-                        </thead>
-                        <tbody>
-                          <For each={report().changed_fields}>
-                            {(field) => (
-                              <tr>
-                                <td>{field.frame_index}</td>
-                                <td>{field.port}</td>
-                                <td class="field-name">{field.field_name}</td>
-                                <td class="val-a">{field.value_a}</td>
-                                <td class="val-b">{field.value_b}</td>
-                              </tr>
-                            )}
-                          </For>
-                        </tbody>
-                      </table>
-                    </div>
-                  </Show>
-                </div>
-              )}
-            </Show>
+    <div class="shell" classList={{ 'console-collapsed': consoleCollapsed() }}>
+      {/* Zone 1 — 40px Instrument Topbar */}
+      <header class="ribbon topbar" data-zone="ribbon" tabindex="-1" data-tauri-drag-region>
+        <div class="topbar-left">
+          <div class="brand">
+            <span
+              class="status-led"
+              classList={{
+                live: feed.link() === 'live' && at() === null,
+                warn: at() !== null || feed.link() === 'connecting',
+                fault: feed.link() === 'down',
+              }}
+            />
+            <h1>BaudForge</h1>
           </div>
-        </Show>
+          <span class={`chip ${feed.link()}`}>{feed.link()}</span>
+          <span class="chip">{session()?.mode ?? 'idle'}</span>
+          <span class="chip">ports {openPorts()}/{ports().length}</span>
+          <Show when={faultKind() !== 'off'}>
+            <span class="chip down">⚡ fault: {faultKind()}</span>
+          </Show>
+          <Show when={inShell()}>
+            <button
+              type="button"
+              class="chip action"
+              title="stop this session and choose another workspace"
+              onClick={async () => {
+                await stopSession()
+                toPicker()
+              }}
+            >
+              session: switch
+            </button>
+            <button
+              type="button"
+              class="chip action"
+              title="stop recording and keep the window open"
+              onClick={async () => {
+                await stopSession()
+                setYieldNote('session stopped')
+              }}
+            >
+              stop
+            </button>
+          </Show>
+          <For each={feed.snapshot()?.bridges ?? []}>
+            {(bridge) => (
+              <span class="chip bridge" classList={{ forward: bridge.forward }}>
+                {bridge.forward ? 'bridge' : 'tap'} {bridge.a}↔{bridge.b}
+                <Show when={bridge.forward}>
+                  {' '}
+                  {bytes(bridge.forwarded)}
+                  <Show when={bridge.dropped > 0}> · dropped {bytes(bridge.dropped)}</Show>
+                </Show>
+              </span>
+            )}
+          </For>
+        </div>
+
+        {/* Center DVR Scrubber & Transport Pod */}
+        <div class="topbar-center dvr-pod">
+          <Show when={(feed.snapshot()?.bridges ?? []).length > 0}>
+            <select
+              value={activeBridge() ?? 'all'}
+              onChange={(event) => setBridge(event.currentTarget.value)}
+              aria-label="bridge"
+            >
+              <option value="all">all ports</option>
+              <For each={bridges()}>
+                {(item) => <option value={item.id}>{`bus ${item.a}↔${item.b}`}</option>}
+              </For>
+            </select>
+          </Show>
+          <button
+            type="button"
+            class="transport"
+            onClick={() => (playing() ? stopPlayback() : play())}
+            title={playing() ? 'pause the recording' : 'play the recording'}
+          >
+            {playing() ? '⏸' : '▶'}
+          </button>
+          <button
+            type="button"
+            class="transport"
+            onClick={() => {
+              setRate(rate() === 1 ? 2 : rate() === 2 ? 4 : 1)
+              if (playing()) {
+                playFrom = at() ?? 0
+                playClock = performance.now()
+              }
+            }}
+            title="playback rate"
+          >
+            {rate()}x
+          </button>
+          <input
+            type="range"
+            class="dvr-slider"
+            min="0"
+            max={Math.max(spanMs(), 1)}
+            step={Math.max(1, Math.round(spanMs() / 2000))}
+            value={at() ?? Math.max(spanMs(), 0)}
+            onInput={(e) => loadWindow(Number(e.currentTarget.value))}
+            aria-label="vault time in milliseconds"
+          />
+          <button
+            type="button"
+            class="transport"
+            classList={{ active: at() === null }}
+            onClick={jumpToLive}
+            title="jump to live stream"
+          >
+            ● live
+          </button>
+          <span class="hint">
+            {timelineNote() ??
+              (at() === null
+                ? `${(spanMs() / 1000).toFixed(1)} s recorded`
+                : `${(Number(at() ?? 0) / 1000).toFixed(3)} s / ${(spanMs() / 1000).toFixed(1)} s`)}
+          </span>
+        </div>
+
+        {/* Right Toolbar & Chrome */}
+        <div class="topbar-right">
+          <Show when={yieldNote()}>{(note) => <span class="chip yield-note">{note()}</span>}</Show>
+          <Show when={exportNote()}>{(note) => <span class="chip export-note">{note()}</span>}</Show>
+          <Show when={pinNote()}>{(note) => <span class="chip pin-note">{note()}</span>}</Show>
+          <button
+            type="button"
+            class="chip action palette-trigger"
+            onClick={() => setPaletteOpen(true)}
+            title="Command palette (Ctrl+K)"
+          >
+            ⌘K
+          </button>
+          <button
+            type="button"
+            class="chip action yield"
+            onClick={yieldPort}
+            disabled={ports().length === 0}
+            title="release the port so a flash tool can use it (Ctrl+Y)"
+          >
+            yield
+          </button>
+          <button
+            type="button"
+            class="chip action diff-toggle"
+            classList={{ on: showDiff() }}
+            onClick={() => {
+              const next = !showDiff()
+              setShowDiff(next)
+              if (next) {
+                setConsoleTab('diff')
+                setConsoleCollapsed(false)
+              }
+            }}
+            title="compare session vault against another recording"
+          >
+            diff
+          </button>
+          <select
+            class="chip action export"
+            disabled={exporting() || !session()}
+            title="save the vault as a file"
+            value=""
+            onChange={(event) => {
+              const format = event.currentTarget.value
+              event.currentTarget.value = ''
+              void saveExport(format)
+            }}
+          >
+            <option value="">export…</option>
+            <option value="csv">CSV</option>
+            <option value="jsonl">JSON Lines</option>
+            <option value="saleae">Saleae CSV</option>
+            <option value="pcapng">PCAPNG</option>
+          </select>
+          <span class="chip telemetry-chip">elapsed {session() ? seconds(session()!.elapsed_ms) : '-'}</span>
+          <span class="chip telemetry-chip">chunks {session()?.chunks ?? 0}</span>
+          <span class="chip telemetry-chip">payload {session() ? bytes(session()!.payload_bytes) : '-'}</span>
+          <WindowControls />
+        </div>
       </header>
 
-      <aside class="sidebar" data-zone="sidebar" tabindex="-1">
-        <h2>Ports</h2>
+      {/* Zone 2 — Left Hardware Bay */}
+      <aside class="sidebar hardware-bay" data-zone="sidebar" tabindex="-1">
+        <div class="section-bar">
+          <h2>Hardware Ports</h2>
+          <span class="hint">{openPorts()} active</span>
+        </div>
         <Show when={ports().length > 0} fallback={<p class="empty">No ports in this workspace.</p>}>
           <For each={ports()}>
             {(port) => (
-              <article class="port">
+              <article class="port port-card">
                 <div class="port-head">
                   <strong>{port.id}</strong>
                   <span class={`state ${port.state}`}>{port.state}</span>
                 </div>
-                <dl>
-                  <dt>device</dt>
-                  <dd title={port.device}>{port.device || '-'}</dd>
-                  <dt>baud</dt>
-                  <dd>{port.baud_rate || '-'}</dd>
-                  <dt>framing</dt>
-                  <dd>{port.framing}</dd>
-                  <dt>chunks</dt>
-                  <dd>{port.chunks}</dd>
-                  <dt>bytes</dt>
-                  <dd>{bytes(port.bytes)}</dd>
-                  <dt>overruns</dt>
-                  <dd classList={{ bad: port.overruns > 0 }}>{port.overruns}</dd>
-                  <dt>stall</dt>
-                  <dd>{port.stalls_ms.toFixed(1)} ms</dd>
-                </dl>
-                <div class="pins">
+                <div class="port-device" title={port.device}>{port.device || '-'}</div>
+                <div class="port-kpi-grid">
+                  <div class="port-kpi">
+                    <span class="kpi-label">Baud / Frame</span>
+                    <span class="kpi-val">{port.baud_rate || '-'} · {port.framing}</span>
+                  </div>
+                  <div class="port-kpi">
+                    <span class="kpi-label">Traffic</span>
+                    <span class="kpi-val">{bytes(port.bytes)}</span>
+                  </div>
+                  <div class="port-kpi">
+                    <span class="kpi-label">Chunks</span>
+                    <span class="kpi-val">{port.chunks}</span>
+                  </div>
+                  <div class="port-kpi">
+                    <span class="kpi-label">Overruns / Stall</span>
+                    <span class="kpi-val" classList={{ bad: port.overruns > 0 }}>
+                      {port.overruns} ovr · {port.stalls_ms.toFixed(1)} ms
+                    </span>
+                  </div>
+                </div>
+                <div class="line-leds">
+                  <span class="line-led" classList={{ on: port.pins.cts }} title="Clear To Send">CTS</span>
+                  <span class="line-led" classList={{ on: port.pins.dsr }} title="Data Set Ready">DSR</span>
+                  <span class="line-led" classList={{ on: port.pins.dcd }} title="Data Carrier Detect">DCD</span>
+                  <span class="line-led" classList={{ on: port.pins.ri }} title="Ring Indicator">RI</span>
+                  <span class="line-led" classList={{ err: port.pins.break_state }} title="Break State">BRK</span>
+                  <span class="line-led" classList={{ err: port.pins.framing_error }} title="Framing Error">FRM</span>
+                  <span class="line-led" classList={{ err: port.pins.parity_error }} title="Parity Error">PAR</span>
+                </div>
+                <div class="pins pin-strip">
                   <button
                     type="button"
                     class="pin"
@@ -1176,16 +1304,121 @@ export default function App() {
           </For>
         </Show>
 
-        <h2>Events</h2>
-        <ol class="events">
-          <For each={feed.events()}>{(event) => <li>{event.text}</li>}</For>
-        </ol>
+        <Show when={bridges().length > 0}>
+          <div class="section-bar">
+            <h2>Bridges & Taps</h2>
+          </div>
+          <For each={bridges()}>
+            {(b) => (
+              <article class="port port-card bridge-card">
+                <div class="port-head">
+                  <strong>{b.forward ? 'bridge' : 'tap'}: {b.a} ↔ {b.b}</strong>
+                  <span class="state" classList={{ open: b.forward }}>{b.forward ? 'active' : 'monitor'}</span>
+                </div>
+                <div class="port-kpi-grid">
+                  <div class="port-kpi">
+                    <span class="kpi-label">Forwarded</span>
+                    <span class="kpi-val">{bytes(b.forwarded)}</span>
+                  </div>
+                  <div class="port-kpi">
+                    <span class="kpi-label">Dropped</span>
+                    <span class="kpi-val" classList={{ bad: b.dropped > 0 }}>{bytes(b.dropped)}</span>
+                  </div>
+                </div>
+              </article>
+            )}
+          </For>
+        </Show>
       </aside>
 
+      {/* Zone 3 — Center Stage (Stream + Oscilloscope) */}
       <div class="stage" data-zone="stage" tabindex="-1">
-        <main class="stream">
-          <div class="stream-head">
-            <h2>Stream</h2>
+        <main class="stream stream-panel">
+          <div class="stream-head stream-toolbar">
+            <div class="filter-group">
+              <h2>Stream</h2>
+              <select
+                class="port-filter-select"
+                value={portFilter()}
+                onChange={(e) => setPortFilter(e.currentTarget.value)}
+                aria-label="filter by port"
+              >
+                <option value="all">all ports</option>
+                <For each={ports()}>{(p) => <option value={p.id}>{p.id}</option>}</For>
+              </select>
+              <div class="dir-filters">
+                <button
+                  type="button"
+                  class="chip action"
+                  classList={{ on: dirFilter() === 'all' }}
+                  onClick={() => setDirFilter('all')}
+                >
+                  all
+                </button>
+                <button
+                  type="button"
+                  class="chip action"
+                  classList={{ on: dirFilter() === 'rx' }}
+                  onClick={() => setDirFilter('rx')}
+                >
+                  rx
+                </button>
+                <button
+                  type="button"
+                  class="chip action"
+                  classList={{ on: dirFilter() === 'tx' }}
+                  onClick={() => setDirFilter('tx')}
+                >
+                  tx
+                </button>
+              </div>
+              <div class="kind-filters">
+                <button
+                  type="button"
+                  class="chip action"
+                  classList={{ on: kindFilter() === 'all' }}
+                  onClick={() => setKindFilter('all')}
+                >
+                  all
+                </button>
+                <button
+                  type="button"
+                  class="chip action"
+                  classList={{ on: kindFilter() === 'errors' }}
+                  onClick={() => setKindFilter('errors')}
+                >
+                  errors
+                </button>
+                <button
+                  type="button"
+                  class="chip action"
+                  classList={{ on: kindFilter() === 'symbols' }}
+                  onClick={() => setKindFilter('symbols')}
+                >
+                  symbols
+                </button>
+              </div>
+              <div class="search-wrap">
+                <input
+                  ref={searchInputRef}
+                  class="search-input"
+                  value={searchQuery()}
+                  onInput={(e) => setSearchQuery(e.currentTarget.value)}
+                  placeholder="Filter hex, protocol, text… (/)"
+                  aria-label="filter stream"
+                />
+                <Show when={searchQuery()}>
+                  <button
+                    type="button"
+                    class="search-clear"
+                    onClick={() => setSearchQuery('')}
+                    title="clear search"
+                  >
+                    ✕
+                  </button>
+                </Show>
+              </div>
+            </div>
             <div class="stream-actions">
               <span class="hint">
                 {totalRows() === 0
@@ -1212,10 +1445,10 @@ export default function App() {
                 <col style={{ width: '85px' }} />
                 <col style={{ width: '65px' }} />
                 <col style={{ width: '65px' }} />
-                <col style={{ width: '45px' }} />
+                <col style={{ width: '50px' }} />
                 <col style={{ width: '50px' }} />
                 <col style={{ width: '340px' }} />
-                <col style={{ width: '80px' }} />
+                <col style={{ width: '85px' }} />
                 <col style={{ width: 'auto' }} />
               </colgroup>
               <thead>
@@ -1232,15 +1465,10 @@ export default function App() {
               </thead>
               <tbody>
                 <Show when={totalRows() === 0}>
-                  <tr><td colSpan={8} class="empty">Waiting for frames.</td></tr>
+                  <tr><td colSpan={8} class="empty">Waiting for frames or no match for current filter.</td></tr>
                 </Show>
                 <Show when={topSpacer() > 0}>
-                  <tr
-                    class="spacer"
-                    style={{
-                      height: `${topSpacer()}px`,
-                    }}
-                  >
+                  <tr class="spacer" style={{ height: `${topSpacer()}px` }}>
                     <td
                       colSpan={8}
                       style={{
@@ -1255,38 +1483,50 @@ export default function App() {
                   </tr>
                 </Show>
                 <For each={visibleRows()}>
-                  {(row) => (
-                    <tr
-                      classList={{ chosen: detail() === row, faulty: row.decode_error != null }}
-                      onClick={() => setSelected(row)}
-                    >
-                      <td>{clock(row.timestamp_us)}</td>
-                      <td>{row.delta_us}</td>
-                      <td>{row.port}</td>
-                      <td classList={{ tx: row.direction !== 'Rx' }}>{row.direction.toLowerCase()}</td>
-                      <td>{row.len}</td>
-                      <td class="hexcell">{row.hex}</td>
-                      <td>{row.protocol ?? (row.text ? 'text' : '-')}</td>
-                      <td class="crash">
-                        <Show when={row.symbols[0]}>
-                          {(hit) => (
-                            <span title={`${shortName(hit().function)} @ 0x${hit().address.toString(16)}`}>
-                              {hit().field}
-                              <Show when={sourceOf(hit())}> {sourceOf(hit())}</Show>
-                            </span>
-                          )}
-                        </Show>
-                      </td>
-                    </tr>
-                  )}
+                  {(row) => {
+                    const isRx = () => row.direction.toLowerCase() === 'rx'
+                    return (
+                      <tr
+                        classList={{ chosen: detail() === row, faulty: row.decode_error != null }}
+                        onClick={() => setSelected(row)}
+                      >
+                        <td>{clock(row.timestamp_us)}</td>
+                        <td>{row.delta_us}</td>
+                        <td>{row.port}</td>
+                        <td>
+                          <span class={`dir-badge ${isRx() ? 'rx' : 'tx'}`}>
+                            {row.direction.toLowerCase()}
+                          </span>
+                        </td>
+                        <td>{row.len}</td>
+                        <td class="hexcell">{row.hex}</td>
+                        <td>
+                          <span class="proto-badge">
+                            {row.protocol ?? (row.text ? 'text' : '-')}
+                          </span>
+                        </td>
+                        <td class="crash">
+                          <Show when={row.symbols[0]}>
+                            {(hit) => (
+                              <span
+                                class="symbol-pill"
+                                title={`${shortName(hit().function)} @ 0x${hit().address.toString(16)}`}
+                              >
+                                {hit().field}
+                                <Show when={sourceOf(hit())}> {sourceOf(hit())}</Show>
+                              </span>
+                            )}
+                          </Show>
+                          <Show when={row.decode_error && !row.symbols[0]}>
+                            <span class="error-pill" title={row.decode_error!}>{row.decode_error}</span>
+                          </Show>
+                        </td>
+                      </tr>
+                    )
+                  }}
                 </For>
                 <Show when={bottomSpacer() > 0}>
-                  <tr
-                    class="spacer"
-                    style={{
-                      height: `${bottomSpacer()}px`,
-                    }}
-                  >
+                  <tr class="spacer" style={{ height: `${bottomSpacer()}px` }}>
                     <td
                       colSpan={8}
                       style={{
@@ -1306,7 +1546,7 @@ export default function App() {
         </main>
 
         <section class="plot-band">
-          <div class="stream-head">
+          <div class="stream-head plot-toolbar">
             <h2>Telemetry</h2>
             <button
               type="button"
@@ -1360,236 +1600,373 @@ export default function App() {
               </For>
             </div>
           </div>
-          <div class="scrubber">
-            <Show when={(feed.snapshot()?.bridges ?? []).length > 0}>
-              <select
-                value={activeBridge() ?? 'all'}
-                onChange={(event) => setBridge(event.currentTarget.value)}
-                aria-label="bridge"
-              >
-                <option value="all">all ports</option>
-                <For each={bridges()}>
-                  {(item) => <option value={item.id}>{`bus ${item.a}↔${item.b}`}</option>}
-                </For>
-              </select>
-            </Show>
-            <input
-              type="range"
-              min="0"
-              max={Math.max(spanMs(), 1)}
-              step={Math.max(1, Math.round(spanMs() / 2000))}
-              value={at() ?? Math.max(spanMs(), 0)}
-              onInput={(event) => loadWindow(Number(event.currentTarget.value))}
-              aria-label="vault time in milliseconds"
-            />
-            <button
-              type="button"
-              class="transport"
-              onClick={() => (playing() ? stopPlayback() : play())}
-              title={playing() ? 'pause the recording' : 'play the recording'}
-            >
-              {playing() ? '⏸' : '▶'}
-            </button>
-            <button
-              type="button"
-              class="transport"
-              onClick={() => {
-                setRate(rate() === 1 ? 2 : rate() === 2 ? 4 : 1)
-                if (playing()) {
-                  playFrom = at() ?? 0
-                  playClock = performance.now()
-                }
-              }}
-              title="playback rate"
-            >
-              {rate()}x
-            </button>
-            <button type="button" onClick={() => { stopPlayback(); setAt(null); setWindowRows([]); jumpToLive() }} classList={{ active: at() === null }}>
-              live
-            </button>
-            <button
-              type="button"
-              class="transport diff-transport"
-              classList={{ active: showDiff() }}
-              title="compare session vault with another recording"
-              onClick={() => setShowDiff((cur) => !cur)}
-            >
-              diff
-            </button>
-            <span class="hint">
-              {timelineNote() ??
-                (at() === null
-                  ? `${(spanMs() / 1000).toFixed(1)} s recorded`
-                  : `${(Number(at() ?? 0) / 1000).toFixed(3)} s / ${(spanMs() / 1000).toFixed(1)} s`)}
-            </span>
-          </div>
-          <Show when={traces().length > 0} fallback={<span class="hint"></span>}>
+          <Show when={traces().length > 0} fallback={<div class="telemetry-empty hint">Select numeric fields above or from the inspector to plot telemetry.</div>}>
             <Telemetry series={traces()} stack={stackRows()} onRenderer={setRenderer} />
           </Show>
         </section>
       </div>
 
-      <section class="inspector" data-zone="inspector" tabindex="-1">
-        <h2>Inspector</h2>
-        <Show when={detail()} fallback={<p class="empty">Select a frame to read its bytes.</p>}>
-          {(row) => (
-            <>
-              <HexDump row={row()} field={hovered()} />
-              <Show when={row().decode_error}>
-                {(error) => <p class="error">{error()}</p>}
-              </Show>
-              <Show when={row().text}>
-                {(text) => <p class="text">{text()}</p>}
-              </Show>
-              <Show when={row().symbols.length > 0}>
-                <dl class="symbols">
-                  <For each={row().symbols}>
-                    {(hit: SymbolHit) => (
-                      <div class="field">
-                        <dt>{hit.field}</dt>
-                        <dd>
-                          <span class="value">0x{hit.address.toString(16)}</span>
-                          <span class="at" title={hit.function}>
-                            {sourceOf(hit) || shortName(hit.function)}
-                          </span>
-                        </dd>
-                      </div>
-                    )}
-                  </For>
-                </dl>
-              </Show>
-              <Show
-                when={detail()!.fields.length > 0}
-                fallback={<p class="empty">No schema on this port.</p>}
-              >
-                <div class="fields">
-                  <For each={buildTree(detail()!.fields)}>
-                    {(node) => (
-                      <FieldNodeRow
-                        node={node}
-                        port={detail()!.port}
-                        onHover={setHovered}
-                        onPlot={(key) => plotField(key)}
+      {/* Zone 4 — Right Packet Dissector */}
+      <InspectorPane
+        row={detail()}
+        hoveredField={hovered()}
+        onHoverField={setHovered}
+        onPlotField={(key) => plotField(key)}
+        plottedKeys={plottedKeys().map((e) => e.key)}
+      />
+
+      {/* Zone 5 — Tabbed Bottom Console */}
+      <section class="forge console" data-zone="forge" tabindex="-1">
+        <div class="console-header">
+          <div class="console-tabs">
+            <button
+              type="button"
+              class="console-tab console-tab-btn"
+              classList={{ active: consoleTab() === 'forge' }}
+              onClick={() => {
+                setConsoleTab('forge')
+                setConsoleCollapsed(false)
+              }}
+            >
+              Command Forge & Faults
+            </button>
+            <button
+              type="button"
+              class="console-tab console-tab-btn"
+              classList={{ active: consoleTab() === 'diff' }}
+              onClick={() => {
+                setConsoleTab('diff')
+                setShowDiff(true)
+                setConsoleCollapsed(false)
+              }}
+            >
+              Session Diff
+            </button>
+            <button
+              type="button"
+              class="console-tab console-tab-btn"
+              classList={{ active: consoleTab() === 'events' }}
+              onClick={() => {
+                setConsoleTab('events')
+                setConsoleCollapsed(false)
+              }}
+            >
+              Events ({feed.events().length})
+            </button>
+          </div>
+          <button
+            type="button"
+            class="chip action console-collapse-btn"
+            onClick={() => setConsoleCollapsed(!consoleCollapsed())}
+            title={consoleCollapsed() ? 'expand console' : 'collapse console'}
+          >
+            {consoleCollapsed() ? '▲ expand' : '▼ collapse'}
+          </button>
+        </div>
+
+        <Show when={!consoleCollapsed()}>
+          <div class="console-body">
+            <Show when={consoleTab() === 'forge'}>
+              <div class="forge-split">
+                {/* Command Forge Card */}
+                <div class="forge-card command-card">
+                  <div class="card-head">
+                    <h2>Command forge</h2>
+                    <div class="card-controls">
+                      <button
+                        type="button"
+                        class="mode"
+                        classList={{ active: typed() }}
+                        onClick={() => chooseTyped(!typed())}
+                        title="send named fields instead of hex"
+                      >
+                        {typed() ? 'typed' : 'hex'}
+                      </button>
+                      <Show when={ports().length > 1}>
+                        <select
+                          class="port-select"
+                          value={targetPort() || ports()[0]?.id || ''}
+                          onChange={(e) => setTargetPort(e.currentTarget.value)}
+                          aria-label="target port"
+                        >
+                          <For each={ports()}>{(p) => <option value={p.id}>{p.id}</option>}</For>
+                        </select>
+                      </Show>
+                    </div>
+                  </div>
+                  <form onSubmit={typed() ? forgeSendTyped : forgeSend}>
+                    <Show
+                      when={!typed()}
+                      fallback={
+                        <div class="typed">
+                          <Show
+                            when={schemaFields().length > 0}
+                            fallback={<span class="hint">No decoded frame yet: this port has no schema to fill.</span>}
+                          >
+                            <For each={schemaFields()}>
+                              {(field) => (
+                                <label>
+                                  <span>{field.name}</span>
+                                  <input
+                                    value={typedValues()[field.name] ?? ''}
+                                    onInput={(event) =>
+                                      setTypedValues((current) => ({
+                                        ...current,
+                                        [field.name]: event.currentTarget.value,
+                                      }))
+                                    }
+                                    aria-label={field.name}
+                                  />
+                                </label>
+                              )}
+                            </For>
+                          </Show>
+                        </div>
+                      }
+                    >
+                      <input
+                        class="hex-input"
+                        value={hex()}
+                        onInput={(event) => setHex(event.currentTarget.value)}
+                        placeholder="AA 55 03"
+                        spellcheck={false}
+                        aria-label="bytes to send, in hex"
                       />
-                    )}
-                  </For>
+                    </Show>
+                    <Show when={!typed()}>
+                      <select value={crc()} onChange={(event) => setCrc(event.currentTarget.value)} aria-label="checksum">
+                        <option value="">no checksum</option>
+                        <option value="crc32c">crc32c</option>
+                        <option value="crc16_ccitt_false">crc16</option>
+                        <option value="crc8">crc8</option>
+                      </select>
+                    </Show>
+                    <input
+                      class="narrow"
+                      value={chunkSize()}
+                      onInput={(event) => setChunkSize(event.currentTarget.value)}
+                      placeholder="chunk B"
+                      aria-label="chunk size in bytes"
+                      title="chunk size in bytes for paced send"
+                    />
+                    <input
+                      class="narrow"
+                      value={paceMs()}
+                      onInput={(event) => setPaceMs(event.currentTarget.value)}
+                      placeholder="pace ms"
+                      aria-label="delay between chunks in milliseconds"
+                      title="delay between chunks in milliseconds"
+                    />
+                    <button type="submit" disabled={ports().length === 0}>Send</button>
+                    <span class="hint">{Number.isFinite(bytesOf(hex())) ? bytesOf(hex()) : 0} B</span>
+                  </form>
+                  <Show when={answer()}>{(line) => <p class="answer">{line()}</p>}</Show>
+                  <Show when={sentHistory().length > 0}>
+                    <ol class="sent tx-history">
+                      <For each={sentHistory()}>
+                        {(entry) => (
+                          <li>
+                            <button
+                              type="button"
+                              class="replay-btn"
+                              title="replay this transmission"
+                              onClick={() => void replaySent(entry)}
+                            >
+                              ↻
+                            </button>
+                            <span class="tx-time">{entry.time}</span>
+                            <span class="tx-port">{entry.port}</span>
+                            <span class="tx-bytes">{entry.bytes} B</span>
+                            <span class="tx-payload">{entry.summary}</span>
+                          </li>
+                        )}
+                      </For>
+                    </ol>
+                  </Show>
                 </div>
-              </Show>
-            </>
-          )}
+
+                {/* Fault Injector Card */}
+                <div class="forge-card fault-card">
+                  <div class="card-head">
+                    <h2>Fault injector</h2>
+                    <Show when={faultKind() !== 'off'}>
+                      <span class="chip down">ARMED</span>
+                    </Show>
+                  </div>
+                  <form class="fault-form" onSubmit={armFault}>
+                    <Show when={ports().length > 1}>
+                      <select
+                        class="port-select"
+                        value={targetPort() || ports()[0]?.id || ''}
+                        onChange={(e) => setTargetPort(e.currentTarget.value)}
+                        aria-label="target port for fault"
+                      >
+                        <For each={ports()}>{(p) => <option value={p.id}>{p.id}</option>}</For>
+                      </select>
+                    </Show>
+                    <select
+                      value={faultKind()}
+                      onChange={(event) => setFaultKind(event.currentTarget.value)}
+                      aria-label="fault kind"
+                    >
+                      <option value="off">off</option>
+                      <option value="bit_flip">bit flip</option>
+                      <option value="drop">drop bytes</option>
+                      <option value="truncate">truncate</option>
+                      <option value="corrupt_crc">corrupt CRC</option>
+                      <option value="delay">delay / jitter</option>
+                    </select>
+                    <input
+                      class="narrow"
+                      value={faultValue()}
+                      onInput={(event) => setFaultValue(event.currentTarget.value)}
+                      aria-label="fault amount"
+                      title={
+                        faultKind() === 'bit_flip'
+                          ? 'probability per byte, 0 to 1'
+                          : faultKind() === 'delay'
+                            ? 'delay in milliseconds'
+                            : 'bytes or interval'
+                      }
+                    />
+                    <button type="submit">Arm</button>
+                    <Show when={faultKind() !== 'off'}>
+                      <button type="button" class="disarm-btn" onClick={() => void disarmFaults()}>Disarm</button>
+                    </Show>
+                    <span class="hint">
+                      {faultKind() === 'bit_flip'
+                        ? 'per-byte probability'
+                        : faultKind() === 'delay'
+                          ? 'delay ms'
+                          : 'bytes / interval'}
+                    </span>
+                  </form>
+                  <Show when={faultLine()}>{(line) => <p class="answer">{line()}</p>}</Show>
+                </div>
+              </div>
+            </Show>
+
+            <Show when={consoleTab() === 'diff'}>
+              <div class="diff-panel">
+                <form class="diff-form" onSubmit={runDiff}>
+                  <span class="diff-title">diff</span>
+                  <input
+                    class="diff-input"
+                    value={diffPathA()}
+                    onInput={(event) => setDiffPathA(event.currentTarget.value)}
+                    placeholder={session()?.vault ? `a: ${session()!.vault}` : 'vault a (defaults to active)'}
+                    title="vault a path (leave blank to use active session vault)"
+                  />
+                  <span class="diff-sep">vs</span>
+                  <input
+                    class="diff-input"
+                    value={diffPathB()}
+                    onInput={(event) => setDiffPathB(event.currentTarget.value)}
+                    placeholder="vault b path (required)"
+                    title="comparison vault b path"
+                    required
+                  />
+                  <button type="submit" class="chip action" disabled={diffLoading() || !diffPathB().trim()}>
+                    {diffLoading() ? 'comparing…' : 'compare'}
+                  </button>
+                  <button
+                    type="button"
+                    class="chip action close"
+                    onClick={() => {
+                      setShowDiff(false)
+                      setDiffReport(null)
+                      setDiffError(null)
+                      setConsoleTab('forge')
+                    }}
+                    title="close diff panel"
+                  >
+                    ✕
+                  </button>
+                </form>
+                <Show when={diffError()}>
+                  {(err) => <p class="diff-error">diff error: {err()}</p>}
+                </Show>
+                <Show when={diffReport()}>
+                  {(report) => (
+                    <div class="diff-report">
+                      <div class="diff-summary">
+                        <Show
+                          when={report().identical}
+                          fallback={<span class="chip fault">diverged</span>}
+                        >
+                          <span class="chip live">identical</span>
+                        </Show>
+                        <span class="hint">
+                          records: {report().records_a} vs {report().records_b} · frames: {report().frames_a} vs {report().frames_b}
+                          <Show when={report().missing_from_a > 0}>
+                            {` · missing in a: ${report().missing_from_a}`}
+                          </Show>
+                          <Show when={report().missing_from_b > 0}>
+                            {` · missing in b: ${report().missing_from_b}`}
+                          </Show>
+                        </span>
+                      </div>
+                      <Show when={!report().identical && report().first_divergence}>
+                        {(div) => (
+                          <div class="diff-first-divergence">
+                            <strong>first divergence:</strong> record #{div().index} on port {div().port}
+                            {' '}(t_a: {clock(div().timestamp_us_a)}, t_b: {clock(div().timestamp_us_b)})
+                            <span class="divergence-reason"> — {div().reason}</span>
+                          </div>
+                        )}
+                      </Show>
+                      <Show when={report().changed_fields.length > 0}>
+                        <div class="diff-table-wrap">
+                          <table class="diff-table">
+                            <thead>
+                              <tr>
+                                <th>frame</th>
+                                <th>port</th>
+                                <th>field</th>
+                                <th>value in a</th>
+                                <th>value in b</th>
+                              </tr>
+                            </thead>
+                            <tbody>
+                              <For each={report().changed_fields}>
+                                {(field) => (
+                                  <tr>
+                                    <td>{field.frame_index}</td>
+                                    <td>{field.port}</td>
+                                    <td class="field-name">{field.field_name}</td>
+                                    <td class="val-a">{field.value_a}</td>
+                                    <td class="val-b">{field.value_b}</td>
+                                  </tr>
+                                )}
+                              </For>
+                            </tbody>
+                          </table>
+                        </div>
+                      </Show>
+                    </div>
+                  )}
+                </Show>
+              </div>
+            </Show>
+
+            <Show when={consoleTab() === 'events'}>
+              <ol class="events">
+                <Show when={feed.events().length === 0}>
+                  <li class="empty">No events logged in this session yet.</li>
+                </Show>
+                <For each={feed.events()}>{(event) => <li>{event.text}</li>}</For>
+              </ol>
+            </Show>
+          </div>
         </Show>
       </section>
 
-      <section class="forge" data-zone="forge" tabindex="-1">
-        <div class="band-head">
-          <h2>Command forge</h2>
-          <h2>Fault injector</h2>
-        </div>
-        <form onSubmit={typed() ? forgeSendTyped : forgeSend}>
-          <button
-            type="button"
-            class="mode"
-            classList={{ active: typed() }}
-            onClick={() => chooseTyped(!typed())}
-            title="send named fields instead of hex"
-          >
-            {typed() ? 'typed' : 'hex'}
-          </button>
-          <Show
-            when={!typed()}
-            fallback={
-              <div class="typed">
-                <Show
-                  when={schemaFields().length > 0}
-                  fallback={<span class="hint">No decoded frame yet: this port has no schema to fill.</span>}
-                >
-                  <For each={schemaFields()}>
-                    {(field) => (
-                      <label>
-                        <span>{field.name}</span>
-                        <input
-                          value={typedValues()[field.name] ?? ''}
-                          onInput={(event) =>
-                            setTypedValues((current) => ({
-                              ...current,
-                              [field.name]: event.currentTarget.value,
-                            }))
-                          }
-                          aria-label={field.name}
-                        />
-                      </label>
-                    )}
-                  </For>
-                </Show>
-              </div>
-            }
-          >
-            <input
-              value={hex()}
-              onInput={(event) => setHex(event.currentTarget.value)}
-              placeholder="AA 55 03"
-              spellcheck={false}
-              aria-label="bytes to send, in hex"
-            />
-          </Show>
-          <Show when={!typed()}>
-          <select value={crc()} onChange={(event) => setCrc(event.currentTarget.value)} aria-label="checksum">
-            <option value="">no checksum</option>
-            <option value="crc32c">crc32c</option>
-            <option value="crc16_ccitt_false">crc16</option>
-            <option value="crc8">crc8</option>
-          </select>
-          </Show>
-          <input
-            class="narrow"
-            value={chunkSize()}
-            onInput={(event) => setChunkSize(event.currentTarget.value)}
-            placeholder="chunk B"
-            aria-label="chunk size in bytes"
-            title="chunk size in bytes for paced send"
-          />
-          <input
-            class="narrow"
-            value={paceMs()}
-            onInput={(event) => setPaceMs(event.currentTarget.value)}
-            placeholder="pace ms"
-            aria-label="delay between chunks in milliseconds"
-            title="delay between chunks in milliseconds"
-          />
-          <button type="submit" disabled={ports().length === 0}>Send</button>
-          <span class="hint">{Number.isFinite(bytesOf(hex())) ? bytesOf(hex()) : 0} B</span>
-        </form>
-        <Show when={answer()}>{(line) => <p class="answer">{line()}</p>}</Show>
-        <form class="fault-form" onSubmit={armFault}>
-          <select value={faultKind()} onChange={(event) => setFaultKind(event.currentTarget.value)} aria-label="fault kind">
-            <option value="off">off</option>
-            <option value="bit_flip">bit flip</option>
-            <option value="drop">drop bytes</option>
-            <option value="truncate">truncate</option>
-            <option value="corrupt_crc">corrupt CRC</option>
-          </select>
-          <input
-            class="narrow"
-            value={faultValue()}
-            onInput={(event) => setFaultValue(event.currentTarget.value)}
-            aria-label="fault amount"
-            title={faultKind() === 'bit_flip' ? 'probability per byte, 0 to 1' : 'bytes or interval'}
-          />
-          <button type="submit">Arm</button>
-          <span class="hint">
-            {faultKind() === 'bit_flip' ? 'per-byte probability' : 'bytes / interval'}
-          </span>
-        </form>
-        <Show when={faultLine()}>{(line) => <p class="answer">{line()}</p>}</Show>
-        <ol class="sent">
-          <For each={sent()}>{(line) => <li>{line}</li>}</For>
-        </ol>
-      </section>
-
-      <footer class="footer">
+      {/* Zone 6 — Footer Statusbar */}
+      <footer class="footer statusbar">
         <span>vault {session()?.vault || 'not recording'}</span>
         <span>{session() ? bytes(session()!.file_bytes) : '-'} on disk</span>
         <span>elf {session()?.elf ?? 'none'}</span>
+        <span>contract {feed.snapshot()?.contract ?? '?'}</span>
         <span class="grow" />
         <span>frames kept {feed.frames().length}</span>
         <span>received {feed.received()}</span>
@@ -1598,7 +1975,17 @@ export default function App() {
             sampled: {feed.missed()} batch(es) not shown
           </span>
         </Show>
+        <span class="shortcut-hint" onClick={() => setPaletteOpen(true)} title="open command palette (Ctrl+K)">
+          ⌘K / Ctrl+K
+        </span>
       </footer>
+
+      {/* Command Palette Modal */}
+      <CommandPalette
+        open={paletteOpen()}
+        onClose={() => setPaletteOpen(false)}
+        actions={paletteActions()}
+      />
     </div>
   )
 }

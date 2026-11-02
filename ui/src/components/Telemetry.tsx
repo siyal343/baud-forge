@@ -47,12 +47,8 @@ interface Row {
 }
 
 /**
- * The telemetry band: GPU traces on one canvas, grid, labels, cursor, lanes and rails on
- * another above it.
- *
- * Two canvases rather than two contexts: a canvas owns exactly one, and mixing text and
- * WebGL in one would mean drawing the labels as geometry. The overlay is cheap; the data
- * is what needs the GPU.
+ * The telemetry band: GPU traces on one canvas, oscilloscope graticule, labels,
+ * cursor, lanes and rails on an overlay canvas above it.
  */
 export function Telemetry(props: Props) {
   let tracesCanvas: HTMLCanvasElement | undefined
@@ -166,16 +162,33 @@ export function Telemetry(props: Props) {
     if (!context) return
     context.setTransform(ratio, 0, 0, ratio, 0, 0)
     context.clearRect(0, 0, width, height)
-    context.font = '10px ui-monospace, monospace'
+    context.font = '10px "JetBrains Mono", ui-monospace, monospace'
     context.lineWidth = 1
 
-    // One grid per row, each with its own scale, so two magnitudes can be read at once.
-    rows().forEach((row, rowIndex) => {
+    const bottom = rows().length > 0 ? rows().at(-1)!.top + rows().at(-1)!.height : padding.top
+
+    // Vertical time-division grid lines (8 divisions across plotWidth)
+    context.save()
+    context.strokeStyle = '#161920'
+    context.setLineDash([2, 3])
+    for (let division = 1; division < 8; division += 1) {
+      const vx = padding.left + (division * plotWidth()) / 8
+      context.beginPath()
+      context.moveTo(vx, padding.top)
+      context.lineTo(vx, bottom)
+      context.stroke()
+    }
+    context.restore()
+
+    // Horizontal scale lines per row with right-aligned Y-axis labels
+    rows().forEach((row) => {
       const span = row.high - row.low || 1
-      context.strokeStyle = '#1e2638'
-      context.fillStyle = '#7c879c'
+      context.strokeStyle = '#1f2430'
+      context.fillStyle = '#949eb2'
       context.textAlign = 'right'
       context.textBaseline = 'middle'
+      context.font = '10px "JetBrains Mono", ui-monospace, monospace'
+
       for (let step = 0; step <= 2; step += 1) {
         const value = row.low + (span * step) / 2
         const at = row.top + row.height - (row.height * step) / 2
@@ -185,33 +198,65 @@ export function Telemetry(props: Props) {
         context.stroke()
         context.fillText(format(value), padding.left - 6, at)
       }
-      // The trace name on the row, so a stacked band says what each row is.
+
+      // Subtle dark pill behind trace label when stacked
       if (props.stack && row.traces.length > 0) {
-        context.textAlign = 'left'
-        context.textBaseline = 'top'
-        context.fillStyle = SERIES_COLOURS[row.traces[0].colourIndex % SERIES_COLOURS.length]
         const labels = row.traces.map((trace) => trace.key.split('.').slice(-1)[0]).join(' ')
-        context.fillText(labels, padding.left + 4, row.top + 3)
+        context.font = '10px "JetBrains Mono", ui-monospace, monospace'
+        const metrics = context.measureText(labels)
+        const pillX = padding.left + 4
+        const pillY = row.top + 3
+        const pillW = metrics.width + 10
+        const pillH = 14
+
+        context.save()
+        context.fillStyle = 'rgba(16, 18, 23, 0.88)'
+        context.strokeStyle = '#1f2430'
+        context.lineWidth = 1
+        if (typeof context.roundRect === 'function') {
+          context.beginPath()
+          context.roundRect(pillX, pillY, pillW, pillH, 3)
+          context.fill()
+          context.stroke()
+        } else {
+          context.fillRect(pillX, pillY, pillW, pillH)
+          context.strokeRect(pillX, pillY, pillW, pillH)
+        }
+        context.textAlign = 'left'
+        context.textBaseline = 'middle'
+        context.fillStyle = SERIES_COLOURS[row.traces[0].colourIndex % SERIES_COLOURS.length]
+        context.fillText(labels, pillX + 5, pillY + pillH / 2)
+        context.restore()
       }
-      void rowIndex
     })
 
-    const bottom = rows().length > 0 ? rows().at(-1)!.top + rows().at(-1)!.height : padding.top
     const x = (index: number, count: number) =>
       padding.left + (count <= 1 ? plotWidth() : (index / (count - 1)) * plotWidth())
 
-    // Bit rails, under the rows: a row per bit of a flags word.
+    // Logic analyzer bit rails under the rows: inactive rail tracks (#181c24) and high bits
     let railTop = bottom + 6
     rails().forEach((rail) => {
       const bits = Math.max(1, Math.min(16, 32 - Math.clz32(bitsOf(rail.values))))
       const rowHeight = 3
       const gap = 1
+      const totalRailHeight = bits * (rowHeight + gap)
       const colour = SERIES_COLOURS[rail.colourIndex % SERIES_COLOURS.length]
+
+      // Left gutter label: 'bits'
+      context.font = '10px "JetBrains Mono", ui-monospace, monospace'
+      context.textAlign = 'right'
+      context.textBaseline = 'middle'
+      context.fillStyle = '#5e677a'
+      context.fillText('bits', padding.left - 6, railTop + totalRailHeight / 2)
+
+      // Inactive bit rail tracks
       for (let bit = 0; bit < bits; bit += 1) {
         const y = railTop + (bits - 1 - bit) * (rowHeight + gap)
-        context.fillStyle = '#2a3245'
+        context.fillStyle = '#181c24'
         context.fillRect(padding.left, y, plotWidth(), rowHeight)
       }
+
+      // Active high bits
       if (rail.values.length > 1) {
         const step = plotWidth() / (rail.values.length - 1)
         rail.values.forEach((value, index) => {
@@ -227,15 +272,28 @@ export function Telemetry(props: Props) {
           }
         })
       }
-      railTop += bits * (rowHeight + gap) + 6
+      railTop += totalRailHeight + 6
     })
 
-    // State lanes below the rails: a block per change, shaded by level.
+    // State lanes below rails: inactive background track + shaded level blocks
     let laneTop = railTop + 2
     lanes().forEach((lane) => {
       const laneHeight = 6
       const distinct = [...new Set(lane.values)].sort((a, b) => a - b)
       const colour = SERIES_COLOURS[lane.colourIndex % SERIES_COLOURS.length]
+
+      // Left gutter label: 'lane'
+      context.font = '10px "JetBrains Mono", ui-monospace, monospace'
+      context.textAlign = 'right'
+      context.textBaseline = 'middle'
+      context.fillStyle = '#5e677a'
+      context.fillText('lane', padding.left - 6, laneTop + laneHeight / 2)
+
+      // Inactive track
+      context.fillStyle = '#181c24'
+      context.fillRect(padding.left, laneTop, plotWidth(), laneHeight)
+
+      // State blocks
       lane.values.forEach((value, index) => {
         if (index === 0) return
         if (value === lane.values[index - 1]) return
@@ -253,33 +311,137 @@ export function Telemetry(props: Props) {
       laneTop += laneHeight + 4
     })
 
+    // Sample count readout in bottom-left
     context.textAlign = 'left'
     context.textBaseline = 'alphabetic'
-    context.fillStyle = '#7c879c'
+    context.fillStyle = '#5e677a'
+    context.font = '10px "JetBrains Mono", ui-monospace, monospace'
     context.fillText(`${longest()} samples`, padding.left, height - 5)
 
+    // Interactive crosshair & multi-trace readout HUD
     const cursor = hover()
     if (cursor !== null && longest() > 1) {
       const at = x(cursor, longest())
-      context.strokeStyle = '#a78bfa'
+
+      // Crisp vertical cursor line
+      context.save()
+      context.strokeStyle = '#06b6d4'
+      context.lineWidth = 1
       context.setLineDash([3, 3])
       context.beginPath()
       context.moveTo(at, padding.top)
       context.lineTo(at, bottom)
       context.stroke()
-      context.setLineDash([])
+      context.restore()
+
+      // Trace sample points and HUD items
+      const readouts: { name: string; value: string; colour: string }[] = []
+
       rows().forEach((row) => {
         const span = row.high - row.low || 1
         for (const trace of row.traces) {
           const value = trace.values[cursor]
           if (value === undefined) continue
           const y = row.top + row.height - ((value - row.low) / span) * row.height
-          context.fillStyle = SERIES_COLOURS[trace.colourIndex % SERIES_COLOURS.length]
+          const colour = SERIES_COLOURS[trace.colourIndex % SERIES_COLOURS.length]
+
+          // 3px circle with dark #090a0d 1.5px stroke
+          context.save()
           context.beginPath()
-          context.arc(at, y, 2.5, 0, Math.PI * 2)
+          context.arc(at, y, 3, 0, Math.PI * 2)
+          context.fillStyle = colour
           context.fill()
+          context.lineWidth = 1.5
+          context.strokeStyle = '#090a0d'
+          context.stroke()
+          context.restore()
+
+          const shortName = trace.key.split('.').slice(-1)[0]
+          readouts.push({
+            name: shortName,
+            value: format(value),
+            colour,
+          })
         }
       })
+
+      lanes().forEach((lane) => {
+        const value = lane.values[cursor]
+        if (value !== undefined) {
+          readouts.push({
+            name: lane.key.split('.').slice(-1)[0],
+            value: String(value),
+            colour: SERIES_COLOURS[lane.colourIndex % SERIES_COLOURS.length],
+          })
+        }
+      })
+
+      rails().forEach((rail) => {
+        const value = rail.values[cursor]
+        if (value !== undefined) {
+          readouts.push({
+            name: rail.key.split('.').slice(-1)[0],
+            value: `0x${Math.floor(value).toString(16).toUpperCase()}`,
+            colour: SERIES_COLOURS[rail.colourIndex % SERIES_COLOURS.length],
+          })
+        }
+      })
+
+      // Compact translucent HUD readout box
+      context.font = '10px "JetBrains Mono", ui-monospace, monospace'
+      const titleText = `sample #${cursor}`
+      let maxContentWidth = context.measureText(titleText).width
+
+      for (const item of readouts) {
+        const lineText = `${item.name}: ${item.value}`
+        const itemWidth = context.measureText(lineText).width
+        if (itemWidth > maxContentWidth) maxContentWidth = itemWidth
+      }
+
+      const hudPaddingX = 8
+      const hudPaddingY = 6
+      const hudLineHeight = 13
+      const hudWidth = maxContentWidth + hudPaddingX * 2
+      const hudHeight = hudPaddingY * 2 + (1 + readouts.length) * hudLineHeight
+
+      let hudX = width - padding.right - hudWidth - 6
+      const hudY = padding.top + 4
+
+      // Reposition HUD to left if cursor lies directly beneath it
+      if (at > hudX - 20 && at < hudX + hudWidth + 20) {
+        hudX = padding.left + 6
+      }
+
+      context.save()
+      context.fillStyle = 'rgba(16, 18, 23, 0.92)'
+      context.strokeStyle = '#2d3446'
+      context.lineWidth = 1
+
+      if (typeof context.roundRect === 'function') {
+        context.beginPath()
+        context.roundRect(hudX, hudY, hudWidth, hudHeight, 4)
+        context.fill()
+        context.stroke()
+      } else {
+        context.fillRect(hudX, hudY, hudWidth, hudHeight)
+        context.strokeRect(hudX, hudY, hudWidth, hudHeight)
+      }
+
+      context.textAlign = 'left'
+      context.textBaseline = 'top'
+      context.fillStyle = '#949eb2'
+      context.fillText(titleText, hudX + hudPaddingX, hudY + hudPaddingY)
+
+      readouts.forEach((item, idx) => {
+        const itemY = hudY + hudPaddingY + (idx + 1) * hudLineHeight
+        context.fillStyle = item.colour
+        context.fillText(`${item.name}: `, hudX + hudPaddingX, itemY)
+        const nameWidth = context.measureText(`${item.name}: `).width
+        context.fillStyle = '#edf0f7'
+        context.fillText(item.value, hudX + hudPaddingX + nameWidth, itemY)
+      })
+
+      context.restore()
     }
   }
 

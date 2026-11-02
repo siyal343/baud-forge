@@ -2,127 +2,588 @@
 <html lang="en">
   <head>
     <meta charset="UTF-8" />
-    <title>BaudForge</title>
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>BaudForge // HIL Workbench</title>
     <style>
       :root {
         color-scheme: dark;
-        --bg: #0b0e14;
-        --panel: #111621;
-        --line: #1e2638;
-        --text: #d5dceb;
-        --dim: #7c879c;
-        --ok: #10b981;
-        --tx: #06b6d4;
-        --fault: #ef4444;
+        --bg-canvas: #090a0d;
+        --bg-surface-1: #101217;
+        --bg-surface-2: #161920;
+        --bg-surface-3: #1e222b;
+        --border-hairline: #1f2430;
+        --border-strong: #2d3446;
+        --border-highlight: rgba(255, 255, 255, 0.06);
+        --text-primary: #edf0f7;
+        --text-secondary: #949eb2;
+        --text-muted: #5e677a;
+        --sig-rx: #10b981;
+        --sig-rx-dim: rgba(16, 185, 129, 0.12);
+        --sig-tx: #06b6d4;
+        --sig-tx-dim: rgba(6, 182, 212, 0.14);
+        --sig-warn: #f59e0b;
+        --sig-warn-dim: rgba(245, 158, 11, 0.14);
+        --sig-fault: #f43f5e;
+        --sig-fault-dim: rgba(244, 63, 94, 0.14);
+        --font-sans: "Inter", -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+        --font-mono: "JetBrains Mono", "Cascadia Mono", ui-monospace, Consolas, monospace;
+        --ease-out: cubic-bezier(0.23, 1, 0.32, 1);
       }
-      * { box-sizing: border-box; }
-      html, body { height: 100%; margin: 0; }
+
+      * {
+        box-sizing: border-box;
+      }
+
+      html, body {
+        height: 100%;
+        margin: 0;
+        background-color: var(--bg-canvas);
+        background-image: radial-gradient(var(--border-hairline) 1px, transparent 1px);
+        background-size: 24px 24px;
+        color: var(--text-primary);
+        font-family: var(--font-sans);
+        font-size: 13px;
+        line-height: 1.5;
+        user-select: none;
+        -webkit-user-select: none;
+        overflow-x: hidden;
+      }
+
+      /* 40px Frameless Instrument Titlebar */
       .titlebar {
         position: fixed;
         top: 0;
         left: 0;
         right: 0;
-        height: 32px;
+        height: 40px;
         display: flex;
         align-items: center;
         justify-content: space-between;
-        padding: 0 8px 0 14px;
-        border-bottom: 1px solid var(--line);
-        background: var(--panel);
+        padding: 0 10px 0 16px;
+        border-bottom: 1px solid var(--border-hairline);
+        background: var(--bg-surface-1);
         -webkit-app-region: drag;
-        font-size: 11px;
-        letter-spacing: .14em;
-        text-transform: uppercase;
-        color: var(--dim);
+        z-index: 100;
       }
-      .titlebar .controls { display: flex; gap: 2px; -webkit-app-region: no-drag; }
-      .titlebar button {
-        width: 26px;
-        height: 22px;
+
+      .titlebar-left {
+        display: flex;
+        align-items: center;
+        gap: 10px;
+      }
+
+      .status-led {
+        width: 7px;
+        height: 7px;
+        border-radius: 50%;
+        background: var(--sig-rx);
+        box-shadow: 0 0 8px var(--sig-rx);
+        animation: pulse-led 2.4s infinite ease-in-out;
+      }
+
+      @keyframes pulse-led {
+        0%, 100% { opacity: 1; transform: scale(1); }
+        50% { opacity: 0.55; transform: scale(0.92); }
+      }
+
+      .titlebar-title {
+        font-size: 11px;
+        font-weight: 600;
+        letter-spacing: 0.12em;
+        text-transform: uppercase;
+        color: var(--text-primary);
+      }
+
+      .titlebar-badge {
+        font-family: var(--font-mono);
+        font-size: 10px;
+        color: var(--text-muted);
+        background: rgba(255, 255, 255, 0.04);
+        border: 1px solid var(--border-hairline);
+        border-radius: 3px;
+        padding: 1px 6px;
+      }
+
+      .titlebar .controls {
+        display: flex;
+        align-items: center;
+        gap: 3px;
+        -webkit-app-region: no-drag;
+      }
+
+      .titlebar .controls button {
+        width: 28px;
+        height: 24px;
         background: transparent;
         border: 1px solid transparent;
         border-radius: 4px;
-        color: var(--dim);
-        font: inherit;
+        color: var(--text-muted);
+        display: inline-flex;
+        align-items: center;
+        justify-content: center;
         cursor: pointer;
+        transition: color 120ms ease, background-color 120ms ease, border-color 120ms ease;
+        padding: 0;
       }
-      .titlebar button:hover { color: var(--text); border-color: var(--line); }
-      .titlebar button.close:hover { color: var(--fault); border-color: var(--fault); }
+
+      .titlebar .controls button:hover {
+        color: var(--text-primary);
+        background: var(--bg-surface-3);
+        border-color: var(--border-hairline);
+      }
+
+      .titlebar .controls button.close:hover {
+        color: var(--sig-fault);
+        background: var(--sig-fault-dim);
+        border-color: rgba(244, 63, 94, 0.35);
+      }
+
+      /* Main Launcher View */
       body {
-        padding-top: 32px;
-        background: var(--bg);
-        color: var(--text);
-        font: 13px/1.5 "JetBrains Mono", ui-monospace, Consolas, monospace;
+        padding-top: 40px;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+      }
+
+      main {
+        width: min(720px, 92vw);
+        padding: 32px 0 24px;
+      }
+
+      .hero-header {
+        margin-bottom: 22px;
+      }
+
+      .instrument-tag {
+        display: inline-flex;
+        align-items: center;
+        gap: 6px;
+        font-family: var(--font-sans);
+        font-size: 10px;
+        font-weight: 600;
+        letter-spacing: 0.1em;
+        text-transform: uppercase;
+        color: var(--sig-tx);
+        background: var(--sig-tx-dim);
+        border: 1px solid rgba(6, 182, 212, 0.25);
+        border-radius: 4px;
+        padding: 3px 8px;
+        margin-bottom: 10px;
+      }
+
+      h1 {
+        font-size: 24px;
+        font-weight: 700;
+        letter-spacing: -0.02em;
+        color: var(--text-primary);
+        margin: 0 0 6px;
+      }
+
+      p.lead {
+        font-size: 13px;
+        color: var(--text-secondary);
+        margin: 0;
+        line-height: 1.5;
+      }
+
+      .panel {
+        background: var(--bg-surface-1);
+        border: 1px solid var(--border-hairline);
+        box-shadow: 0 8px 32px rgba(0, 0, 0, 0.45);
+        border-radius: 10px;
+        padding: 20px;
+      }
+
+      /* 3-Column Action Tiles */
+      .action-grid {
         display: grid;
-        place-items: center;
-        font-variant-numeric: tabular-nums;
+        grid-template-columns: repeat(3, 1fr);
+        gap: 12px;
+        margin-bottom: 16px;
       }
-      main { width: min(620px, 90vw); }
-      h1 { font-size: 15px; letter-spacing: .14em; text-transform: uppercase; margin: 0 0 6px; }
-      p.lead { color: var(--dim); margin: 0 0 22px; }
-      .panel { background: var(--panel); border: 1px solid var(--line); border-radius: 8px; padding: 16px; }
-      button {
-        background: transparent;
-        color: var(--tx);
-        border: 1px solid var(--tx);
-        border-radius: 6px;
-        padding: 7px 14px;
-        font: inherit;
-        cursor: pointer;
-      }
-      button:hover { background: rgba(6, 182, 212, .08); }
-      button:disabled { color: var(--dim); border-color: var(--line); cursor: default; background: none; }
-      .row { display: flex; gap: 10px; align-items: center; flex-wrap: wrap; }
-      .path { color: var(--dim); word-break: break-all; }
-      ul { list-style: none; margin: 14px 0 0; padding: 0; display: grid; gap: 4px; }
-      li button {
-        border: 1px solid var(--line);
-        color: var(--text);
-        width: 100%;
+
+      .action-tile {
+        background: var(--bg-surface-2);
+        border: 1px solid var(--border-hairline);
+        border-radius: 8px;
+        padding: 16px;
         text-align: left;
-        padding: 6px 10px;
+        display: flex;
+        flex-direction: column;
+        gap: 12px;
+        cursor: pointer;
+        transition: transform 140ms var(--ease-out), background-color 140ms ease, border-color 140ms ease, box-shadow 140ms ease;
       }
-      li button:hover { border-color: var(--tx); }
-      .status { margin-top: 16px; color: var(--dim); min-height: 1.4em; }
-      .vault-row { margin-top: 12px; justify-content: space-between; }
-      .vault-row button { padding: 4px 10px; font-size: 12px; }
-      .status.err { color: var(--fault); }
-      .status.ok { color: var(--ok); }
-      footer { margin-top: 18px; color: var(--dim); font-size: 11px; }
-      kbd { border: 1px solid var(--line); border-radius: 4px; padding: 0 5px; }
+
+      .action-tile:hover {
+        background: var(--bg-surface-3);
+        border-color: var(--border-strong);
+        box-shadow: 0 4px 16px rgba(0, 0, 0, 0.35);
+      }
+
+      .action-tile:active {
+        transform: scale(0.97);
+      }
+
+      .tile-icon-box {
+        width: 36px;
+        height: 36px;
+        border-radius: 6px;
+        background: var(--bg-surface-1);
+        border: 1px solid var(--border-hairline);
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        color: var(--sig-tx);
+        transition: background-color 140ms ease, border-color 140ms ease, color 140ms ease;
+      }
+
+      .action-tile:hover .tile-icon-box {
+        background: var(--sig-tx-dim);
+        border-color: rgba(6, 182, 212, 0.35);
+        color: var(--sig-tx);
+      }
+
+      .tile-title {
+        font-size: 13px;
+        font-weight: 600;
+        color: var(--text-primary);
+        margin-bottom: 2px;
+      }
+
+      .tile-desc {
+        font-size: 11px;
+        color: var(--text-muted);
+        line-height: 1.4;
+      }
+
+      /* Machined Recording Target Bar */
+      .vault-bar {
+        background: var(--bg-surface-2);
+        border: 1px solid var(--border-hairline);
+        border-radius: 8px;
+        padding: 9px 12px;
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+        gap: 12px;
+        margin-bottom: 18px;
+      }
+
+      .vault-info {
+        display: flex;
+        align-items: center;
+        gap: 10px;
+        overflow: hidden;
+        flex: 1;
+      }
+
+      .vault-tag {
+        font-family: var(--font-sans);
+        font-size: 9px;
+        font-weight: 700;
+        letter-spacing: 0.1em;
+        text-transform: uppercase;
+        color: var(--text-muted);
+        background: rgba(255, 255, 255, 0.04);
+        border: 1px solid var(--border-hairline);
+        border-radius: 3px;
+        padding: 2px 6px;
+        flex-shrink: 0;
+      }
+
+      .path {
+        font-family: var(--font-mono);
+        font-size: 11px;
+        color: var(--text-muted);
+        overflow: hidden;
+        text-overflow: ellipsis;
+        white-space: nowrap;
+      }
+
+      .vault-actions {
+        display: flex;
+        align-items: center;
+        gap: 6px;
+        flex-shrink: 0;
+      }
+
+      .btn-subtle {
+        background: var(--bg-surface-1);
+        border: 1px solid var(--border-hairline);
+        border-radius: 5px;
+        padding: 5px 10px;
+        font-family: var(--font-sans);
+        font-size: 11px;
+        font-weight: 500;
+        color: var(--text-primary);
+        cursor: pointer;
+        transition: transform 140ms var(--ease-out), background-color 120ms ease, border-color 120ms ease;
+      }
+
+      .btn-subtle:hover {
+        background: var(--bg-surface-3);
+        border-color: var(--border-strong);
+      }
+
+      .btn-subtle:active {
+        transform: scale(0.97);
+      }
+
+      .btn-subtle:disabled {
+        color: var(--text-muted);
+        border-color: var(--border-hairline);
+        background: transparent;
+        cursor: default;
+        transform: none;
+        opacity: 0.45;
+      }
+
+      /* Recent Workspaces */
+      .recent-section {
+        margin-top: 14px;
+      }
+
+      .recent-header {
+        font-size: 10px;
+        font-weight: 600;
+        letter-spacing: 0.08em;
+        text-transform: uppercase;
+        color: var(--text-muted);
+        margin-bottom: 8px;
+      }
+
+      ul#recent {
+        list-style: none;
+        margin: 0;
+        padding: 0;
+        display: grid;
+        gap: 6px;
+        max-height: 160px;
+        overflow-y: auto;
+      }
+
+      ul#recent li button {
+        display: flex;
+        align-items: center;
+        gap: 10px;
+        width: 100%;
+        padding: 8px 12px;
+        background: var(--bg-surface-2);
+        border: 1px solid var(--border-hairline);
+        border-radius: 6px;
+        text-align: left;
+        cursor: pointer;
+        transition: transform 140ms var(--ease-out), border-color 120ms ease, background-color 120ms ease;
+      }
+
+      ul#recent li button:hover {
+        background: var(--bg-surface-3);
+        border-color: var(--sig-tx);
+      }
+
+      ul#recent li button:active {
+        transform: scale(0.98);
+      }
+
+      .item-badge {
+        font-family: var(--font-mono);
+        font-size: 10px;
+        color: var(--sig-tx);
+        background: var(--sig-tx-dim);
+        border: 1px solid rgba(6, 182, 212, 0.25);
+        border-radius: 3px;
+        padding: 2px 6px;
+        flex-shrink: 0;
+      }
+
+      .item-path {
+        font-family: var(--font-mono);
+        font-size: 11px;
+        color: var(--text-secondary);
+        overflow: hidden;
+        text-overflow: ellipsis;
+        white-space: nowrap;
+        flex: 1;
+      }
+
+      /* Status Telemetry Bar */
+      .status {
+        margin-top: 14px;
+        font-family: var(--font-mono);
+        font-size: 11px;
+        color: var(--text-muted);
+        min-height: 20px;
+        display: flex;
+        align-items: center;
+        border-radius: 4px;
+        transition: all 140ms ease;
+      }
+
+      .status.err {
+        color: var(--sig-fault);
+        background: var(--sig-fault-dim);
+        border: 1px solid rgba(244, 63, 94, 0.3);
+        padding: 4px 10px;
+      }
+
+      .status.ok {
+        color: var(--sig-rx);
+        background: var(--sig-rx-dim);
+        border: 1px solid rgba(16, 185, 129, 0.3);
+        padding: 4px 10px;
+      }
+
+      /* Footer Quick Reference */
+      footer {
+        margin-top: 20px;
+        padding-top: 14px;
+        border-top: 1px solid var(--border-hairline);
+        display: flex;
+        justify-content: space-between;
+        align-items: center;
+        font-size: 11px;
+        color: var(--text-muted);
+        flex-wrap: wrap;
+        gap: 8px;
+      }
+
+      kbd {
+        font-family: var(--font-mono);
+        font-size: 10px;
+        color: var(--text-secondary);
+        background: var(--bg-surface-2);
+        border: 1px solid var(--border-hairline);
+        border-radius: 3px;
+        padding: 2px 5px;
+      }
+
+      @media (prefers-reduced-motion: reduce) {
+        .status-led {
+          animation: none;
+        }
+        .action-tile,
+        .btn-subtle,
+        ul#recent li button {
+          transition: background-color 120ms ease, border-color 120ms ease;
+        }
+        .action-tile:active,
+        .btn-subtle:active,
+        ul#recent li button:active {
+          transform: none;
+        }
+      }
     </style>
   </head>
   <body>
     <div class="titlebar" data-tauri-drag-region>
-      <span>BaudForge</span>
-      <span class="controls">
-        <button type="button" id="min" title="minimise">–</button>
-        <button type="button" id="max" title="maximise">□</button>
-        <button type="button" id="close" class="close" title="close">×</button>
-      </span>
-    </div>
-    <main>
-      <h1>BaudForge</h1>
-      <p class="lead">Open a workspace to start the engine, or pick one you used before.</p>
-      <div class="panel">
-        <div class="row">
-          <button id="open" type="button">Open workspace…</button>
-          <button id="demo" type="button">Try a demo</button>
-          <button id="review" type="button">Open a vault…</button>
-        </div>
-        <div class="row vault-row">
-          <span class="path" id="vault">records to a temporary file</span>
-          <button id="pickVault" type="button">Vault…</button>
-          <button id="clearVault" type="button">Temporary</button>
-        </div>
-        <div class="status" id="status"></div>
-        <ul id="recent"></ul>
+      <div class="titlebar-left">
+        <div class="status-led" aria-hidden="true"></div>
+        <span class="titlebar-title">BAUDFORGE // HIL WORKBENCH</span>
+        <span class="titlebar-badge">v0.8</span>
       </div>
+      <div class="controls">
+        <button type="button" id="min" title="minimise">
+          <svg width="10" height="10" viewBox="0 0 10 10" fill="none" stroke="currentColor" stroke-width="1.4" stroke-linecap="round">
+            <line x1="1.5" y1="5" x2="8.5" y2="5" />
+          </svg>
+        </button>
+        <button type="button" id="max" title="maximise">
+          <svg width="10" height="10" viewBox="0 0 10 10" fill="none" stroke="currentColor" stroke-width="1.4" stroke-linejoin="round">
+            <rect x="1.5" y="1.5" width="7" height="7" rx="0.5" />
+          </svg>
+        </button>
+        <button type="button" id="close" class="close" title="close">
+          <svg width="10" height="10" viewBox="0 0 10 10" fill="none" stroke="currentColor" stroke-width="1.4" stroke-linecap="round">
+            <line x1="1.5" y1="1.5" x2="8.5" y2="8.5" />
+            <line x1="8.5" y1="1.5" x2="1.5" y2="8.5" />
+          </svg>
+        </button>
+      </div>
+    </div>
+
+    <main>
+      <div class="hero-header">
+        <div class="instrument-tag">HARDWARE-IN-THE-LOOP SERIAL &amp; PROTOCOL WORKBENCH</div>
+        <h1>BaudForge</h1>
+        <p class="lead">Open a workspace to start the engine, run a dual-port simulator demo, or inspect a recorded vault.</p>
+      </div>
+
+      <div class="panel">
+        <div class="action-grid">
+          <button id="open" type="button" class="action-tile">
+            <div class="tile-icon-box">
+              <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round">
+                <path d="M22 19a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h5l2 3h9a2 2 0 0 1 2 2z"/>
+                <line x1="12" y1="11" x2="12" y2="17"/>
+                <polyline points="9 14 12 11 15 14"/>
+              </svg>
+            </div>
+            <div class="tile-content">
+              <div class="tile-title">Open Workspace</div>
+              <div class="tile-desc">Load a .bforge.toml configuration</div>
+            </div>
+          </button>
+
+          <button id="demo" type="button" class="action-tile">
+            <div class="tile-icon-box">
+              <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round">
+                <rect x="2" y="2" width="20" height="20" rx="3"/>
+                <path d="m10 8 6 4-6 4V8z"/>
+              </svg>
+            </div>
+            <div class="tile-content">
+              <div class="tile-title">Launch Live Demo</div>
+              <div class="tile-desc">Run virtual dual-port HIL bus</div>
+            </div>
+          </button>
+
+          <button id="review" type="button" class="action-tile">
+            <div class="tile-icon-box">
+              <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round">
+                <ellipse cx="12" cy="5" rx="9" ry="3"/>
+                <path d="M21 12c0 1.66-4 3-9 3s-9-1.34-9-3"/>
+                <path d="M3 5v14c0 1.66 4 3 9 3s9-1.34 9-3V5"/>
+                <circle cx="12" cy="12" r="2"/>
+              </svg>
+            </div>
+            <div class="tile-content">
+              <div class="tile-title">Inspect Vault</div>
+              <div class="tile-desc">Replay and dissect .bflog file</div>
+            </div>
+          </button>
+        </div>
+
+        <div class="vault-bar">
+          <div class="vault-info">
+            <span class="vault-tag">VAULT TARGET</span>
+            <span class="path" id="vault">records to a temporary file</span>
+          </div>
+          <div class="vault-actions">
+            <button id="pickVault" type="button" class="btn-subtle">Select .bflog…</button>
+            <button id="clearVault" type="button" class="btn-subtle">Use Temp</button>
+          </div>
+        </div>
+
+        <div class="recent-section">
+          <div class="recent-header">RECENT WORKSPACES</div>
+          <ul id="recent"></ul>
+        </div>
+
+        <div class="status" id="status"></div>
+      </div>
+
       <footer>
-        A workspace is a <code>.bforge.toml</code> file. The demo needs two simulators running,
-        see <code>docs/QUICKSTART.md</code>.
+        <div>
+          CLI commands: <kbd>bforge monitor</kbd> · <kbd>bforge serve</kbd> · <kbd>bforge diff</kbd>
+        </div>
+        <div>
+          Workspace spec: <kbd>.bforge.toml</kbd> · Vault: <kbd>.bflog</kbd>
+        </div>
       </footer>
     </main>
+
     <script>
       const invoke = window.__TAURI__?.core?.invoke;
       const status = document.getElementById('status');
@@ -140,7 +601,7 @@
       function showVault() {
         const label = document.getElementById('vault');
         label.textContent = chosenVault ? chosenVault : 'records to a temporary file';
-        label.style.color = chosenVault ? 'var(--text)' : '';
+        label.style.color = chosenVault ? 'var(--text-primary)' : '';
         document.getElementById('clearVault').disabled = !chosenVault;
       }
 
@@ -169,8 +630,20 @@
             const li = document.createElement('li');
             const button = document.createElement('button');
             button.type = 'button';
-            button.textContent = path;
+            button.title = path;
+
+            const badge = document.createElement('span');
+            badge.className = 'item-badge';
+            badge.textContent = '.bforge.toml';
+
+            const pathSpan = document.createElement('span');
+            pathSpan.className = 'item-path';
+            pathSpan.textContent = path;
+
+            button.appendChild(badge);
+            button.appendChild(pathSpan);
             button.onclick = () => start(path);
+
             li.appendChild(button);
             recentList.appendChild(li);
           }
