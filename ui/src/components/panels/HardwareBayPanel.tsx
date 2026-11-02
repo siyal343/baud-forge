@@ -1,12 +1,14 @@
-import { For, Show } from 'solid-js'
+import { For, Show, createSignal } from 'solid-js'
 import type { WorkbenchStore } from '../../lib/store'
 import { ESP32_BOOT_STEPS, parsePinSteps } from '../../lib/store'
+import { FRAMING_MODES } from '../../lib/workspace'
 
 const bytes = (value: number) =>
   value < 1000 ? `${value} B` : value < 1e6 ? `${(value / 1e3).toFixed(1)} kB` : `${(value / 1e6).toFixed(1)} MB`
 
 export function HardwareBayPanel(props: { store: WorkbenchStore }) {
   const { store } = props
+  const [framingPort, setFramingPort] = createSignal<string | null>(null)
 
   return (
     <div class="panel-content hardware-bay-content">
@@ -24,9 +26,29 @@ export function HardwareBayPanel(props: { store: WorkbenchStore }) {
               </div>
               <div class="port-device" title={port.device}>{port.device || '-'}</div>
               <div class="port-kpi-grid">
-                <div class="port-kpi">
-                  <span class="kpi-label">Baud / Frame</span>
-                  <span class="kpi-val">{port.baud_rate || '-'} · {port.framing}</span>
+                <div class="port-kpi port-kpi-framing">
+                  <div class="kpi-label-row">
+                    <span class="kpi-label">Baud / Frame</span>
+                    <button
+                      type="button"
+                      class="framing-toggle-btn"
+                      title="Configure framing mode"
+                      onClick={() => setFramingPort(framingPort() === port.id ? null : port.id)}
+                    >
+                      Framing ▾
+                    </button>
+                  </div>
+                  <div class="kpi-val kpi-val-framing">
+                    <span>{port.baud_rate || '-'} · </span>
+                    <button
+                      type="button"
+                      class="framing-interactive-badge"
+                      title="Click to select framing mode"
+                      onClick={() => setFramingPort(framingPort() === port.id ? null : port.id)}
+                    >
+                      {port.framing}
+                    </button>
+                  </div>
                 </div>
                 <div class="port-kpi">
                   <span class="kpi-label">Traffic</span>
@@ -43,6 +65,44 @@ export function HardwareBayPanel(props: { store: WorkbenchStore }) {
                   </span>
                 </div>
               </div>
+              <Show when={framingPort() === port.id}>
+                <div class="framing-popover-panel">
+                  <div class="framing-popover-head">
+                    <span class="framing-popover-title">Framing Mode for {port.id}</span>
+                    <button
+                      type="button"
+                      class="framing-close-btn"
+                      title="Close framing selector"
+                      onClick={() => setFramingPort(null)}
+                    >
+                      ✕
+                    </button>
+                  </div>
+                  <div class="framing-options-list">
+                    <For each={FRAMING_MODES}>
+                      {(mode) => (
+                        <button
+                          type="button"
+                          class="framing-option-btn"
+                          classList={{ active: port.framing === mode.id }}
+                          onClick={() => {
+                            void store.setPortFraming(port.id, mode.id)
+                            setFramingPort(null)
+                          }}
+                        >
+                          <div class="framing-option-head">
+                            <span class="mode-name">{mode.id}</span>
+                            <Show when={port.framing === mode.id}>
+                              <span class="mode-badge">active</span>
+                            </Show>
+                          </div>
+                          <div class="mode-label">{mode.label}</div>
+                        </button>
+                      )}
+                    </For>
+                  </div>
+                </div>
+              </Show>
               <div class="line-leds">
                 <span class="line-led" classList={{ on: port.pins.cts }} title="Clear To Send">CTS</span>
                 <span class="line-led" classList={{ on: port.pins.dsr }} title="Data Set Ready">DSR</span>
@@ -86,6 +146,14 @@ export function HardwareBayPanel(props: { store: WorkbenchStore }) {
                   onClick={() => store.sendSequence(port.id, ESP32_BOOT_STEPS)}
                 >
                   boot seq
+                </button>
+                <button
+                  type="button"
+                  class="pin yield"
+                  title="Yield port for 30s so external flasher (esptool, cargo flash) can upload"
+                  onClick={() => void store.yieldPort(port.id, 30)}
+                >
+                  yield 30s
                 </button>
                 <button
                   type="button"

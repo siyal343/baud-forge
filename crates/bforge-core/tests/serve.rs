@@ -1038,3 +1038,47 @@ fn a_vault_without_a_workspace_reads_as_records() {
     client.join().expect("client");
     assert!(stats.requests >= 1, "{stats:?}");
 }
+
+
+#[test]
+fn devices_and_quick_connect_and_export() {
+    let server = Server::bind("127.0.0.1:0".parse().unwrap()).expect("bind");
+    let address = server.local_addr().unwrap().to_string();
+    let session = Session::review();
+
+    let client = std::thread::spawn(move || {
+        std::thread::sleep(Duration::from_millis(200));
+
+        // GET /api/devices
+        let (status, body) = get(&address, "/api/devices");
+        assert!(status.contains("200"), "devices status: {status}");
+        assert!(body.starts_with('[') && body.ends_with(']'), "devices body: {body}");
+
+        // POST /api/quick-connect
+        let (status, body) = post(
+            &address,
+            "/api/quick-connect",
+            r#"{"device":"COM99","baud_rate":115200,"framing":"delimiter"}"#,
+        );
+        assert!(status.contains("200"), "quick-connect status: {status}");
+        assert!(body.contains("\"ok\":true"), "quick-connect body: {body}");
+        assert!(body.contains("\"port\":\"serial0\""), "quick-connect body: {body}");
+
+        // POST /api/workspace/export
+        let (status, body) = post(&address, "/api/workspace/export", "{}");
+        assert!(status.contains("200"), "export status: {status}");
+        assert!(body.contains("\"toml\":"), "export body: {body}");
+        assert!(body.contains("COM99"), "export contains device: {body}");
+        assert!(body.contains("serial0"), "export contains port: {body}");
+
+        // GET /api/workspace/export
+        let (status, body) = get(&address, "/api/workspace/export");
+        assert!(status.contains("200"), "get export status: {status}");
+        assert!(body.contains("\"toml\":"), "get export body: {body}");
+    });
+
+    let _stats = server
+        .run(session, Some(Duration::from_secs(2)))
+        .expect("serve");
+    client.join().expect("client");
+}

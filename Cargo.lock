@@ -340,6 +340,7 @@ name = "bforge-gui"
 version = "0.8.0"
 dependencies = [
  "bforge-core",
+ "bforge-hal",
  "bforge-storage",
  "rfd",
  "serde",

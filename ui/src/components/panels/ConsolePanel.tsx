@@ -1,4 +1,4 @@
-import { For, Show, createMemo } from 'solid-js'
+import { For, Show, createMemo, createSignal } from 'solid-js'
 import type { WorkbenchStore } from '../../lib/store'
 
 const bytesOf = (text: string) =>
@@ -6,6 +6,79 @@ const bytesOf = (text: string) =>
 
 export function ConsolePanel(props: { store: WorkbenchStore }) {
   const { store } = props
+
+  const [txInput, setTxInput] = createSignal('')
+  const [txMode, setTxMode] = createSignal<'crlf' | 'lf' | 'cr' | 'none' | 'hex'>('crlf')
+  const [txPort, setTxPort] = createSignal<string>('')
+  const [history, setHistory] = createSignal<string[]>([])
+  const [historyIndex, setHistoryIndex] = createSignal<number>(-1)
+  let draftInput = ''
+
+  const defaultPort = () => {
+    const open = store.ports().find((p) => p.state === 'open')
+    if (open) return open.id
+    const obcOrSerial0 = store.ports().find((p) => p.id === 'obc' || p.id === 'serial0')
+    if (obcOrSerial0) return obcOrSerial0.id
+    return store.ports()[0]?.id || ''
+  }
+
+  const effectivePort = () => txPort() || defaultPort()
+
+  async function handleSend() {
+    const text = txInput()
+    const mode = txMode()
+    if (!text && (mode === 'none' || mode === 'hex')) return
+
+    const port = effectivePort()
+    if (!port) return
+
+    const ok = await store.sendTx(port, text, mode)
+    if (ok) {
+      if (text) {
+        setHistory((prev) => (prev[prev.length - 1] === text ? prev : [...prev, text]))
+      }
+      setHistoryIndex(-1)
+      draftInput = ''
+      setTxInput('')
+    }
+  }
+
+  function handleKeyDown(e: KeyboardEvent) {
+    if (e.key === 'Enter') {
+      e.preventDefault()
+      void handleSend()
+    } else if (e.key === 'ArrowUp') {
+      const list = history()
+      if (list.length === 0) return
+      e.preventDefault()
+      const current = historyIndex()
+      if (current === -1) {
+        draftInput = txInput()
+        const next = list.length - 1
+        setHistoryIndex(next)
+        setTxInput(list[next])
+      } else if (current > 0) {
+        const next = current - 1
+        setHistoryIndex(next)
+        setTxInput(list[next])
+      }
+    } else if (e.key === 'ArrowDown') {
+      const list = history()
+      if (list.length === 0) return
+      e.preventDefault()
+      const current = historyIndex()
+      if (current !== -1) {
+        if (current < list.length - 1) {
+          const next = current + 1
+          setHistoryIndex(next)
+          setTxInput(list[next])
+        } else {
+          setHistoryIndex(-1)
+          setTxInput(draftInput)
+        }
+      }
+    }
+  }
 
   const schemaFields = createMemo(() => {
     const port = store.targetPort() || (store.ports().length > 0 ? store.ports()[0].id : '')
@@ -341,6 +414,55 @@ export function ConsolePanel(props: { store: WorkbenchStore }) {
             </Show>
           </div>
         </Show>
+      </div>
+
+      <div class="console-tx-bar">
+        <Show when={store.ports().length > 1}>
+          <select
+            class="tx-port-select"
+            value={effectivePort()}
+            onChange={(e) => setTxPort(e.currentTarget.value)}
+            aria-label="TX target port"
+          >
+            <For each={store.ports()}>{(p) => <option value={p.id}>{p.id}</option>}</For>
+          </select>
+        </Show>
+        <Show when={store.ports().length === 1}>
+          <span class="tx-port-badge" title="Active target port">{effectivePort()}</span>
+        </Show>
+        <input
+          class="tx-input"
+          value={txInput()}
+          onInput={(e) => {
+            setTxInput(e.currentTarget.value)
+            if (historyIndex() !== -1) setHistoryIndex(-1)
+          }}
+          onKeyDown={handleKeyDown}
+          placeholder="Type command to transmit... (Enter to send, ↑↓ history)"
+          spellcheck={false}
+          aria-label="Type command to transmit"
+        />
+        <select
+          class="tx-mode-select"
+          value={txMode()}
+          onChange={(e) => setTxMode(e.currentTarget.value as any)}
+          aria-label="Line Ending"
+        >
+          <option value="crlf">CRLF (\r\n)</option>
+          <option value="lf">LF (\n)</option>
+          <option value="cr">CR (\r)</option>
+          <option value="none">None</option>
+          <option value="hex">HEX</option>
+        </select>
+        <button
+          type="button"
+          class="tx-send-btn"
+          disabled={store.ports().length === 0 || !effectivePort()}
+          onClick={() => void handleSend()}
+          title="Transmit command (Enter)"
+        >
+          Send
+        </button>
       </div>
     </div>
   )

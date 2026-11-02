@@ -111,6 +111,7 @@ export default function App() {
       cleanupRouter,
       registerCommandHandler('palette.open', () => store.setPaletteOpen(true)),
       registerCommandHandler('settings.open', () => store.setSettingsOpen(true)),
+      registerCommandHandler('workspace.save', () => void store.saveWorkspace()),
       registerCommandHandler('dvr.toggle_play', () => store.togglePlay()),
       registerCommandHandler('dvr.snap_live', () => store.snapLive()),
       registerCommandHandler('diff.toggle', () => store.setShowDiff(!store.showDiff())),
@@ -118,6 +119,15 @@ export default function App() {
       registerCommandHandler('preset.debug', () => applyPreset('Protocol Debug')),
       registerCommandHandler('preset.telemetry', () => applyPreset('Telemetry & Oscilloscope')),
     ]
+
+    const onKeyDown = (e: KeyboardEvent) => {
+      if ((e.ctrlKey || e.metaKey) && (e.key === 's' || e.key === 'S')) {
+        e.preventDefault()
+        void store.saveWorkspace()
+      }
+    }
+    window.addEventListener('keydown', onKeyDown)
+    cleanups.push(() => window.removeEventListener('keydown', onKeyDown))
 
     onCleanup(() => {
       cleanups.forEach((fn) => fn())
@@ -132,6 +142,13 @@ export default function App() {
       category: 'General',
       shortcut: 'Ctrl+,',
       run: () => store.setSettingsOpen(true),
+    },
+    {
+      id: 'save-workspace',
+      label: 'Save Workspace Configuration (.bforge.toml)',
+      category: 'General',
+      shortcut: 'Ctrl+S',
+      run: () => void store.saveWorkspace(),
     },
     {
       id: 'preset-bringup',
@@ -246,6 +263,34 @@ export default function App() {
             <span class="chip down">⚡ fault: {store.faultKind()}</span>
           </Show>
 
+          {/* Active Hardware Indicator */}
+          <Show
+            when={store.ports().find((p) => p.state === 'open') || store.ports()[0]}
+            fallback={<span class="chip hardware-indicator idle"><span class="status-led micro-led idle" />[No Ports]</span>}
+          >
+            {(activePort) => (
+              <span
+                class="chip hardware-indicator"
+                classList={{
+                  live: activePort().state === 'open',
+                  warn: activePort().state === 'reconnecting' || activePort().state === 'yielded',
+                  closed: activePort().state === 'closed',
+                }}
+                title={`Active port: ${activePort().id} (${activePort().device || 'unspecified'}) - ${activePort().state}`}
+              >
+                <span
+                  class="status-led micro-led"
+                  classList={{
+                    live: activePort().state === 'open',
+                    warn: activePort().state === 'reconnecting' || activePort().state === 'yielded',
+                    idle: activePort().state === 'closed',
+                  }}
+                />
+                [{activePort().device || activePort().id} @ {activePort().baud_rate || 115200} 8N1 · {activePort().framing}]
+              </span>
+            )}
+          </Show>
+
           {/* Preset Selector Dropdown */}
           <div class="preset-dropdown-wrap">
             <select
@@ -262,6 +307,15 @@ export default function App() {
               <option value="Custom" disabled>Custom</option>
             </select>
           </div>
+
+          <button
+            type="button"
+            class="tb-btn"
+            title="Save current session as .bforge.toml (Ctrl+S)"
+            onClick={() => void store.saveWorkspace()}
+          >
+            💾 Save Workspace
+          </button>
         </div>
 
         {/* Center DVR Scrubber & Transport Pod */}

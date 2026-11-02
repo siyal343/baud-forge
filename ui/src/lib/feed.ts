@@ -23,7 +23,6 @@ export function createFeed() {
   // Batches the engine had to replace because this client was too far behind.
   const [missed, setMissed] = createSignal(0)
 
-
   const source = new EventSource(api('/api/events'))
 
   source.addEventListener('open', () => setLink('live'))
@@ -87,7 +86,17 @@ export function createFeed() {
     setEvents((current) => [{ at: at_ms, text: `${name} ${text}` }, ...current].slice(0, 40))
   })
 
+  function updatePortFraming(portId: string, framing: string) {
+    setSnapshot((prev) => {
+      if (!prev) return prev
+      return {
+        ...prev,
+        ports: prev.ports.map((p) => (p.id === portId ? { ...p, framing } : p)),
+      }
+    })
+  }
+
   onCleanup(() => source.close())
 
-  return { snapshot, frames, events, link, received, series, missed }
+  return { snapshot, frames, events, link, received, series, missed, updatePortFraming }
 }

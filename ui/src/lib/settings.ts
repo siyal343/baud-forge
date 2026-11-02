@@ -38,6 +38,7 @@ export const DEFAULT_COLUMNS: ColumnSetting[] = [
 
 export const DEFAULT_KEYBINDINGS: Record<string, string> = {
   'palette.open': 'Ctrl+K',
+  'workspace.save': 'Ctrl+S',
   'filter.focus': '/',
   'dvr.toggle_play': 'Space',
   'dvr.step_back': 'ArrowLeft',

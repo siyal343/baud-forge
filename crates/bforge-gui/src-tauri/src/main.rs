@@ -242,6 +242,7 @@ fn start(app: &tauri::AppHandle, path: &Path, vault: Option<PathBuf>) -> Result<
         path: vault.clone(),
         ports: config.ports.clone(),
     });
+    let server = server.with_config(config.clone());
     let stop = server.stop_handle();
 
     std::thread::spawn(move || {
@@ -363,6 +364,10 @@ fn start_review(app: tauri::AppHandle, path: String) -> Result<String, String> {
         path: vault.clone(),
         ports,
     });
+    let server = match config {
+        Some(config) => server.with_config(config),
+        None => server,
+    };
     let stop = server.stop_handle();
     std::thread::spawn(move || {
         if let Err(error) = server.run(session, None) {
@@ -480,6 +485,84 @@ fn engine_state(app: tauri::AppHandle) -> Option<String> {
         })
 }
 
+#[tauri::command]
+fn list_serial_ports() -> Result<Vec<bforge_hal::DeviceId>, String> {
+    bforge_hal::uart::available().map_err(|e| e.to_string())
+}
+
+#[tauri::command]
+fn quick_connect(
+    app: tauri::AppHandle,
+    device: String,
+    baud_rate: Option<u32>,
+    framing: Option<String>,
+) -> Result<String, String> {
+    let baud = baud_rate.unwrap_or(115_200);
+    let framing_mode = framing.unwrap_or_else(|| "delimiter".to_string());
+    let framing_config = if framing_mode == "delimiter" {
+        bforge_core::FramingConfig {
+            mode: "delimiter".to_string(),
+            delimiter: Some(b'\n' as u32),
+            sync: None,
+            length_offset: None,
+            length_width: None,
+            length_adjust: None,
+            idle_gap_us: None,
+            max_frame: None,
+            crc: None,
+        }
+    } else {
+        bforge_core::FramingConfig {
+            mode: framing_mode,
+            delimiter: None,
+            sync: None,
+            length_offset: None,
+            length_width: None,
+            length_adjust: None,
+            idle_gap_us: None,
+            max_frame: None,
+            crc: None,
+        }
+    };
+
+    let config = ProjectConfig {
+        workspace: bforge_core::WorkspaceMeta {
+            name: format!("Quick-Connect ({device})"),
+            version: "0.1.0".to_string(),
+            elf_path: None,
+            watch_elf: false,
+            script_path: None,
+            rx_script_path: None,
+        },
+        ports: vec![bforge_core::PortConfig {
+            id: "serial0".to_string(),
+            match_vid_pid: None,
+            match_serial: None,
+            device_path: Some(device.clone()),
+            transport: Some("serial".to_string()),
+            address: None,
+            baud_rate: baud,
+            framing: framing_config,
+            dissector: None,
+            yield_on_sigusr1: false,
+        }],
+        bridges: vec![],
+        commands: vec![],
+        alerts: vec![],
+        ui: None,
+    };
+
+    let toml_str = toml::to_string_pretty(&config).map_err(|e| e.to_string())?;
+    let stamp = std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)
+        .map(|since| since.as_millis())
+        .unwrap_or(0);
+    let temp_path = std::env::temp_dir().join(format!("bforge-quick-{stamp}.bforge.toml"));
+    std::fs::write(&temp_path, toml_str).map_err(|e| format!("{}: {e}", temp_path.display()))?;
+
+    start(&app, &temp_path, None)
+}
+
 fn main() {
     tauri::Builder::default()
         .manage(Engine::default())
@@ -492,7 +575,9 @@ fn main() {
             start_workspace,
             stop_workspace,
             export_vault,
-            engine_state
+            engine_state,
+            list_serial_ports,
+            quick_connect
         ])
         .setup(|app| {
             if let Some(window) = app.get_webview_window("main") {

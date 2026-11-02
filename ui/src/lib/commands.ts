@@ -22,6 +22,13 @@ export const COMMAND_DEFINITIONS: CommandDef[] = [
     description: 'Quick action switcher and search bar',
   },
   {
+    id: 'workspace.save',
+    label: 'Save Workspace Configuration',
+    category: 'General',
+    defaultKey: 'Ctrl+S',
+    description: 'Save current session as .bforge.toml',
+  },
+  {
     id: 'filter.focus',
     label: 'Focus Stream Search Filter',
     category: 'Stream',

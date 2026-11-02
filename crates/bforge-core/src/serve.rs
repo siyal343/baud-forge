@@ -156,6 +156,8 @@ struct Shared {
     /// Frame batches replaced before a client read them, so the workbench can say
     /// that what it shows is a sample (D-81).
     sampled: AtomicU64,
+    /// Active session configuration for quick-connect or export.
+    config: Mutex<Option<crate::ProjectConfig>>,
 }
 
 impl Shared {
@@ -235,6 +237,12 @@ impl Server {
     /// Let the scrubber read a vault. Without this, `/api/vault` answers 404.
     pub fn with_vault(self, source: VaultSource) -> Self {
         *self.shared.vault.lock().unwrap() = Some(source);
+        self
+    }
+
+    /// Keep the active workspace config for export.
+    pub fn with_config(self, config: crate::ProjectConfig) -> Self {
+        *self.shared.config.lock().unwrap() = Some(config);
         self
     }
 
@@ -456,6 +464,25 @@ fn handle(mut stream: TcpStream, shared: Arc<Shared>, stop: Arc<AtomicBool>) {
         send(&mut stream, &shared, &body);
         return;
     }
+    if method == "GET" && path == "/api/devices" {
+        devices(&mut stream);
+        return;
+    }
+    if method == "POST" && path == "/api/quick-connect" {
+        let body = read_body(&mut reader, content_length);
+        quick_connect(&mut stream, &shared, &body);
+        return;
+    }
+    if (method == "POST" || method == "GET") && path == "/api/workspace/export" {
+        let _body = read_body(&mut reader, content_length);
+        workspace_export(&mut stream, &shared);
+        return;
+    }
+    if method == "POST" && path.starts_with("/api/ports/") && path.ends_with("/framing") {
+        let body = read_body(&mut reader, content_length);
+        port_framing(&mut stream, &shared, path, &body);
+        return;
+    }
     if method == "GET" && path == "/api/vault" {
         vault_info(&mut stream, &shared, target);
         return;
@@ -538,6 +565,12 @@ fn handle(mut stream: TcpStream, shared: Arc<Shared>, stop: Arc<AtomicBool>) {
             "405 Method Not Allowed",
             "text/plain",
             b"POST a JSON body to send\n",
+        ),
+        "/api/quick-connect" => respond(
+            &mut stream,
+            "405 Method Not Allowed",
+            "text/plain",
+            b"POST a JSON body to quick-connect\n",
         ),
         "/api/events" => {
             if wants_body {
@@ -630,6 +663,9 @@ struct SendRequest {
     /// Bytes as hex, spaced or not, with or without `0x` prefixes.
     #[serde(default)]
     hex: String,
+    /// Raw byte array (spec/UI TX send bar).
+    #[serde(default)]
+    bytes: Option<Vec<u8>>,
     /// Named field values, encoded with the port's C header schema (spec 0032).
     #[serde(default)]
     values: Option<std::collections::BTreeMap<String, bforge_dissect::encoder::Value>>,
@@ -684,16 +720,20 @@ fn send(stream: &mut TcpStream, shared: &Arc<Shared>, body: &[u8]) {
     let typed = request.values.clone();
     let mut bytes = match &typed {
         Some(_) => Vec::new(),
-        None => match parse_hex(&request.hex) {
-            Ok(bytes) => bytes,
-            Err(error) => {
-                let body = format!("{{\"error\":\"{error}\"}}");
-                return respond(
-                    stream,
-                    "400 Bad Request",
-                    "application/json",
-                    body.as_bytes(),
-                );
+        None => if let Some(raw) = request.bytes {
+            raw
+        } else {
+            match parse_hex(&request.hex) {
+                Ok(bytes) => bytes,
+                Err(error) => {
+                    let body = format!("{{\"error\":\"{error}\"}}");
+                    return respond(
+                        stream,
+                        "400 Bad Request",
+                        "application/json",
+                        body.as_bytes(),
+                    );
+                }
             }
         },
     };
@@ -1255,7 +1295,7 @@ fn vault_diff(stream: &mut TcpStream, shared: &Arc<Shared>, target: &str) {
 #[derive(Debug, serde::Deserialize)]
 struct YieldBody {
     port: String,
-    #[serde(default)]
+    #[serde(default, alias = "duration_sec")]
     seconds: Option<u64>,
 }
 
@@ -1327,6 +1367,233 @@ fn yield_port(stream: &mut TcpStream, shared: &Arc<Shared>, body: &[u8]) {
             );
         }
     }
+}
+
+#[derive(serde::Serialize)]
+struct DeviceDto<'a> {
+    device_path: &'a str,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    vid_pid: Option<&'a str>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    serial: Option<&'a str>,
+}
+
+fn devices(stream: &mut TcpStream) {
+    match bforge_hal::uart::available() {
+        Ok(ports) => {
+            let dtos: Vec<DeviceDto> = ports
+                .iter()
+                .map(|p| DeviceDto {
+                    device_path: &p.device_path,
+                    vid_pid: p.vid_pid.as_deref(),
+                    serial: p.serial.as_deref(),
+                })
+                .collect();
+            let body = serde_json::to_string(&dtos).unwrap_or_else(|_| "[]".to_string());
+            respond(stream, "200 OK", "application/json", body.as_bytes());
+        }
+        Err(error) => {
+            let body = format!("{{\"error\":\"{error}\"}}");
+            respond(
+                stream,
+                "500 Internal Server Error",
+                "application/json",
+                body.as_bytes(),
+            );
+        }
+    }
+}
+
+#[derive(Debug, serde::Deserialize)]
+struct QuickConnectBody {
+    device: Option<String>,
+    #[serde(default)]
+    baud_rate: Option<u32>,
+    #[serde(default)]
+    framing: Option<String>,
+}
+
+fn quick_connect(stream: &mut TcpStream, shared: &Arc<Shared>, body: &[u8]) {
+    let request: QuickConnectBody = match serde_json::from_slice(body) {
+        Ok(request) => request,
+        Err(error) => {
+            let body = format!("{{\"error\":\"bad request: {error}\"}}");
+            return respond(
+                stream,
+                "400 Bad Request",
+                "application/json",
+                body.as_bytes(),
+            );
+        }
+    };
+    let Some(device) = request.device.filter(|d| !d.trim().is_empty()) else {
+        let body = "{\"error\":\"`device` field is required\"}";
+        return respond(
+            stream,
+            "400 Bad Request",
+            "application/json",
+            body.as_bytes(),
+        );
+    };
+
+    let baud_rate = request.baud_rate.unwrap_or(115_200);
+    let framing_mode = request.framing.unwrap_or_else(|| "delimiter".to_string());
+    let framing_config = if framing_mode == "delimiter" {
+        crate::FramingConfig {
+            mode: "delimiter".to_string(),
+            delimiter: Some(b'\n' as u32),
+            sync: None,
+            length_offset: None,
+            length_width: None,
+            length_adjust: None,
+            idle_gap_us: None,
+            max_frame: None,
+            crc: None,
+        }
+    } else {
+        crate::FramingConfig {
+            mode: framing_mode,
+            delimiter: None,
+            sync: None,
+            length_offset: None,
+            length_width: None,
+            length_adjust: None,
+            idle_gap_us: None,
+            max_frame: None,
+            crc: None,
+        }
+    };
+
+    let port_id = "serial0".to_string();
+    let port = crate::PortConfig {
+        id: port_id.clone(),
+        match_vid_pid: None,
+        match_serial: None,
+        device_path: Some(device.clone()),
+        transport: Some("serial".to_string()),
+        address: None,
+        baud_rate,
+        framing: framing_config,
+        dissector: None,
+        yield_on_sigusr1: false,
+    };
+
+    let config = crate::ProjectConfig {
+        workspace: crate::WorkspaceMeta {
+            name: format!("Quick-Connect ({device})"),
+            version: "0.1.0".to_string(),
+            elf_path: None,
+            watch_elf: false,
+            script_path: None,
+            rx_script_path: None,
+        },
+        ports: vec![port],
+        bridges: vec![],
+        commands: vec![],
+        alerts: vec![],
+        ui: None,
+    };
+
+    *shared.config.lock().unwrap() = Some(config);
+    let body = format!("{{\"ok\":true,\"port\":\"{port_id}\"}}");
+    respond(stream, "200 OK", "application/json", body.as_bytes());
+}
+
+fn workspace_export(stream: &mut TcpStream, shared: &Arc<Shared>) {
+    let config = shared.config.lock().unwrap().clone();
+    let config = match config {
+        Some(cfg) => cfg,
+        None => {
+            let ports = shared
+                .vault
+                .lock()
+                .unwrap()
+                .as_ref()
+                .map(|v| v.ports.clone())
+                .unwrap_or_default();
+            if ports.is_empty() {
+                return respond(
+                    stream,
+                    "404 Not Found",
+                    "application/json",
+                    b"{\"error\":\"no active session workspace to export\"}",
+                );
+            }
+            crate::ProjectConfig {
+                workspace: crate::WorkspaceMeta {
+                    name: "Exported-Workspace".to_string(),
+                    version: "0.1.0".to_string(),
+                    elf_path: None,
+                    watch_elf: false,
+                    script_path: None,
+                    rx_script_path: None,
+                },
+                ports,
+                bridges: vec![],
+                commands: vec![],
+                alerts: vec![],
+                ui: None,
+            }
+        }
+    };
+
+    match toml::to_string_pretty(&config) {
+        Ok(toml_str) => {
+            let body = serde_json::to_string(&serde_json::json!({
+                "toml": toml_str
+            }))
+            .unwrap_or_default();
+            respond(stream, "200 OK", "application/json", body.as_bytes());
+        }
+        Err(err) => {
+            let body = format!("{{\"error\":\"failed to serialize workspace: {err}\"}}");
+            respond(
+                stream,
+                "500 Internal Server Error",
+                "application/json",
+                body.as_bytes(),
+            );
+        }
+    }
+}
+
+fn port_framing(stream: &mut TcpStream, shared: &Arc<Shared>, path: &str, body: &[u8]) {
+    let port_id = path
+        .strip_prefix("/api/ports/")
+        .and_then(|s| s.strip_suffix("/framing"))
+        .unwrap_or("");
+
+    #[derive(serde::Deserialize)]
+    struct FramingReq {
+        mode: Option<String>,
+        framing: Option<String>,
+    }
+
+    let req: Result<FramingReq, _> = serde_json::from_slice(body);
+    let mode = match req {
+        Ok(r) => r.mode.or(r.framing).unwrap_or_else(|| "cobs".to_string()),
+        Err(_) => "cobs".to_string(),
+    };
+
+    // Update shared.snapshot JSON if possible
+    {
+        let mut snap_guard = shared.snapshot.lock().unwrap();
+        if !snap_guard.is_empty() {
+            if let Ok(mut json_val) = serde_json::from_str::<serde_json::Value>(&snap_guard) {
+                if let Some(ports) = json_val.get_mut("ports").and_then(|p| p.as_array_mut()) {
+                    for p in ports {
+                        if p.get("id").and_then(|id| id.as_str()) == Some(port_id) {
+                            p["framing"] = serde_json::Value::String(mode.clone());
+                        }
+                    }
+                }
+                *snap_guard = json_val.to_string();
+            }
+        }
+    }
+
+    let resp = format!("{{\"ok\":true,\"port\":\"{port_id}\",\"framing\":\"{mode}\"}}");
+    respond(stream, "200 OK", "application/json", resp.as_bytes());
 }
 
 /// The reply a cross-origin JSON request needs before it is allowed to happen.

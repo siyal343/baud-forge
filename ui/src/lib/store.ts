@@ -1,6 +1,7 @@
 import { createSignal, createMemo } from 'solid-js'
 import { createFeed } from './feed'
 import { api, exportVault } from './shell'
+import { exportWorkspace } from './workspace'
 import type { FieldRow, TailRow, PortView } from './types'
 import type { TraceMode } from '../components/Telemetry'
 
@@ -319,6 +320,86 @@ export function createWorkbenchStore() {
     await sendHex()
   }
 
+  async function sendTx(
+    portId: string,
+    text: string,
+    mode: 'crlf' | 'lf' | 'cr' | 'none' | 'hex',
+  ): Promise<boolean> {
+    if (!portId) {
+      setAnswer('ERR: no active port to transmit')
+      return false
+    }
+
+    let bytes: number[]
+    if (mode === 'hex') {
+      const trimmed = text.trim()
+      const tokens = trimmed.split(/[\s,:]+/).filter(Boolean)
+      bytes = []
+      if (tokens.length > 1) {
+        for (let token of tokens) {
+          token = token.replace(/^0x/i, '')
+          if (token.length % 2 === 1) token = '0' + token
+          for (let i = 0; i < token.length; i += 2) {
+            const val = parseInt(token.slice(i, i + 2), 16)
+            if (!isNaN(val)) bytes.push(val)
+          }
+        }
+      } else if (trimmed) {
+        const cleaned = trimmed.replace(/^0x/i, '')
+        for (let i = 0; i < cleaned.length; i += 2) {
+          const val = parseInt(cleaned.slice(i, i + 2), 16)
+          if (!isNaN(val)) bytes.push(val)
+        }
+      }
+    } else {
+      const encoder = new TextEncoder()
+      const raw = Array.from(encoder.encode(text))
+      if (mode === 'crlf') {
+        bytes = raw.concat([13, 10])
+      } else if (mode === 'lf') {
+        bytes = raw.concat([10])
+      } else if (mode === 'cr') {
+        bytes = raw.concat([13])
+      } else {
+        bytes = raw
+      }
+    }
+
+    const hexPayload = bytes.map((b) => b.toString(16).padStart(2, '0')).join('')
+    const body = {
+      port: portId,
+      bytes,
+      hex: hexPayload,
+    }
+
+    try {
+      const res = await fetch(api('/api/send'), {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(body),
+      })
+      if (!res.ok) {
+        setAnswer(`TX FAIL: HTTP ${res.status}`)
+        return false
+      }
+      setAnswer(`TX OK: ${bytes.length} B`)
+      const entry: SentEntry = {
+        id: `tx-${Date.now()}-${Math.random().toString(36).substring(2, 6)}`,
+        time: new Date().toLocaleTimeString(),
+        port: portId,
+        bytes: bytes.length,
+        summary: text.length <= 24 ? text : `${text.slice(0, 24)}...`,
+        hex: hexPayload,
+        isTyped: false,
+      }
+      setSentHistory((prev) => [entry, ...prev.slice(0, 49)])
+      return true
+    } catch (e: any) {
+      setAnswer(`TX ERR: ${e.message}`)
+      return false
+    }
+  }
+
   async function setDtr(portId: string, state: boolean) {
     try {
       await fetch(api(`/api/dtr?port=${encodeURIComponent(portId)}&state=${state}`), { method: 'POST' })
@@ -416,17 +497,26 @@ export function createWorkbenchStore() {
     }
   }
 
-  async function yieldPort(port: PortView) {
+  async function yieldPort(port: string | PortView, durationSec: number = 30): Promise<boolean> {
+    const portId = typeof port === 'string' ? port : port.id
     try {
-      const res = await fetch(api(`/api/yield?port=${encodeURIComponent(port.id)}`), { method: 'POST' })
+      const res = await fetch(api('/api/yield'), {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ port: portId, duration_sec: durationSec, seconds: durationSec }),
+      })
       if (!res.ok) {
         setYieldNote(`Yield failed: HTTP ${res.status}`)
-        return
+        setTimeout(() => setYieldNote(null), 3500)
+        return false
       }
-      setYieldNote(`Yielded ${port.id}`)
-      setTimeout(() => setYieldNote(null), 3000)
+      setYieldNote(`Yielded ${portId} for ${durationSec}s`)
+      setTimeout(() => setYieldNote(null), 3500)
+      return true
     } catch (e: any) {
       setYieldNote(`Yield error: ${e.message}`)
+      setTimeout(() => setYieldNote(null), 3500)
+      return false
     }
   }
 
@@ -439,6 +529,35 @@ export function createWorkbenchStore() {
       setExportNote(path ? `wrote ${path}` : `saving ${format}`)
     } catch (error) {
       setExportNote(String(error))
+    } finally {
+      setExporting(false)
+    }
+  }
+
+  async function setPortFraming(portId: string, framing: string) {
+    feed.updatePortFraming(portId, framing)
+    try {
+      await fetch(api(`/api/ports/${encodeURIComponent(portId)}/framing`), {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ mode: framing, framing }),
+      })
+    } catch {
+      // Non-blocking: backend endpoint optional
+    }
+  }
+
+  async function saveWorkspace() {
+    if (exporting()) return
+    setExporting(true)
+    setExportNote('saving workspace…')
+    try {
+      const res = await exportWorkspace(ports(), bridges())
+      setExportNote(`saved ${res}`)
+      setTimeout(() => setExportNote(null), 3500)
+    } catch (e: any) {
+      setExportNote(`save failed: ${e.message}`)
+      setTimeout(() => setExportNote(null), 4000)
     } finally {
       setExporting(false)
     }
@@ -540,6 +659,7 @@ export function createWorkbenchStore() {
     targetPort,
     setTargetPort,
     sendHex,
+    sendTx,
     replaySent,
     // Pin Control
     setDtr,
@@ -594,6 +714,8 @@ export function createWorkbenchStore() {
     exporting,
     setExporting,
     saveExport,
+    setPortFraming,
+    saveWorkspace,
     yieldPort,
   }
 }

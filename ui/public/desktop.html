@@ -459,17 +459,206 @@
         padding: 2px 5px;
       }
 
+      /* Quick Connect Hardware Card */
+      .quick-connect-card {
+        background: var(--bg-surface-2);
+        border: 1px solid var(--border-hairline);
+        border-radius: 8px;
+        padding: 14px 16px;
+        margin-bottom: 16px;
+        position: relative;
+        overflow: hidden;
+      }
+
+      .quick-connect-card::before {
+        content: "";
+        position: absolute;
+        top: 0;
+        left: 0;
+        right: 0;
+        height: 2px;
+        background: linear-gradient(90deg, var(--sig-tx), transparent 75%);
+      }
+
+      .quick-header {
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+        margin-bottom: 12px;
+      }
+
+      .quick-title {
+        display: flex;
+        align-items: center;
+        gap: 8px;
+        font-size: 12px;
+        font-weight: 600;
+        letter-spacing: 0.04em;
+        color: var(--text-primary);
+      }
+
+      .quick-chip-icon {
+        display: inline-flex;
+        align-items: center;
+        justify-content: center;
+        color: var(--sig-tx);
+      }
+
+      .quick-pulse {
+        width: 7px;
+        height: 7px;
+        border-radius: 50%;
+        background: var(--sig-rx);
+        box-shadow: 0 0 6px var(--sig-rx);
+        animation: pulse-led 2s infinite ease-in-out;
+      }
+
+      .quick-grid {
+        display: grid;
+        grid-template-columns: minmax(180px, 2.2fr) minmax(95px, 0.9fr) minmax(150px, 1.4fr) auto;
+        gap: 10px;
+        align-items: end;
+      }
+
+      .quick-field {
+        display: flex;
+        flex-direction: column;
+        gap: 5px;
+      }
+
+      .quick-field label {
+        font-size: 10px;
+        font-weight: 600;
+        letter-spacing: 0.08em;
+        text-transform: uppercase;
+        color: var(--text-muted);
+      }
+
+      .quick-field select {
+        width: 100%;
+        height: 32px;
+        background: var(--bg-surface-1);
+        color: var(--text-primary);
+        border: 1px solid var(--border-hairline);
+        border-radius: 6px;
+        padding: 0 8px;
+        font-family: var(--font-mono);
+        font-size: 11px;
+        outline: none;
+        cursor: pointer;
+        transition: border-color 120ms ease;
+      }
+
+      .quick-field select:focus {
+        border-color: var(--sig-tx);
+      }
+
+      .quick-field select option {
+        background: var(--bg-surface-2);
+        color: var(--text-primary);
+      }
+
+      .quick-input-group {
+        display: flex;
+        gap: 4px;
+        align-items: center;
+      }
+
+      .quick-input-group select {
+        flex: 1;
+        min-width: 0;
+      }
+
+      .btn-icon {
+        width: 32px;
+        height: 32px;
+        background: var(--bg-surface-1);
+        border: 1px solid var(--border-hairline);
+        border-radius: 6px;
+        color: var(--text-secondary);
+        display: inline-flex;
+        align-items: center;
+        justify-content: center;
+        cursor: pointer;
+        flex-shrink: 0;
+        padding: 0;
+        transition: color 120ms ease, background-color 120ms ease, border-color 120ms ease, transform 140ms var(--ease-out);
+      }
+
+      .btn-icon:hover {
+        color: var(--sig-tx);
+        background: var(--bg-surface-3);
+        border-color: var(--border-strong);
+      }
+
+      .btn-icon:active {
+        transform: scale(0.96);
+      }
+
+      .btn-icon:disabled {
+        opacity: 0.45;
+        cursor: default;
+      }
+
+      .btn-primary {
+        height: 32px;
+        padding: 0 16px;
+        background: var(--sig-tx);
+        color: #031117;
+        font-family: var(--font-sans);
+        font-size: 12px;
+        font-weight: 600;
+        letter-spacing: 0.02em;
+        border: 1px solid var(--sig-tx);
+        border-radius: 6px;
+        cursor: pointer;
+        display: inline-flex;
+        align-items: center;
+        justify-content: center;
+        gap: 6px;
+        white-space: nowrap;
+        transition: transform 140ms var(--ease-out), background-color 120ms ease, border-color 120ms ease, box-shadow 120ms ease;
+      }
+
+      .btn-primary:hover:not(:disabled) {
+        background: #08c8e8;
+        border-color: #08c8e8;
+        box-shadow: 0 0 12px rgba(6, 182, 212, 0.4);
+      }
+
+      .btn-primary:active:not(:disabled) {
+        transform: scale(0.97);
+      }
+
+      .btn-primary:disabled {
+        opacity: 0.45;
+        cursor: default;
+        transform: none;
+        box-shadow: none;
+      }
+
+      @media (max-width: 640px) {
+        .quick-grid {
+          grid-template-columns: 1fr;
+        }
+      }
+
       @media (prefers-reduced-motion: reduce) {
-        .status-led {
+        .status-led,
+        .quick-pulse {
           animation: none;
         }
         .action-tile,
         .btn-subtle,
+        .btn-primary,
+        .btn-icon,
         ul#recent li button {
           transition: background-color 120ms ease, border-color 120ms ease;
         }
         .action-tile:active,
         .btn-subtle:active,
+        .btn-primary:active,
+        .btn-icon:active,
         ul#recent li button:active {
           transform: none;
         }
@@ -511,6 +700,74 @@
       </div>
 
       <div class="panel">
+        <div class="quick-connect-card">
+          <div class="quick-header">
+            <div class="quick-title">
+              <span class="quick-chip-icon" aria-hidden="true">
+                <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                  <rect x="4" y="4" width="16" height="16" rx="2" />
+                  <rect x="9" y="9" width="6" height="6" />
+                  <line x1="9" y1="1" x2="9" y2="4" />
+                  <line x1="15" y1="1" x2="15" y2="4" />
+                  <line x1="9" y1="20" x2="9" y2="23" />
+                  <line x1="15" y1="20" x2="15" y2="23" />
+                  <line x1="20" y1="9" x2="23" y2="9" />
+                  <line x1="20" y1="14" x2="23" y2="14" />
+                  <line x1="1" y1="9" x2="4" y2="9" />
+                  <line x1="1" y1="14" x2="4" y2="14" />
+                </svg>
+              </span>
+              <span>Serial Device Quick Connect</span>
+            </div>
+            <div class="quick-pulse" title="Port scanner ready"></div>
+          </div>
+
+          <div class="quick-grid">
+            <div class="quick-field">
+              <label for="device-select">Device / Port</label>
+              <div class="quick-input-group">
+                <select id="device-select">
+                  <option value="" disabled selected>Scanning serial ports…</option>
+                </select>
+                <button type="button" id="btn-refresh-devices" class="btn-icon" title="Refresh serial ports">
+                  <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round">
+                    <path d="M21.5 2v6h-6M2.5 22v-6h6M2 11.5a10 10 0 0 1 18.8-4.3M22 12.5a10 10 0 0 1-18.8 4.2"/>
+                  </svg>
+                </button>
+              </div>
+            </div>
+
+            <div class="quick-field">
+              <label for="baud-select">Baud Rate</label>
+              <select id="baud-select">
+                <option value="9600">9600</option>
+                <option value="19200">19200</option>
+                <option value="38400">38400</option>
+                <option value="57600">57600</option>
+                <option value="115200" selected>115200</option>
+                <option value="230400">230400</option>
+                <option value="460800">460800</option>
+                <option value="921600">921600</option>
+              </select>
+            </div>
+
+            <div class="quick-field">
+              <label for="framing-select">Framing</label>
+              <select id="framing-select">
+                <option value="delimiter" selected>delimiter (Line Delimited \n / ASCII)</option>
+                <option value="cobs">cobs (Consistent Overhead Byte Stuffing)</option>
+                <option value="slip">slip (SLIP RFC 1055)</option>
+                <option value="raw">raw (Raw unbuffered chunks)</option>
+              </select>
+            </div>
+
+            <div class="quick-field">
+              <label>&nbsp;</label>
+              <button id="btn-quick-connect" type="button" class="btn-primary">Connect</button>
+            </div>
+          </div>
+        </div>
+
         <div class="action-grid">
           <button id="open" type="button" class="action-tile">
             <div class="tile-icon-box">
@@ -585,15 +842,148 @@
     </main>
 
     <script>
-      const invoke = window.__TAURI__?.core?.invoke;
+      const invoke = window.__TAURI__?.core?.invoke || window.__TAURI_INTERNALS__?.invoke;
       const status = document.getElementById('status');
       const recentList = document.getElementById('recent');
       const openButton = document.getElementById('open');
       const demoButton = document.getElementById('demo');
+      const deviceSelect = document.getElementById('device-select');
+      const baudSelect = document.getElementById('baud-select');
+      const framingSelect = document.getElementById('framing-select');
+      const quickConnectBtn = document.getElementById('btn-quick-connect');
+      const refreshBtn = document.getElementById('btn-refresh-devices');
 
       function say(message, kind) {
         status.textContent = message;
         status.className = 'status' + (kind ? ' ' + kind : '');
+      }
+
+      function populateDeviceSelect(items) {
+        if (!deviceSelect) return;
+        deviceSelect.innerHTML = '';
+        const list = Array.isArray(items) ? items : (items?.devices || items?.ports || []);
+
+        if (!list || list.length === 0) {
+          const opt = document.createElement('option');
+          opt.value = '';
+          opt.textContent = 'No serial ports detected (click refresh)';
+          opt.disabled = true;
+          opt.selected = true;
+          deviceSelect.appendChild(opt);
+          if (quickConnectBtn) quickConnectBtn.disabled = true;
+          return;
+        }
+
+        for (let i = 0; i < list.length; i++) {
+          const item = list[i];
+          const opt = document.createElement('option');
+          let path = '';
+          let label = '';
+
+          if (typeof item === 'string') {
+            path = item;
+            label = item;
+          } else if (item && typeof item === 'object') {
+            path = item.device_path || item.port_name || item.path || item.name || '';
+            const vidPid = item.vid_pid ? ` (${item.vid_pid})` : '';
+            const desc = item.product_name || item.description || item.product || (item.vid_pid ? 'USB Serial' : '');
+            if (desc) {
+              label = `${path} — ${desc}${vidPid}`;
+            } else if (vidPid) {
+              label = `${path} — USB Serial${vidPid}`;
+            } else {
+              label = path || 'Unknown Port';
+            }
+          }
+
+          opt.value = path;
+          opt.textContent = label;
+          if (i === 0) opt.selected = true;
+          deviceSelect.appendChild(opt);
+        }
+
+        if (quickConnectBtn) quickConnectBtn.disabled = false;
+      }
+
+      async function refreshDevices() {
+        if (refreshBtn) refreshBtn.disabled = true;
+
+        try {
+          let ports = [];
+          if (window.__TAURI_INTERNALS__ || invoke) {
+            const invoker = invoke || window.__TAURI_INTERNALS__?.invoke;
+            ports = await invoker('list_serial_ports');
+          } else {
+            const res = await fetch('/api/devices');
+            if (!res.ok) throw new Error('HTTP ' + res.status);
+            ports = await res.json();
+          }
+          populateDeviceSelect(ports);
+        } catch (error) {
+          populateDeviceSelect([]);
+          say(String(error.message || error), 'err');
+        } finally {
+          if (refreshBtn) refreshBtn.disabled = false;
+        }
+      }
+
+      if (refreshBtn) {
+        refreshBtn.onclick = () => refreshDevices();
+      }
+
+      if (quickConnectBtn) {
+        quickConnectBtn.onclick = async () => {
+          const device = deviceSelect ? deviceSelect.value : '';
+          const baud = baudSelect ? baudSelect.value : '115200';
+          const framing = framingSelect ? framingSelect.value : 'delimiter';
+
+          if (!device) {
+            say('No serial port selected. Click refresh to scan.', 'err');
+            return;
+          }
+
+          say('connecting to ' + device + ' (' + baud + ' baud, ' + framing + ') …');
+          quickConnectBtn.disabled = true;
+
+          try {
+            let url = null;
+            if (window.__TAURI_INTERNALS__ || invoke) {
+              const invoker = invoke || window.__TAURI_INTERNALS__?.invoke;
+              url = await invoker('quick_connect', {
+                device,
+                baudRate: parseInt(baud, 10),
+                framing,
+              });
+            } else {
+              const res = await fetch('/api/quick-connect', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({
+                  device,
+                  baud_rate: parseInt(baud, 10),
+                  framing,
+                }),
+              });
+              if (!res.ok) {
+                const errText = await res.text();
+                throw new Error(errText || ('HTTP ' + res.status));
+              }
+              const data = await res.json();
+              url = data.url || (data.base ? ('index.html?api=' + encodeURIComponent(data.base)) : null);
+            }
+
+            if (url) {
+              const dest = ((url.startsWith('http://') || url.startsWith('https://')) && !url.includes('index.html') && !url.includes('?'))
+                ? ('index.html?api=' + encodeURIComponent(url))
+                : url;
+              window.location.href = dest;
+            }
+          } catch (error) {
+            say(String(error.message || error), 'err');
+          } finally {
+            quickConnectBtn.disabled = false;
+          }
+        };
       }
 
       let chosenVault = null;
@@ -714,6 +1104,7 @@
       document.getElementById('max').onclick = () => shellWindow?.toggleMaximize();
       document.getElementById('close').onclick = () => shellWindow?.close();
 
+      refreshDevices();
       loadRecent();
     </script>
   </body>
