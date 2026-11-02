@@ -2,7 +2,7 @@ use egui::{self, epaint::CornerRadius, Color32, Margin, RichText, Stroke, Ui, Ve
 use crate::layout::TabId;
 use crate::theme::{
     COLOR_BORDER_HAIRLINE, COLOR_SIGNAL_FAULT, COLOR_SIGNAL_RX, COLOR_SIGNAL_TRIGGER,
-    COLOR_SIGNAL_TX, COLOR_SURFACE_CARD, COLOR_TEXT_MUTED, COLOR_TEXT_PRIMARY,
+    COLOR_SIGNAL_TX, COLOR_SURFACE_CARD, COLOR_SURFACE_ELEVATED, COLOR_TEXT_MUTED, COLOR_TEXT_PRIMARY,
 };
 
 /// High-level commands requested by user interactions inside tabs.
@@ -28,6 +28,12 @@ pub struct BaudForgeTabViewer {
     pub selected_port_idx: usize,
     pub selected_baud: u32,
     pub custom_baud_str: String,
+    pub is_custom_baud: bool,
+    pub data_bits: u8,
+    pub parity: String,
+    pub stop_bits: u8,
+    pub dtr_enabled: bool,
+    pub rts_enabled: bool,
     pub selected_framing: String,
     pub is_sniffing: bool,
     pub sniff_result: Option<String>,
@@ -124,6 +130,12 @@ impl Default for BaudForgeTabViewer {
             selected_port_idx,
             selected_baud: 115200,
             custom_baud_str: "115200".to_string(),
+            is_custom_baud: false,
+            data_bits: 8,
+            parity: "None".to_string(),
+            stop_bits: 1,
+            dtr_enabled: true,
+            rts_enabled: false,
             selected_framing: "Line-Delimited (\\n)".to_string(),
             is_sniffing: false,
             sniff_result: None,
@@ -218,6 +230,7 @@ impl BaudForgeTabViewer {
             if let Some((sniffed_baud, sniffed_framing)) = sniff_opt {
                 self.selected_baud = sniffed_baud;
                 self.custom_baud_str = sniffed_baud.to_string();
+                self.is_custom_baud = false;
                 let matched_framing = if sniffed_framing.contains("Line") {
                     "Line-Delimited (\\n)"
                 } else if sniffed_framing.contains("COBS") {
@@ -242,258 +255,392 @@ impl BaudForgeTabViewer {
             ui.ctx().request_repaint();
         }
 
-        Self::render_header(
-            ui,
-            "[SETUP]",
-            "HARDWARE ONBOARDING & SETUP",
-            "STANDBY",
-            COLOR_SIGNAL_TX,
-        );
-
+        // Deduplicated title hierarchy: panel tab already specifies "Hardware Setup & Welcome"
         egui::ScrollArea::vertical().show(ui, |ui| {
-            ui.add_space(4.0);
-            ui.label(
-                RichText::new("Connect your microcontroller, sniffer, or run the HIL simulator.")
-                    .color(COLOR_TEXT_MUTED),
-            );
-            ui.add_space(10.0);
-
-            // Card 1: Hardware Connection Card
-            egui::Frame::NONE
-                .fill(COLOR_SURFACE_CARD)
-                .stroke(Stroke::new(1.0_f32, COLOR_BORDER_HAIRLINE))
-                .corner_radius(CornerRadius::same(4))
-                .inner_margin(Margin::same(12))
-                .show(ui, |ui| {
-                    ui.label(
-                        RichText::new("HARDWARE CONNECTION")
-                            .color(COLOR_SIGNAL_TX)
-                            .strong()
-                            .monospace()
-                            .small(),
-                    );
-                    ui.add_space(8.0);
-
-                    // Port row: ComboBox selecting from available_ports, and a "🔄 Scan Ports" button.
-                    ui.horizontal(|ui| {
-                        ui.label(RichText::new("Port:").color(COLOR_TEXT_PRIMARY).strong());
-                        let current_display = self
-                            .available_ports
-                            .get(self.selected_port_idx)
-                            .map(|p| p.display_name.as_str())
-                            .unwrap_or("No serial ports detected");
-
-                        egui::ComboBox::from_id_salt("welcome_port_select")
-                            .selected_text(RichText::new(current_display).color(COLOR_TEXT_PRIMARY))
-                            .width(340.0)
-                            .show_ui(ui, |ui| {
-                                for (idx, port) in self.available_ports.iter().enumerate() {
-                                    let is_selected = self.selected_port_idx == idx;
-                                    if ui.selectable_label(is_selected, &port.display_name).clicked() {
-                                        self.selected_port_idx = idx;
-                                        self.sniff_result = None;
-                                    }
-                                }
+            ui.add_space(8.0);
+            ui.columns(2, |columns| {
+                // ==================== LEFT COLUMN: PHYSICAL HARDWARE TARGET ====================
+                let ui = &mut columns[0];
+                egui::Frame::NONE
+                    .fill(COLOR_SURFACE_CARD)
+                    .stroke(Stroke::new(1.0_f32, COLOR_BORDER_HAIRLINE))
+                    .corner_radius(CornerRadius::same(4))
+                    .inner_margin(Margin::same(14))
+                    .show(ui, |ui| {
+                        ui.horizontal(|ui| {
+                            ui.label(
+                                RichText::new("PHYSICAL HARDWARE TARGET")
+                                    .color(COLOR_SIGNAL_TX)
+                                    .strong()
+                                    .monospace()
+                                    .small(),
+                            );
+                            ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
+                                let has_ports = !self.available_ports.is_empty();
+                                let is_hw = self
+                                    .available_ports
+                                    .get(self.selected_port_idx)
+                                    .map(|p| p.vid_pid.is_some())
+                                    .unwrap_or(false);
+                                let badge_text = if is_hw {
+                                    "TARGET DETECTED"
+                                } else if has_ports {
+                                    "PORT READY"
+                                } else {
+                                    "NO HARDWARE"
+                                };
+                                let badge_color = if is_hw { COLOR_SIGNAL_RX } else { COLOR_TEXT_MUTED };
+                                ui.label(RichText::new(badge_text).color(badge_color).monospace().small());
                             });
+                        });
+                        ui.add_space(10.0);
 
-                        if ui.button("🔄 Scan Ports").clicked() {
-                            self.available_ports = crate::hardware::scan_available_ports();
-                            if self.selected_port_idx >= self.available_ports.len() {
-                                self.selected_port_idx = 0;
-                            }
-                            self.sniff_result = None;
-                        }
-                    });
+                        // Unified Port Selection Bar with right-aligned compact refresh button
+                        ui.horizontal(|ui| {
+                            ui.label(RichText::new("Port:").color(COLOR_TEXT_PRIMARY).strong());
+                            let current_display = self
+                                .available_ports
+                                .get(self.selected_port_idx)
+                                .map(|p| p.display_name.as_str())
+                                .unwrap_or("No serial ports detected");
 
-                    ui.add_space(8.0);
-
-                    // Baud rate grid buttons and custom text edit
-                    ui.horizontal(|ui| {
-                        ui.label(RichText::new("Baud Rate:").color(COLOR_TEXT_PRIMARY).strong());
-                        let standard_bauds = [9600, 115200, 230400, 460800, 921600, 2000000];
-                        for baud in standard_bauds {
-                            let is_selected = self.selected_baud == baud;
-                            let btn_text = if is_selected {
-                                RichText::new(format!("{baud}")).color(COLOR_SIGNAL_TX).strong()
-                            } else {
-                                RichText::new(format!("{baud}")).color(COLOR_TEXT_MUTED)
-                            };
-                            if ui.button(btn_text).clicked() {
-                                self.selected_baud = baud;
-                                self.custom_baud_str = baud.to_string();
-                            }
-                        }
-
-                        ui.add_space(4.0);
-                        ui.label(RichText::new("Custom:").color(COLOR_TEXT_MUTED).small());
-                        let response = ui.add(
-                            egui::TextEdit::singleline(&mut self.custom_baud_str)
-                                .desired_width(75.0),
-                        );
-                        if response.changed() {
-                            if let Ok(val) = self.custom_baud_str.trim().parse::<u32>() {
-                                self.selected_baud = val;
-                            }
-                        }
-                    });
-
-                    ui.add_space(8.0);
-
-                    // Framing format ComboBox
-                    ui.horizontal(|ui| {
-                        ui.label(RichText::new("Framing:").color(COLOR_TEXT_PRIMARY).strong());
-                        let framing_options = [
-                            "Line-Delimited (\\n)",
-                            "COBS (0x00 framing)",
-                            "Length-Prefixed (u16)",
-                            "Raw Binary Stream",
-                        ];
-                        egui::ComboBox::from_id_salt("welcome_framing_select")
-                            .selected_text(RichText::new(&self.selected_framing).color(COLOR_TEXT_PRIMARY))
-                            .width(240.0)
-                            .show_ui(ui, |ui| {
-                                for option in framing_options {
-                                    let is_selected = self.selected_framing == option;
-                                    if ui.selectable_label(is_selected, option).clicked() {
-                                        self.selected_framing = option.to_string();
+                            let combo_w = (ui.available_width() - 36.0).max(120.0);
+                            egui::ComboBox::from_id_salt("welcome_port_select")
+                                .selected_text(RichText::new(current_display).color(COLOR_TEXT_PRIMARY))
+                                .width(combo_w)
+                                .show_ui(ui, |ui| {
+                                    for (idx, port) in self.available_ports.iter().enumerate() {
+                                        let is_selected = self.selected_port_idx == idx;
+                                        if ui.selectable_label(is_selected, &port.display_name).clicked() {
+                                            self.selected_port_idx = idx;
+                                            self.sniff_result = None;
+                                        }
                                     }
+                                });
+
+                            if ui.button(RichText::new("⟳").strong()).on_hover_text("Rescan COM ports").clicked() {
+                                self.available_ports = crate::hardware::scan_available_ports();
+                                if self.selected_port_idx >= self.available_ports.len() {
+                                    self.selected_port_idx = 0;
                                 }
-                            });
-                    });
+                                self.sniff_result = None;
+                            }
+                        });
 
-                    ui.add_space(12.0);
-
-                    // Action buttons row
-                    ui.horizontal(|ui| {
-                        let connect_btn = egui::Button::new(
-                            RichText::new("🔌 Connect Microcontroller")
-                                .color(Color32::BLACK)
-                                .strong(),
-                        )
-                        .fill(COLOR_SIGNAL_RX);
-
-                        if ui.add(connect_btn).clicked() {
-                            self.pending_action = Some(TabAction::StartHardwareSession);
-                        }
-
-                        let sniff_label = if self.is_sniffing {
-                            "⏳ Probing Candidate Bauds..."
-                        } else {
-                            "🔍 Auto-Detect Baud & Framing"
-                        };
-                        let sniff_btn = egui::Button::new(
-                            RichText::new(sniff_label).color(COLOR_SIGNAL_TX).strong(),
-                        );
-                        if ui.add_enabled(!self.is_sniffing, sniff_btn).clicked() {
-                            if let Some(port) = self.available_ports.get(self.selected_port_idx) {
-                                self.is_sniffing = true;
-                                self.sniff_result = Some("Probing candidate baud rates...".to_string());
-                                let port_name = port.port_name.clone();
-                                let tx = self.sniff_tx.clone();
-                                std::thread::spawn(move || {
-                                    let res = crate::hardware::sniff_port_baud_and_framing(&port_name);
-                                    let _ = tx.send(res);
+                        // Monospace badge for detected VID:PID
+                        if let Some(port) = self.available_ports.get(self.selected_port_idx) {
+                            if let Some(ref vp) = port.vid_pid {
+                                ui.add_space(2.0);
+                                ui.horizontal(|ui| {
+                                    ui.add_space(42.0);
+                                    ui.label(RichText::new("Device ID:").color(COLOR_TEXT_MUTED).small());
+                                    ui.label(RichText::new(vp).monospace().weak().small());
+                                    if let Some(ref mfg) = port.manufacturer {
+                                        ui.label(RichText::new(format!("• {mfg}")).color(COLOR_TEXT_MUTED).small());
+                                    }
                                 });
                             }
                         }
+
+                        ui.add_space(10.0);
+
+                        // Streamlined Baud Rate Quick-Fill Chips
+                        ui.horizontal_wrapped(|ui| {
+                            ui.label(RichText::new("Baud:").color(COLOR_TEXT_PRIMARY).strong());
+                            let standard_bauds = [
+                                (9600, "9600"),
+                                (115200, "115.2k"),
+                                (230400, "230.4k"),
+                                (460800, "460.8k"),
+                                (921600, "921.6k"),
+                                (2000000, "2.0M"),
+                            ];
+                            for (baud, label) in standard_bauds {
+                                let is_selected = !self.is_custom_baud && self.selected_baud == baud;
+                                let btn_text = if is_selected {
+                                    RichText::new(label).color(COLOR_SIGNAL_TX).strong()
+                                } else {
+                                    RichText::new(label).color(COLOR_TEXT_MUTED)
+                                };
+                                if ui.button(btn_text).clicked() {
+                                    self.selected_baud = baud;
+                                    self.custom_baud_str = baud.to_string();
+                                    self.is_custom_baud = false;
+                                }
+                            }
+
+                            let custom_active = self.is_custom_baud;
+                            let custom_btn_text = if custom_active {
+                                RichText::new("Custom...").color(COLOR_SIGNAL_TX).strong()
+                            } else {
+                                RichText::new("Custom...").color(COLOR_TEXT_MUTED)
+                            };
+                            if ui.button(custom_btn_text).clicked() {
+                                self.is_custom_baud = !self.is_custom_baud;
+                            }
+
+                            if self.is_custom_baud {
+                                let response = ui.add(
+                                    egui::TextEdit::singleline(&mut self.custom_baud_str)
+                                        .desired_width(75.0),
+                                );
+                                if response.changed() {
+                                    if let Ok(val) = self.custom_baud_str.trim().parse::<u32>() {
+                                        self.selected_baud = val;
+                                    }
+                                }
+                            }
+                        });
+
+                        ui.add_space(10.0);
+
+                        // UART Framing Parameters (8N1)
+                        ui.horizontal(|ui| {
+                            ui.label(RichText::new("Config:").color(COLOR_TEXT_PRIMARY).strong());
+
+                            egui::ComboBox::from_id_salt("welcome_data_bits")
+                                .selected_text(format!("{} Data Bits", self.data_bits))
+                                .width(95.0)
+                                .show_ui(ui, |ui| {
+                                    for bits in [8, 7, 6, 5] {
+                                        ui.selectable_value(&mut self.data_bits, bits, format!("{bits} Data Bits"));
+                                    }
+                                });
+
+                            egui::ComboBox::from_id_salt("welcome_parity")
+                                .selected_text(format!("Parity: {}", self.parity))
+                                .width(95.0)
+                                .show_ui(ui, |ui| {
+                                    for p in ["None", "Even", "Odd", "Mark", "Space"] {
+                                        ui.selectable_value(&mut self.parity, p.to_string(), p);
+                                    }
+                                });
+
+                            egui::ComboBox::from_id_salt("welcome_stop_bits")
+                                .selected_text(format!("{} Stop", self.stop_bits))
+                                .width(75.0)
+                                .show_ui(ui, |ui| {
+                                    for stop in [1, 2] {
+                                        ui.selectable_value(&mut self.stop_bits, stop, format!("{stop} Stop"));
+                                    }
+                                });
+                        });
+
+                        ui.add_space(10.0);
+
+                        // Modem Line Control (DTR / RTS)
+                        ui.horizontal(|ui| {
+                            ui.label(RichText::new("Lines:").color(COLOR_TEXT_PRIMARY).strong());
+                            let dtr_color = if self.dtr_enabled { COLOR_SIGNAL_TX } else { COLOR_TEXT_MUTED };
+                            ui.checkbox(
+                                &mut self.dtr_enabled,
+                                RichText::new("DTR (High)").color(dtr_color),
+                            ).on_hover_text("Data Terminal Ready - keeps target MCU out of bootloader reset");
+                            ui.add_space(8.0);
+                            let rts_color = if self.rts_enabled { COLOR_SIGNAL_TX } else { COLOR_TEXT_MUTED };
+                            ui.checkbox(
+                                &mut self.rts_enabled,
+                                RichText::new("RTS (High)").color(rts_color),
+                            ).on_hover_text("Request To Send line");
+                        });
+
+                        ui.add_space(10.0);
+
+                        // Payload Framing ComboBox
+                        ui.horizontal(|ui| {
+                            ui.label(RichText::new("Framing:").color(COLOR_TEXT_PRIMARY).strong());
+                            let framing_options = [
+                                "Line-Delimited (\\n)",
+                                "COBS (0x00 framing)",
+                                "Length-Prefixed (u16)",
+                                "Raw Binary Stream",
+                            ];
+                            let combo_w = (ui.available_width() - 8.0).max(160.0);
+                            egui::ComboBox::from_id_salt("welcome_framing_select")
+                                .selected_text(RichText::new(&self.selected_framing).color(COLOR_TEXT_PRIMARY))
+                                .width(combo_w)
+                                .show_ui(ui, |ui| {
+                                    for option in framing_options {
+                                        let is_selected = self.selected_framing == option;
+                                        if ui.selectable_label(is_selected, option).clicked() {
+                                            self.selected_framing = option.to_string();
+                                        }
+                                    }
+                                });
+                        });
+
+                        ui.add_space(14.0);
+
+                        // Primary vs Secondary Action Weight
+                        ui.horizontal(|ui| {
+                            let connect_btn = egui::Button::new(
+                                RichText::new("🔌 CONNECT DEVICE")
+                                    .color(Color32::BLACK)
+                                    .strong(),
+                            )
+                            .fill(COLOR_SIGNAL_RX)
+                            .min_size(egui::vec2(150.0, 30.0));
+
+                            if ui.add(connect_btn).clicked() {
+                                self.pending_action = Some(TabAction::StartHardwareSession);
+                            }
+
+                            let sniff_label = if self.is_sniffing {
+                                "⏳ Probing..."
+                            } else {
+                                "🔍 Auto-Detect"
+                            };
+                            let sniff_btn = egui::Button::new(
+                                RichText::new(sniff_label).color(COLOR_SIGNAL_TX).strong(),
+                            )
+                            .stroke(Stroke::new(1.0_f32, COLOR_SIGNAL_TX))
+                            .min_size(egui::vec2(130.0, 30.0));
+
+                            if ui.add_enabled(!self.is_sniffing, sniff_btn).clicked() {
+                                if let Some(port) = self.available_ports.get(self.selected_port_idx) {
+                                    self.is_sniffing = true;
+                                    self.sniff_result = Some("Probing candidate baud rates...".to_string());
+                                    let port_name = port.port_name.clone();
+                                    let tx = self.sniff_tx.clone();
+                                    std::thread::spawn(move || {
+                                        let res = crate::hardware::sniff_port_baud_and_framing(&port_name);
+                                        let _ = tx.send(res);
+                                    });
+                                }
+                            }
+                        });
+
+                        // Styled Warning & Diagnostic Banner in egui::Frame
+                        if let Some(ref result) = self.sniff_result {
+                            ui.add_space(10.0);
+                            let is_success = result.starts_with('✓');
+                            if is_success {
+                                egui::Frame::NONE
+                                    .fill(egui::Color32::from_rgba_premultiplied(10, 40, 25, 200))
+                                    .stroke(egui::Stroke::new(1.0_f32, COLOR_SIGNAL_RX))
+                                    .corner_radius(CornerRadius::same(4))
+                                    .inner_margin(Margin::same(8))
+                                    .show(ui, |ui| {
+                                        ui.horizontal(|ui| {
+                                            ui.label(RichText::new("✓").color(COLOR_SIGNAL_RX).strong());
+                                            ui.label(RichText::new(result).color(COLOR_TEXT_PRIMARY).small());
+                                        });
+                                    });
+                            } else {
+                                egui::Frame::NONE
+                                    .fill(egui::Color32::from_rgba_premultiplied(45, 30, 10, 200))
+                                    .stroke(egui::Stroke::new(1.0_f32, egui::Color32::from_rgb(200, 140, 20)))
+                                    .corner_radius(CornerRadius::same(4))
+                                    .inner_margin(Margin::same(8))
+                                    .show(ui, |ui| {
+                                        ui.horizontal(|ui| {
+                                            ui.label(RichText::new("⚠").color(Color32::GOLD).strong());
+                                            ui.label(RichText::new(result).color(Color32::GOLD).small());
+                                        });
+                                    });
+                            }
+                        }
                     });
 
-                    if let Some(ref result) = self.sniff_result {
-                        ui.add_space(6.0);
-                        let color = if result.starts_with('✓') {
-                            COLOR_SIGNAL_RX
-                        } else {
-                            COLOR_SIGNAL_TRIGGER
-                        };
-                        ui.label(RichText::new(result).color(color).monospace().small());
-                    }
-                });
+                // ==================== RIGHT COLUMN: SIMULATION & SESSION VAULT ====================
+                let ui = &mut columns[1];
 
-            ui.add_space(12.0);
+                // Right Top Card: Simulation & Demonstration Rigs
+                egui::Frame::NONE
+                    .fill(COLOR_SURFACE_CARD)
+                    .stroke(Stroke::new(1.0_f32, COLOR_BORDER_HAIRLINE))
+                    .corner_radius(CornerRadius::same(4))
+                    .inner_margin(Margin::same(14))
+                    .show(ui, |ui| {
+                        ui.label(
+                            RichText::new("SIMULATION & REPLAY")
+                                .color(COLOR_SIGNAL_TRIGGER)
+                                .strong()
+                                .monospace()
+                                .small(),
+                        );
+                        ui.add_space(8.0);
 
-            // Card 2: Simulator & Demos Card
-            egui::Frame::NONE
-                .fill(COLOR_SURFACE_CARD)
-                .stroke(Stroke::new(1.0_f32, COLOR_BORDER_HAIRLINE))
-                .corner_radius(CornerRadius::same(4))
-                .inner_margin(Margin::same(12))
-                .show(ui, |ui| {
-                    ui.label(
-                        RichText::new("SIMULATOR & DEMONSTRATION RIGS")
-                            .color(COLOR_SIGNAL_TRIGGER)
-                            .strong()
-                            .monospace()
-                            .small(),
-                    );
-                    ui.add_space(6.0);
-
-                    if ui
-                        .button(
-                            RichText::new("⚡ Launch IMU Loopback Demo (Simulated HIL)")
-                                .color(COLOR_SIGNAL_TX)
-                                .strong(),
-                        )
-                        .clicked()
-                    {
-                        self.pending_action = Some(TabAction::LoadImuDemo);
-                    }
-
-                    ui.add_space(8.0);
-                    ui.label(
-                        RichText::new("Built-in virtual instruments for hardware-less testing:")
-                            .color(COLOR_TEXT_MUTED)
-                            .small(),
-                    );
-                    ui.label(
-                        RichText::new("• Protocol Dissector Lab: Live binary parsing, payload schema inspection, and packet inspector.")
-                            .color(COLOR_TEXT_PRIMARY)
-                            .small(),
-                    );
-                    ui.label(
-                        RichText::new("• Telemetry Oscilloscope: High-rate multi-channel plotting with real-time hardware trigger logic.")
-                            .color(COLOR_TEXT_PRIMARY)
-                            .small(),
-                    );
-                    ui.label(
-                        RichText::new("• Fault Injection Rig: Controlled bit-error rates (BER), frame drops, and packet jitter.")
-                            .color(COLOR_TEXT_PRIMARY)
-                            .small(),
-                    );
-                });
-
-            ui.add_space(12.0);
-
-            // Card 3: Quick Jump cards
-            egui::Frame::NONE
-                .fill(COLOR_SURFACE_CARD)
-                .stroke(Stroke::new(1.0_f32, COLOR_BORDER_HAIRLINE))
-                .corner_radius(CornerRadius::same(4))
-                .inner_margin(Margin::same(12))
-                .show(ui, |ui| {
-                    ui.label(
-                        RichText::new("QUICK JUMP WORKSPACES")
-                            .color(COLOR_TEXT_PRIMARY)
-                            .strong()
-                            .monospace()
-                            .small(),
-                    );
-                    ui.add_space(6.0);
-
-                    ui.horizontal_wrapped(|ui| {
-                        if ui.button(RichText::new("🔬 Protocol Lab").strong()).clicked() {
-                            self.pending_action = Some(TabAction::SelectPreset("Protocol Lab"));
+                        if ui
+                            .button(
+                                RichText::new("⚡ Launch IMU Loopback Demo (Simulated HIL)")
+                                    .color(COLOR_SIGNAL_TX)
+                                    .strong(),
+                            )
+                            .clicked()
+                        {
+                            self.pending_action = Some(TabAction::LoadImuDemo);
                         }
-                        if ui.button(RichText::new("📈 Scope").strong()).clicked() {
-                            self.pending_action = Some(TabAction::SelectPreset("Scope"));
+
+                        ui.add_space(8.0);
+
+                        // Visual signal flow block diagram
+                        egui::Frame::NONE
+                            .fill(COLOR_SURFACE_ELEVATED)
+                            .stroke(Stroke::new(1.0_f32, COLOR_BORDER_HAIRLINE))
+                            .corner_radius(CornerRadius::same(4))
+                            .inner_margin(Margin::symmetric(8, 6))
+                            .show(ui, |ui| {
+                                ui.horizontal(|ui| {
+                                    ui.label(RichText::new("[Mock IMU]").color(COLOR_SIGNAL_TX).monospace().small());
+                                    ui.label(RichText::new("──▶").color(COLOR_TEXT_MUTED).small());
+                                    ui.label(RichText::new("[FIFO Loopback]").color(COLOR_SIGNAL_TRIGGER).monospace().small());
+                                    ui.label(RichText::new("──▶").color(COLOR_TEXT_MUTED).small());
+                                    ui.label(RichText::new("[Dissector]").color(COLOR_SIGNAL_RX).monospace().small());
+                                });
+                            });
+
+                        ui.add_space(8.0);
+                        ui.label(RichText::new("Virtual instruments:").color(COLOR_TEXT_MUTED).small());
+                        ui.label(RichText::new("• Protocol Dissector: Live binary C-structs & packet breakdown").color(COLOR_TEXT_PRIMARY).small());
+                        ui.label(RichText::new("• Telemetry Scope: Hardware-triggered plots & measurement cursors").color(COLOR_TEXT_PRIMARY).small());
+                        ui.label(RichText::new("• Fault Rig: Controlled BER & latency jitter injection").color(COLOR_TEXT_PRIMARY).small());
+                    });
+
+                ui.add_space(10.0);
+
+                // Right Bottom Card: Recent Vault Sessions (.bflog)
+                egui::Frame::NONE
+                    .fill(COLOR_SURFACE_CARD)
+                    .stroke(Stroke::new(1.0_f32, COLOR_BORDER_HAIRLINE))
+                    .corner_radius(CornerRadius::same(4))
+                    .inner_margin(Margin::same(14))
+                    .show(ui, |ui| {
+                        ui.label(
+                            RichText::new("RECENT VAULT SESSIONS (.bflog)")
+                                .color(COLOR_TEXT_PRIMARY)
+                                .strong()
+                                .monospace()
+                                .small(),
+                        );
+                        ui.add_space(8.0);
+
+                        let recent_vaults = [
+                            ("session_20261102_telemetry_orbit.bflog", "1.4 MB", "2026-11-02 21:00"),
+                            ("imu_fault_injection_run.bflog", "412 KB", "2026-11-02 21:45"),
+                        ];
+
+                        for (filename, size_str, _date_str) in recent_vaults {
+                            ui.horizontal(|ui| {
+                                ui.label(RichText::new("•").color(COLOR_SIGNAL_TX));
+                                ui.label(RichText::new(filename).color(COLOR_TEXT_PRIMARY).monospace().small());
+                                ui.label(RichText::new(format!("({size_str})")).color(COLOR_TEXT_MUTED).small());
+                                ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
+                                    if ui.button(RichText::new("Load").small()).clicked() {
+                                        self.vault.loaded_vault_path = Some(format!("./vaults/{filename}"));
+                                        self.pending_action = Some(TabAction::SelectPreset("Comprehensive"));
+                                    }
+                                });
+                            });
                         }
-                        if ui.button(RichText::new("🛠 HIL Rig").strong()).clicked() {
-                            self.pending_action = Some(TabAction::SelectPreset("HIL Rig"));
-                        }
-                        if ui.button(RichText::new("📦 Diff & Vault").strong()).clicked() {
-                            self.pending_action = Some(TabAction::SelectPreset("Comprehensive"));
+
+                        ui.add_space(8.0);
+                        if ui.button(RichText::new("📂 Open Vault Directory").small()).clicked() {
+                            let _ = std::fs::create_dir_all("vaults");
+                            let _ = std::process::Command::new("explorer").arg("vaults").spawn();
                         }
                     });
-                });
+            });
 
             ui.add_space(12.0);
         });

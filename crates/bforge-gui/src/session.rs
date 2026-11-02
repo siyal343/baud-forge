@@ -82,12 +82,43 @@ pub struct SessionController {
 }
 
 impl SessionController {
-    /// Start a hardware serial port pump session.
-    pub fn start_hardware(port: &str, baud: u32, framing: &str) -> Result<Self, String> {
+    /// Start a hardware serial port pump session with UART framing and modem line controls.
+    pub fn start_hardware(
+        port: &str,
+        baud: u32,
+        framing: &str,
+        data_bits: u8,
+        parity: &str,
+        stop_bits: u8,
+        dtr: bool,
+        rts: bool,
+    ) -> Result<Self, String> {
+        let data_bits_cfg = match data_bits {
+            5 => serialport::DataBits::Five,
+            6 => serialport::DataBits::Six,
+            7 => serialport::DataBits::Seven,
+            _ => serialport::DataBits::Eight,
+        };
+        let parity_cfg = match parity {
+            "Even" => serialport::Parity::Even,
+            "Odd" => serialport::Parity::Odd,
+            _ => serialport::Parity::None,
+        };
+        let stop_bits_cfg = match stop_bits {
+            2 => serialport::StopBits::Two,
+            _ => serialport::StopBits::One,
+        };
+
         let mut serial_port = serialport::new(port, baud)
+            .data_bits(data_bits_cfg)
+            .parity(parity_cfg)
+            .stop_bits(stop_bits_cfg)
             .timeout(Duration::from_millis(50))
             .open()
             .map_err(|e| format!("Failed to open port '{}' at {} baud: {}", port, baud, e))?;
+
+        let _ = serial_port.write_data_terminal_ready(dtr);
+        let _ = serial_port.write_request_to_send(rts);
 
         let (tx_sender, tx_receiver) = crossbeam_channel::unbounded::<TxCommand>();
         let (rx_sender, rx_receiver) = crossbeam_channel::unbounded::<RxEvent>();
@@ -552,7 +583,16 @@ mod tests {
 
     #[test]
     fn test_start_hardware_invalid_port() {
-        let res = SessionController::start_hardware("INVALID_PORT_XYZ", 115200, "Line");
+        let res = SessionController::start_hardware(
+            "INVALID_PORT_XYZ",
+            115200,
+            "Line",
+            8,
+            "None",
+            1,
+            true,
+            false,
+        );
         assert!(res.is_err(), "Opening non-existent port must return an Err");
     }
 }

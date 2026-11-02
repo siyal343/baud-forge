@@ -120,8 +120,15 @@ impl BaudForgeApp {
                         .unwrap_or_else(|| self.port_name.clone());
                     let baud = self.tab_viewer.selected_baud;
                     let framing = self.tab_viewer.selected_framing.clone();
+                    let data_bits = self.tab_viewer.data_bits;
+                    let parity = self.tab_viewer.parity.clone();
+                    let stop_bits = self.tab_viewer.stop_bits;
+                    let dtr = self.tab_viewer.dtr_enabled;
+                    let rts = self.tab_viewer.rts_enabled;
 
-                    match crate::session::SessionController::start_hardware(&port, baud, &framing) {
+                    match crate::session::SessionController::start_hardware(
+                        &port, baud, &framing, data_bits, &parity, stop_bits, dtr, rts,
+                    ) {
                         Ok(session) => {
                             self.active_session = Some(session);
                             self.port_name = port;
