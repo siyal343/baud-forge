@@ -6,18 +6,25 @@
 /* --------------------------------------------------------------------------
    1. Design Tokens & Semantic Variables
    -------------------------------------------------------------------------- */
-:root {
+:root,
+.theme-carbon-dark {
   color-scheme: dark;
 
+  /* Spec 0059 & Plan Semantic Tokens */
+  --surface-canvas: #090a0d;
+  --surface-primary: #101217;
+  --surface-card: #161920;
+  --border: #1f2430;
+
   /* Neutral Carbon Surface Hierarchy */
-  --bg-canvas: #090a0d;       /* Deepest ground (stream & oscilloscope canvas) */
-  --bg-surface-1: #101217;    /* Primary panels (topbar, sidebar, inspector) */
-  --bg-surface-2: #161920;    /* Elevated cards, modules, inputs */
-  --bg-surface-3: #1e222b;    /* Active surfaces, hover states, chips */
-  --bg-glass: rgba(22, 25, 32, 0.92); /* Overlays and drawers */
+  --bg-canvas: var(--surface-canvas);       /* Deepest ground (stream & oscilloscope canvas) */
+  --bg-surface-1: var(--surface-primary);   /* Primary panels (topbar, sidebar, inspector) */
+  --bg-surface-2: var(--surface-card);      /* Elevated cards, modules, inputs */
+  --bg-surface-3: #1e222b;                  /* Active surfaces, hover states, chips */
+  --bg-glass: rgba(22, 25, 32, 0.92);       /* Overlays and drawers */
 
   /* Structural Hairlines & Specular Borders */
-  --border-hairline: #1f2430;
+  --border-hairline: var(--border);
   --border-strong: #2d3446;
   --border-highlight: rgba(255, 255, 255, 0.06);
 
@@ -50,6 +57,17 @@
   --yield: var(--sig-warn);
   --fault: var(--sig-fault);
 
+  /* Density & Typography Scale Defaults */
+  --font-ui-size: 12px;
+  --row-height: 26px;
+  --table-font-size: 12px;
+  --cell-padding-y: 3px;
+  --cell-padding-x: 10px;
+
+  /* Accent Default */
+  --accent: var(--sig-tx);
+  --accent-dim: var(--sig-tx-dim);
+
   /* Dual-Font Typography System */
   --font-sans: "Inter", -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
   --font-mono: "JetBrains Mono", "Cascadia Mono", ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
@@ -58,6 +76,146 @@
   --ease-out: cubic-bezier(0.23, 1, 0.32, 1);
   --ease-in-out: cubic-bezier(0.77, 0, 0.175, 1);
   --ease-drawer: cubic-bezier(0.32, 0.72, 0, 1);
+}
+
+/* --------------------------------------------------------------------------
+   Paper Light Theme (Spec 0059 & Precision Workbench Architecture)
+   -------------------------------------------------------------------------- */
+.theme-paper-light {
+  color-scheme: light;
+
+  --surface-canvas: #f4f5f7;
+  --surface-primary: #ffffff;
+  --surface-card: #ebedf0;
+  --border: #d0d5dd;
+
+  --bg-canvas: var(--surface-canvas);
+  --bg-surface-1: var(--surface-primary);
+  --bg-surface-2: var(--surface-card);
+  --bg-surface-3: #dfe2e6;
+  --bg-glass: rgba(244, 245, 247, 0.94);
+
+  --border-hairline: var(--border);
+  --border-strong: #98a2b3;
+  --border-highlight: rgba(0, 0, 0, 0.08);
+
+  --text-primary: #0f172a;
+  --text-secondary: #475569;
+  --text-muted: #94a3b8;
+
+  --sig-rx: #059669;
+  --sig-rx-dim: rgba(5, 150, 105, 0.12);
+  --sig-tx: #0284c7;
+  --sig-tx-dim: rgba(2, 132, 199, 0.14);
+  --sig-warn: #d97706;
+  --sig-warn-dim: rgba(217, 119, 6, 0.14);
+  --sig-fault: #dc2626;
+  --sig-fault-dim: rgba(220, 38, 38, 0.14);
+  --sig-symbol: #7c3aed;
+  --sig-symbol-dim: rgba(124, 58, 237, 0.14);
+
+  --bg: var(--bg-canvas);
+  --panel: var(--bg-surface-1);
+  --panel-2: var(--bg-surface-2);
+  --line: var(--border-hairline);
+  --text: var(--text-primary);
+  --dim: var(--text-secondary);
+  --valid: var(--sig-rx);
+  --tx: var(--sig-tx);
+  --yield: var(--sig-warn);
+  --fault: var(--sig-fault);
+}
+
+/* --------------------------------------------------------------------------
+   High Contrast Theme (WCAG AAA Requirements: #000000 surface, #ffff00 text)
+   -------------------------------------------------------------------------- */
+.theme-high-contrast {
+  color-scheme: dark;
+
+  --surface-canvas: #000000;
+  --surface-primary: #000000;
+  --surface-card: #121212;
+  --border: #ffffff;
+
+  --bg-canvas: var(--surface-canvas);
+  --bg-surface-1: var(--surface-primary);
+  --bg-surface-2: var(--surface-card);
+  --bg-surface-3: #1e1e1e;
+  --bg-glass: rgba(0, 0, 0, 0.98);
+
+  --border-hairline: var(--border);
+  --border-strong: #ffffff;
+  --border-highlight: #ffffff;
+
+  --text-primary: #ffff00;   /* WCAG AAA yellow on black: 19.5:1 ratio */
+  --text-secondary: #00ffff; /* Pure cyan */
+  --text-muted: #ffffff;      /* Pure white */
+
+  --sig-rx: #00ff00;         /* Pure green */
+  --sig-rx-dim: rgba(0, 255, 0, 0.22);
+  --sig-tx: #00ffff;         /* Pure cyan */
+  --sig-tx-dim: rgba(0, 255, 255, 0.22);
+  --sig-warn: #ff8800;       /* High-visibility amber */
+  --sig-warn-dim: rgba(255, 136, 0, 0.25);
+  --sig-fault: #ff0000;      /* Pure red */
+  --sig-fault-dim: rgba(255, 0, 0, 0.25);
+  --sig-symbol: #ff00ff;      /* Pure magenta */
+  --sig-symbol-dim: rgba(255, 0, 255, 0.22);
+
+  --bg: var(--bg-canvas);
+  --panel: var(--bg-surface-1);
+  --panel-2: var(--bg-surface-2);
+  --line: var(--border-hairline);
+  --text: var(--text-primary);
+  --dim: var(--text-secondary);
+  --valid: var(--sig-rx);
+  --tx: var(--sig-tx);
+  --yield: var(--sig-warn);
+  --fault: var(--sig-fault);
+}
+
+/* --------------------------------------------------------------------------
+   Row Density Tiers (Spec 0059 & Section 4.2)
+   -------------------------------------------------------------------------- */
+.density-compact {
+  --row-height: 22px;
+  --table-font-size: 11px;
+  --cell-padding-y: 1px;
+  --cell-padding-x: 6px;
+}
+
+.density-default {
+  --row-height: 26px;
+  --table-font-size: 12px;
+  --cell-padding-y: 3px;
+  --cell-padding-x: 10px;
+}
+
+.density-spacious {
+  --row-height: 32px;
+  --table-font-size: 13px;
+  --cell-padding-y: 5px;
+  --cell-padding-x: 12px;
+}
+
+/* --------------------------------------------------------------------------
+   Accent Color Options
+   -------------------------------------------------------------------------- */
+[data-accent="cyan"] {
+  --accent: #06b6d4;
+  --accent-dim: rgba(6, 182, 212, 0.15);
+}
+[data-accent="green"] {
+  --accent: #10b981;
+  --accent-dim: rgba(16, 185, 129, 0.15);
+}
+[data-accent="amber"] {
+  --accent: #f59e0b;
+  --accent-dim: rgba(245, 158, 11, 0.15);
+}
+[data-accent="purple"] {
+  --accent: #a855f7;
+  --accent-dim: rgba(168, 85, 247, 0.15);
 }
 
 /* --------------------------------------------------------------------------
@@ -78,7 +236,7 @@ body {
   background: var(--bg-canvas);
   color: var(--text-primary);
   font-family: var(--font-sans);
-  font-size: 12px;
+  font-size: var(--font-ui-size, 12px);
   line-height: 1.45;
   -webkit-font-smoothing: antialiased;
   -moz-osx-font-smoothing: grayscale;
@@ -161,8 +319,225 @@ body {
 }
 
 /* --------------------------------------------------------------------------
-   4. App Shell Grid Architecture
+   4. App Shell & Reconfigurable Dock Architecture
    -------------------------------------------------------------------------- */
+.workbench-reconfigurable-shell {
+  display: flex !important;
+  flex-direction: column !important;
+  height: 100vh !important;
+  width: 100vw !important;
+  overflow: hidden !important;
+  background: var(--bg-canvas);
+}
+
+.workbench-dock-stage {
+  flex: 1 1 0;
+  min-height: 0;
+  min-width: 0;
+  width: 100%;
+  height: 100%;
+  position: relative;
+  overflow: hidden;
+  background: var(--bg-canvas);
+}
+
+/* Modular Panels Sizing & Structure */
+.panel-content {
+  width: 100%;
+  height: 100%;
+  overflow-y: auto;
+  overflow-x: hidden;
+  display: flex;
+  flex-direction: column;
+  background: var(--bg-surface-1);
+}
+
+.stream-panel-content,
+.telemetry-panel-content,
+.inspector-panel-content,
+.console-panel-content,
+.hardware-bay-content,
+.diff-panel-content,
+.dashboard-panel-content {
+  width: 100%;
+  height: 100%;
+  overflow: hidden;
+  display: flex;
+  flex-direction: column;
+}
+
+.hardware-bay-content {
+  overflow-y: auto;
+  padding: 8px;
+}
+
+.diff-panel-content {
+  overflow-y: auto;
+  padding: 12px;
+}
+
+/* Dashboard Panel Layout */
+.dashboard-panel-content {
+  overflow: hidden;
+  display: flex;
+  flex-direction: column;
+}
+
+.dashboard-toolbar {
+  height: 36px;
+  min-height: 36px;
+  border-bottom: 1px solid var(--border-hairline);
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 0 12px;
+  background: var(--bg-surface-2);
+}
+
+.dashboard-selector-group {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.dashboard-select {
+  background: var(--bg-surface-1);
+  color: var(--text-primary);
+  border: 1px solid var(--border-hairline);
+  border-radius: 4px;
+  font-size: 11px;
+  padding: 2px 8px;
+  height: 24px;
+}
+
+.dashboard-view-wrapper {
+  flex: 1 1 0;
+  min-height: 0;
+  overflow-y: auto;
+  padding: 16px;
+}
+
+.dashboard-xml-editor {
+  flex: 1 1 0;
+  min-height: 0;
+  display: flex;
+  padding: 8px;
+}
+
+.dashboard-xml-textarea {
+  width: 100%;
+  height: 100%;
+  font-family: var(--font-mono);
+  font-size: 12px;
+  background: var(--bg-canvas);
+  color: var(--text-primary);
+  border: 1px solid var(--border-hairline);
+  border-radius: 4px;
+  padding: 12px;
+  resize: none;
+}
+
+/* Popout Standalone View */
+.popout-standalone {
+  display: flex;
+  flex-direction: column;
+  width: 100vw;
+  height: 100vh;
+  overflow: hidden;
+  background: var(--bg-canvas);
+}
+
+.popout-header {
+  height: 36px;
+  min-height: 36px;
+  background: var(--bg-surface-1);
+  border-bottom: 1px solid var(--border-hairline);
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 0 12px;
+}
+
+.popout-title {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-size: 12px;
+  font-weight: 600;
+  color: var(--text-primary);
+}
+
+.popout-body {
+  flex: 1 1 0;
+  min-height: 0;
+  overflow: hidden;
+}
+
+/* Stream Column Picker Dropdown */
+.column-picker-wrapper {
+  position: relative;
+  display: inline-block;
+}
+
+.column-picker-dropdown {
+  position: absolute;
+  top: 100%;
+  right: 0;
+  margin-top: 4px;
+  background: var(--bg-surface-2);
+  border: 1px solid var(--border-strong);
+  border-radius: 6px;
+  box-shadow: 0 8px 24px rgba(0, 0, 0, 0.45);
+  z-index: 100;
+  padding: 8px;
+  min-width: 160px;
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.column-picker-item {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-size: 11px;
+  color: var(--text-secondary);
+  cursor: pointer;
+  padding: 2px 4px;
+  border-radius: 4px;
+}
+
+.column-picker-item:hover {
+  color: var(--text-primary);
+  background: var(--bg-surface-3);
+}
+
+.picker-header {
+  font-size: 10px;
+  text-transform: uppercase;
+  color: var(--text-muted);
+  font-weight: 600;
+  margin-bottom: 4px;
+  padding: 0 4px;
+}
+
+/* Preset Dropdown */
+.preset-dropdown-wrap {
+  display: flex;
+  align-items: center;
+}
+
+.preset-selector {
+  background: var(--bg-surface-2);
+  color: var(--text-primary);
+  border: 1px solid var(--border-hairline);
+  border-radius: 4px;
+  font-size: 11px;
+  padding: 2px 6px;
+  height: 24px;
+  cursor: pointer;
+}
+
 .shell {
   display: grid;
   grid-template-columns: 248px minmax(0, 1fr) 380px;
@@ -1123,26 +1498,26 @@ th {
   text-align: left;
 }
 
-/* Virtualizer Exact Geometry (Must match ROW_HEIGHT = 26 in code) */
+/* Virtualizer Exact Geometry (Matches --row-height in active density tier) */
 tbody tr {
-  height: 26px;
-  max-height: 26px;
+  height: var(--row-height, 26px);
+  max-height: var(--row-height, 26px);
   box-sizing: border-box;
-  border-bottom: 1px solid rgba(31, 36, 48, 0.4);
+  border-bottom: 1px solid var(--border-hairline, rgba(31, 36, 48, 0.4));
   cursor: default;
 }
 
 tbody td,
 td {
-  height: 26px;
+  height: var(--row-height, 26px);
   box-sizing: border-box;
-  padding: 0 10px;
+  padding: var(--cell-padding-y, 0px) var(--cell-padding-x, 10px);
   white-space: nowrap;
   overflow: hidden;
   text-overflow: ellipsis;
   font-family: var(--font-mono);
   font-variant-numeric: tabular-nums;
-  font-size: 11.5px;
+  font-size: var(--table-font-size, 11.5px);
   vertical-align: middle;
 }
 

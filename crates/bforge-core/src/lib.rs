@@ -38,6 +38,22 @@ pub struct ProjectConfig {
     pub commands: Vec<CommandConfig>,
     #[serde(default)]
     pub alerts: Vec<AlertConfig>,
+    /// Optional workbench UI configuration (spec 0059).
+    #[serde(default)]
+    pub ui: Option<UiConfig>,
+}
+
+/// The [ui] table for persistent workbench preferences (spec 0059).
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize, Default)]
+pub struct UiConfig {
+    #[serde(default)]
+    pub theme: Option<String>,
+    #[serde(default)]
+    pub density: Option<String>,
+    #[serde(default)]
+    pub preset: Option<String>,
+    #[serde(default)]
+    pub dashboard: Option<String>,
 }
 
 /// The `[workspace]` table.
