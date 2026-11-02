@@ -11,6 +11,7 @@ bforge-hal = { workspace = true }
 bforge-framer = { workspace = true }
 bforge-storage = { workspace = true }
 bforge-dissect = { workspace = true }
+bforge-elf = { workspace = true }
 eframe = { version = "0.31", default-features = false, features = ["default_fonts", "wgpu"] }
 egui = { version = "0.31" }
 egui_dock = { version = "0.16", features = ["serde"] }
@@ -21,3 +22,4 @@ serde = { workspace = true }
 serde_json = { workspace = true }
 toml = { workspace = true }
 rfd = "0.15"
+image = { version = "0.25", default-features = false, features = ["png"] }

@@ -9,3 +9,4 @@ pub mod session;
 pub mod tabs;
 pub mod theme;
 pub mod vault;
+pub mod workspace;

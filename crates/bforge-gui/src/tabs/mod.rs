@@ -83,6 +83,9 @@ pub struct BaudForgeTabViewer {
     pub ws_path: String,
     pub ws_baud: u32,
     pub ws_framing: String,
+    pub workspace: crate::workspace::WorkspaceState,
+    pub elf_resolver: crate::workspace::ElfSymbolResolver,
+    pub elf_lookup_addr: String,
 }
 
 impl Default for BaudForgeTabViewer {
@@ -177,6 +180,19 @@ impl Default for BaudForgeTabViewer {
             ws_path: "./workspaces/cubesat_imu.bforge.toml".to_string(),
             ws_baud: 921600,
             ws_framing: "COBS + CRC32-Castagnoli".to_string(),
+            workspace: {
+                let mut ws = crate::workspace::WorkspaceState::default();
+                ws.name = "CubeSat OBC Validation".to_string();
+                ws.file_path = Some("./workspaces/cubesat_imu.bforge.toml".to_string());
+                ws.primary_port = "COM3".to_string();
+                ws.baud_rate = 921600;
+                ws.framing = "cobs".to_string();
+                ws.dissector_path = Some("./firmware/include/telemetry_packets.h".to_string());
+                ws.elf_path = Some("./firmware/build/obc_flight_sw.elf".to_string());
+                ws
+            },
+            elf_resolver: crate::workspace::ElfSymbolResolver::default(),
+            elf_lookup_addr: "0x42001000".to_string(),
         }
     }
 }
@@ -528,7 +544,13 @@ impl BaudForgeTabViewer {
                         COLOR_TEXT_PRIMARY
                     };
 
-                    ui.label(RichText::new(line).color(color).monospace());
+                    let display_text = if self.elf_resolver.image.is_some() {
+                        self.elf_resolver.annotate_line(line)
+                    } else {
+                        line.clone()
+                    };
+
+                    ui.label(RichText::new(display_text).color(color).monospace());
                 }
             });
     }
@@ -1226,44 +1248,345 @@ impl BaudForgeTabViewer {
 
     /// Render Tab: Workspace Configuration.
     fn render_workspace_config(&mut self, ui: &mut Ui) {
+        let is_loaded = self.workspace.file_path.is_some();
+        let status = if is_loaded { "SYNCED" } else { "UNSAVED" };
+        let status_color = if is_loaded { COLOR_SIGNAL_RX } else { COLOR_SIGNAL_TRIGGER };
+
         Self::render_header(
             ui,
             "[CONFIG]",
             "Workspace Configuration",
-            "SYNCED",
-            COLOR_SIGNAL_RX,
+            status,
+            status_color,
         );
 
-        ui.group(|ui| {
-            ui.label(RichText::new("ACTIVE WORKSPACE TOML").color(COLOR_TEXT_PRIMARY).strong());
-            ui.horizontal(|ui| {
-                ui.label("Path:");
-                ui.text_edit_singleline(&mut self.ws_path);
-            });
+        egui::ScrollArea::vertical().show(ui, |ui| {
+            // Card 1: Active Workspace
+            egui::Frame::NONE
+                .fill(COLOR_SURFACE_CARD)
+                .stroke(Stroke::new(1.0_f32, COLOR_BORDER_HAIRLINE))
+                .corner_radius(CornerRadius::same(4))
+                .inner_margin(Margin::same(12))
+                .show(ui, |ui| {
+                    ui.label(
+                        RichText::new("ACTIVE WORKSPACE")
+                            .color(COLOR_SIGNAL_TX)
+                            .strong()
+                            .monospace()
+                            .small(),
+                    );
+                    ui.add_space(6.0);
 
-            ui.horizontal(|ui| {
-                ui.label("Baud Rate:");
-                egui::ComboBox::from_id_salt("ws_baud_select")
-                    .selected_text(format!("{}", self.ws_baud))
-                    .show_ui(ui, |ui| {
-                        ui.selectable_value(&mut self.ws_baud, 115200, "115200");
-                        ui.selectable_value(&mut self.ws_baud, 230400, "230400");
-                        ui.selectable_value(&mut self.ws_baud, 460800, "460800");
-                        ui.selectable_value(&mut self.ws_baud, 921600, "921600");
-                        ui.selectable_value(&mut self.ws_baud, 2000000, "2000000");
-                        ui.selectable_value(&mut self.ws_baud, 3000000, "3000000");
+                    ui.horizontal(|ui| {
+                        ui.label(RichText::new("Workspace Name:").color(COLOR_TEXT_MUTED));
+                        ui.text_edit_singleline(&mut self.workspace.name);
                     });
-            });
 
-            ui.horizontal(|ui| {
-                ui.label("Framing Format:");
-                ui.label(RichText::new(&self.ws_framing).color(COLOR_SIGNAL_TX).monospace());
-            });
+                    ui.horizontal(|ui| {
+                        ui.label(RichText::new("File Path:").color(COLOR_TEXT_MUTED));
+                        let path_str = self
+                            .workspace
+                            .file_path
+                            .as_deref()
+                            .unwrap_or("(unsaved workspace)");
+                        ui.label(RichText::new(path_str).monospace().color(COLOR_TEXT_PRIMARY));
+                    });
 
-            ui.add_space(8.0);
-            if ui.button(RichText::new("💾 Export Configuration").strong()).clicked() {
-                // Export action placeholder
-            }
+                    ui.add_space(8.0);
+                    ui.horizontal(|ui| {
+                        if ui.button("💾 Save .bforge.toml").clicked() {
+                            if let Some(path_str) = self.workspace.file_path.clone() {
+                                let path = std::path::Path::new(&path_str);
+                                let _ = self.workspace.save_to_file(path);
+                            } else if let Some(path) = rfd::FileDialog::new()
+                                .add_filter("BaudForge Project", &["bforge.toml", "toml"])
+                                .save_file()
+                            {
+                                if self.workspace.save_to_file(&path).is_ok() {
+                                    self.workspace.file_path = Some(path.to_string_lossy().to_string());
+                                }
+                            }
+                        }
+
+                        if ui.button("💾 Save As...").clicked() {
+                            if let Some(path) = rfd::FileDialog::new()
+                                .add_filter("BaudForge Project", &["bforge.toml", "toml"])
+                                .save_file()
+                            {
+                                if self.workspace.save_to_file(&path).is_ok() {
+                                    self.workspace.file_path = Some(path.to_string_lossy().to_string());
+                                }
+                            }
+                        }
+
+                        if ui.button("📂 Open .bforge.toml").clicked() {
+                            if let Some(path) = rfd::FileDialog::new()
+                                .add_filter("BaudForge Project", &["bforge.toml", "toml"])
+                                .pick_file()
+                            {
+                                if self.workspace.load_from_file(&path).is_ok() {
+                                    if let Some(elf_str) = &self.workspace.elf_path {
+                                        let elf_p = std::path::Path::new(elf_str);
+                                        if let Ok(count) = self.elf_resolver.load(elf_p) {
+                                            self.workspace.loaded_symbols_count = count;
+                                        }
+                                    }
+                                }
+                            }
+                        }
+                    });
+                });
+
+            ui.add_space(10.0);
+
+            // Card 2: Hardware Port & Line Configuration
+            egui::Frame::NONE
+                .fill(COLOR_SURFACE_CARD)
+                .stroke(Stroke::new(1.0_f32, COLOR_BORDER_HAIRLINE))
+                .corner_radius(CornerRadius::same(4))
+                .inner_margin(Margin::same(12))
+                .show(ui, |ui| {
+                    ui.label(
+                        RichText::new("HARDWARE PORT & LINE CONFIGURATION")
+                            .color(COLOR_SIGNAL_RX)
+                            .strong()
+                            .monospace()
+                            .small(),
+                    );
+                    ui.add_space(6.0);
+
+                    ui.horizontal(|ui| {
+                        ui.label(RichText::new("Port Name:").color(COLOR_TEXT_MUTED));
+                        egui::ComboBox::from_id_salt("ws_port_select")
+                            .selected_text(if self.workspace.primary_port.is_empty() {
+                                "Select Port..."
+                            } else {
+                                &self.workspace.primary_port
+                            })
+                            .show_ui(ui, |ui| {
+                                for p in &self.available_ports {
+                                    ui.selectable_value(
+                                        &mut self.workspace.primary_port,
+                                        p.port_name.clone(),
+                                        &p.port_name,
+                                    );
+                                }
+                            });
+                        ui.text_edit_singleline(&mut self.workspace.primary_port);
+                    });
+
+                    ui.horizontal(|ui| {
+                        ui.label(RichText::new("Baud Rate:").color(COLOR_TEXT_MUTED));
+                        egui::ComboBox::from_id_salt("ws_baud_select")
+                            .selected_text(format!("{}", self.workspace.baud_rate))
+                            .show_ui(ui, |ui| {
+                                ui.selectable_value(&mut self.workspace.baud_rate, 9600, "9600");
+                                ui.selectable_value(&mut self.workspace.baud_rate, 57600, "57600");
+                                ui.selectable_value(&mut self.workspace.baud_rate, 115200, "115200");
+                                ui.selectable_value(&mut self.workspace.baud_rate, 230400, "230400");
+                                ui.selectable_value(&mut self.workspace.baud_rate, 460800, "460800");
+                                ui.selectable_value(&mut self.workspace.baud_rate, 921600, "921600");
+                                ui.selectable_value(&mut self.workspace.baud_rate, 2000000, "2000000");
+                                ui.selectable_value(&mut self.workspace.baud_rate, 3000000, "3000000");
+                            });
+                    });
+
+                    ui.horizontal(|ui| {
+                        ui.label(RichText::new("Framing Format:").color(COLOR_TEXT_MUTED));
+                        egui::ComboBox::from_id_salt("ws_framing_select")
+                            .selected_text(match self.workspace.framing.as_str() {
+                                "delimiter" => "Line Delimiter (\\n)",
+                                "cobs" => "COBS (Zero-delimited)",
+                                "header_length" => "Header + Length",
+                                "slip" => "SLIP (RFC 1055)",
+                                "idle_gap" => "Idle Gap (Modbus)",
+                                other => other,
+                            })
+                            .show_ui(ui, |ui| {
+                                ui.selectable_value(
+                                    &mut self.workspace.framing,
+                                    "delimiter".to_string(),
+                                    "Line Delimiter (\\n)",
+                                );
+                                ui.selectable_value(
+                                    &mut self.workspace.framing,
+                                    "cobs".to_string(),
+                                    "COBS (Zero-delimited)",
+                                );
+                                ui.selectable_value(
+                                    &mut self.workspace.framing,
+                                    "header_length".to_string(),
+                                    "Header + Length",
+                                );
+                                ui.selectable_value(
+                                    &mut self.workspace.framing,
+                                    "slip".to_string(),
+                                    "SLIP (RFC 1055)",
+                                );
+                                ui.selectable_value(
+                                    &mut self.workspace.framing,
+                                    "idle_gap".to_string(),
+                                    "Idle Gap (Modbus)",
+                                );
+                            });
+                    });
+
+                    ui.horizontal(|ui| {
+                        ui.label(RichText::new("Dissector Schema:").color(COLOR_TEXT_MUTED));
+                        let mut schema_str = self.workspace.dissector_path.clone().unwrap_or_default();
+                        if ui.text_edit_singleline(&mut schema_str).changed() {
+                            self.workspace.dissector_path = if schema_str.is_empty() {
+                                None
+                            } else {
+                                Some(schema_str.clone())
+                            };
+                        }
+                        if ui.button("Browse...").clicked() {
+                            if let Some(path) = rfd::FileDialog::new()
+                                .add_filter("Dissector Schemas", &["h", "proto", "ksc", "json"])
+                                .pick_file()
+                            {
+                                self.workspace.dissector_path = Some(path.to_string_lossy().to_string());
+                            }
+                        }
+                    });
+                });
+
+            ui.add_space(10.0);
+
+            // Card 3: ELF Firmware Symbol Resolver
+            egui::Frame::NONE
+                .fill(COLOR_SURFACE_CARD)
+                .stroke(Stroke::new(1.0_f32, COLOR_BORDER_HAIRLINE))
+                .corner_radius(CornerRadius::same(4))
+                .inner_margin(Margin::same(12))
+                .show(ui, |ui| {
+                    ui.horizontal(|ui| {
+                        ui.label(
+                            RichText::new("ELF FIRMWARE SYMBOL RESOLVER")
+                                .color(COLOR_SIGNAL_TRIGGER)
+                                .strong()
+                                .monospace()
+                                .small(),
+                        );
+
+                        ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
+                            if self.elf_resolver.image.is_some() {
+                                let count_display = format!("{} Symbols Loaded", self.workspace.loaded_symbols_count);
+                                ui.label(
+                                    RichText::new(format!("[{count_display}]"))
+                                        .color(COLOR_SIGNAL_RX)
+                                        .monospace()
+                                        .strong(),
+                                );
+                            } else {
+                                ui.label(RichText::new("[No ELF Loaded]").color(COLOR_TEXT_MUTED).monospace());
+                            }
+                        });
+                    });
+                    ui.add_space(6.0);
+
+                    ui.horizontal(|ui| {
+                        ui.label(RichText::new("ELF Binary Path:").color(COLOR_TEXT_MUTED));
+                        let mut elf_str = self.workspace.elf_path.clone().unwrap_or_default();
+                        if ui.text_edit_singleline(&mut elf_str).changed() {
+                            self.workspace.elf_path = if elf_str.is_empty() {
+                                None
+                            } else {
+                                Some(elf_str.clone())
+                            };
+                        }
+                        if ui.button("Browse .elf...").clicked() {
+                            if let Some(path) = rfd::FileDialog::new()
+                                .add_filter("ELF Firmware Binary", &["elf", "bin", "axf", "out", "exe"])
+                                .pick_file()
+                            {
+                                let p_str = path.to_string_lossy().to_string();
+                                self.workspace.elf_path = Some(p_str.clone());
+                                match self.elf_resolver.load(&path) {
+                                    Ok(count) => {
+                                        self.workspace.loaded_symbols_count = count;
+                                    }
+                                    Err(e) => {
+                                        eprintln!("Failed to load ELF: {e}");
+                                    }
+                                }
+                            }
+                        }
+                        if ui.button("Load / Reload").clicked() {
+                            if let Some(ref path_str) = self.workspace.elf_path {
+                                let path = std::path::Path::new(path_str);
+                                match self.elf_resolver.load(path) {
+                                    Ok(count) => {
+                                        self.workspace.loaded_symbols_count = count;
+                                    }
+                                    Err(e) => {
+                                        eprintln!("Failed to load ELF: {e}");
+                                    }
+                                }
+                            }
+                        }
+                    });
+
+                    ui.add_space(8.0);
+                    ui.separator();
+                    ui.add_space(4.0);
+
+                    // Manual address lookup test box
+                    ui.label(RichText::new("Manual Address Lookup Test:").color(COLOR_TEXT_PRIMARY).strong().small());
+                    ui.horizontal(|ui| {
+                        ui.label(RichText::new("Address:").color(COLOR_TEXT_MUTED));
+                        ui.add(egui::TextEdit::singleline(&mut self.elf_lookup_addr).hint_text("e.g. 0x42001000"));
+
+                        let clean_hex = self
+                            .elf_lookup_addr
+                            .trim()
+                            .trim_start_matches("0x")
+                            .trim_start_matches("0X");
+                        if let Ok(addr) = u64::from_str_radix(clean_hex, 16) {
+                            if let Some(loc) = self.elf_resolver.resolve_location(addr) {
+                                let fn_name = if loc.function.is_empty() {
+                                    "unknown"
+                                } else {
+                                    &loc.function
+                                };
+                                ui.label(
+                                    RichText::new(format!("=> fn: {} @ {}:{}", fn_name, loc.file, loc.line))
+                                        .color(COLOR_SIGNAL_RX)
+                                        .monospace()
+                                        .strong(),
+                                );
+                            } else if let Some(func) = self.elf_resolver.resolve(addr) {
+                                ui.label(
+                                    RichText::new(format!("=> fn: {} (size: {}B)", func.name, func.size))
+                                        .color(COLOR_SIGNAL_RX)
+                                        .monospace()
+                                        .strong(),
+                                );
+                            } else if self.elf_resolver.image.is_some() {
+                                ui.label(
+                                    RichText::new("=> not found in symbol table")
+                                        .color(COLOR_SIGNAL_FAULT)
+                                        .monospace(),
+                                );
+                            } else {
+                                ui.label(
+                                    RichText::new("=> (load an ELF image above)")
+                                        .color(COLOR_TEXT_MUTED)
+                                        .monospace(),
+                                );
+                            }
+                        } else if !self.elf_lookup_addr.is_empty() {
+                            ui.label(
+                                RichText::new("=> invalid hex address")
+                                    .color(COLOR_SIGNAL_FAULT)
+                                    .monospace(),
+                            );
+                        }
+                    });
+                });
+
+            ui.add_space(12.0);
         });
     }
 }

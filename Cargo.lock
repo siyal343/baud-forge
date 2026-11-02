@@ -440,6 +440,7 @@ version = "0.8.0"
 dependencies = [
  "bforge-core",
  "bforge-dissect",
+ "bforge-elf",
  "bforge-framer",
  "bforge-hal",
  "bforge-storage",
@@ -448,6 +449,7 @@ dependencies = [
  "egui",
  "egui_dock",
  "egui_plot",
+ "image",
  "rfd",
  "serde",
  "serde_json",
