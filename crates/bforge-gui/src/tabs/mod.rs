@@ -1,4 +1,4 @@
-use egui::{self, Color32, RichText, Stroke, StrokeKind, Ui, Vec2};
+use egui::{self, epaint::CornerRadius, Color32, Margin, RichText, Stroke, StrokeKind, Ui, Vec2};
 use crate::layout::TabId;
 use crate::theme::{
     COLOR_BORDER_HAIRLINE, COLOR_SIGNAL_FAULT, COLOR_SIGNAL_RX, COLOR_SIGNAL_TRIGGER,
@@ -10,6 +10,7 @@ use crate::theme::{
 pub enum TabAction {
     SelectPreset(&'static str),
     QuickConnect,
+    StartHardwareSession,
     LoadImuDemo,
     OpenProtocolLab,
     OpenTelemetryScope,
@@ -22,6 +23,17 @@ pub struct BaudForgeTabViewer {
     /// Queued user action from tab controls.
     pub pending_action: Option<TabAction>,
 
+    // Hardware Scanner & Setup State
+    pub available_ports: Vec<crate::hardware::SerialPortInfo>,
+    pub selected_port_idx: usize,
+    pub selected_baud: u32,
+    pub custom_baud_str: String,
+    pub selected_framing: String,
+    pub is_sniffing: bool,
+    pub sniff_result: Option<String>,
+    pub sniff_tx: crossbeam_channel::Sender<Option<(u32, String)>>,
+    pub sniff_rx: crossbeam_channel::Receiver<Option<(u32, String)>>,
+
     // Serial Monitor State
     pub serial_filter: String,
     pub serial_paused: bool,
@@ -32,6 +44,8 @@ pub struct BaudForgeTabViewer {
     pub tx_hex_mode: bool,
     pub tx_input: String,
     pub tx_history: Vec<String>,
+    pub tx_line_ending: crate::session::LineEnding,
+    pub pending_tx: Option<crate::session::TxCommand>,
 
     // Hex Inspector State
     pub hex_data: Vec<u8>,
@@ -87,8 +101,21 @@ impl Default for BaudForgeTabViewer {
             0x01, 0x23, 0x45, 0x67, 0x89, 0xAB, 0xCD, 0xEF,
         ];
 
+        let available_ports = crate::hardware::scan_available_ports();
+        let (sniff_tx, sniff_rx) = crossbeam_channel::unbounded();
+
         Self {
             pending_action: None,
+
+            available_ports,
+            selected_port_idx: 0,
+            selected_baud: 115200,
+            custom_baud_str: "115200".to_string(),
+            selected_framing: "Line-Delimited (\\n)".to_string(),
+            is_sniffing: false,
+            sniff_result: None,
+            sniff_tx,
+            sniff_rx,
 
             serial_filter: String::new(),
             serial_paused: false,
@@ -102,12 +129,14 @@ impl Default for BaudForgeTabViewer {
             ],
 
             tx_hex_mode: false,
-            tx_input: "AT+STATUS\r\n".to_string(),
+            tx_input: "AT+STATUS".to_string(),
             tx_history: vec![
                 "TX -> AT+PING".to_string(),
                 "RX <- OK:PONG".to_string(),
                 "TX -> AT+CONFIG:STREAM=IMU_RAW,RATE=500".to_string(),
             ],
+            tx_line_ending: crate::session::LineEnding::CrLf,
+            pending_tx: None,
 
             hex_data: sample_hex,
             hex_selected_offset: Some(0),
@@ -158,55 +187,292 @@ impl BaudForgeTabViewer {
         ui.separator();
     }
 
-    /// Render Tab: Welcome & Quick Start.
+    /// Render Tab: Welcome & Hardware Setup Wizard.
     fn render_welcome(&mut self, ui: &mut Ui) {
+        // Drain asynchronous sniffer channel updates
+        while let Ok(sniff_opt) = self.sniff_rx.try_recv() {
+            self.is_sniffing = false;
+            if let Some((sniffed_baud, sniffed_framing)) = sniff_opt {
+                self.selected_baud = sniffed_baud;
+                self.custom_baud_str = sniffed_baud.to_string();
+                let matched_framing = if sniffed_framing.contains("Line") {
+                    "Line-Delimited (\\n)"
+                } else if sniffed_framing.contains("COBS") {
+                    "COBS (0x00 framing)"
+                } else {
+                    "Raw Binary Stream"
+                };
+                self.selected_framing = matched_framing.to_string();
+                self.sniff_result = Some(format!(
+                    "✓ Auto-detected: {} baud, {}",
+                    sniffed_baud, matched_framing
+                ));
+            } else {
+                self.sniff_result = Some(
+                    "⚠ No incoming traffic detected across candidate baud rates"
+                        .to_string(),
+                );
+            }
+        }
+
+        if self.is_sniffing {
+            ui.ctx().request_repaint();
+        }
+
         Self::render_header(
             ui,
-            "[WELCOME]",
-            "Hardware Setup & Workflows",
+            "[SETUP]",
+            "HARDWARE ONBOARDING & SETUP",
             "STANDBY",
             COLOR_SIGNAL_TX,
         );
 
-        ui.add_space(6.0);
-        ui.label(
-            RichText::new("BaudForge Native HIL Workbench")
-                .size(16.0)
-                .color(COLOR_TEXT_PRIMARY)
-                .strong(),
-        );
-        ui.label(
-            RichText::new("Real-time telemetry, serial protocol dissector, and hardware-in-the-loop bridge.")
-                .color(COLOR_TEXT_MUTED),
-        );
+        egui::ScrollArea::vertical().show(ui, |ui| {
+            ui.add_space(4.0);
+            ui.label(
+                RichText::new("Connect your microcontroller, sniffer, or run the HIL simulator.")
+                    .color(COLOR_TEXT_MUTED),
+            );
+            ui.add_space(10.0);
 
-        ui.add_space(12.0);
-        ui.label(RichText::new("QUICK ACTIONS").color(COLOR_SIGNAL_TX).small().strong());
+            // Card 1: Hardware Connection Card
+            egui::Frame::NONE
+                .fill(COLOR_SURFACE_CARD)
+                .stroke(Stroke::new(1.0_f32, COLOR_BORDER_HAIRLINE))
+                .corner_radius(CornerRadius::same(4))
+                .inner_margin(Margin::same(12))
+                .show(ui, |ui| {
+                    ui.label(
+                        RichText::new("HARDWARE CONNECTION")
+                            .color(COLOR_SIGNAL_TX)
+                            .strong()
+                            .monospace()
+                            .small(),
+                    );
+                    ui.add_space(8.0);
 
-        ui.horizontal_wrapped(|ui| {
-            if ui.button(RichText::new("🔌 Quick Connect Hardware").strong()).clicked() {
-                self.pending_action = Some(TabAction::QuickConnect);
-            }
-            if ui.button(RichText::new("🔄 Load IMU Loopback Demo").strong()).clicked() {
-                self.pending_action = Some(TabAction::LoadImuDemo);
-            }
-            if ui.button(RichText::new("🔬 Open Protocol Lab").strong()).clicked() {
-                self.pending_action = Some(TabAction::OpenProtocolLab);
-            }
-            if ui.button(RichText::new("📈 Open Telemetry Scope").strong()).clicked() {
-                self.pending_action = Some(TabAction::OpenTelemetryScope);
-            }
-            if ui.button(RichText::new("📦 Load .bflog Vault").strong()).clicked() {
-                self.pending_action = Some(TabAction::LoadVault);
-            }
-        });
+                    // Port row: ComboBox selecting from available_ports, and a "🔄 Scan Ports" button.
+                    ui.horizontal(|ui| {
+                        ui.label(RichText::new("Port:").color(COLOR_TEXT_PRIMARY).strong());
+                        let current_display = self
+                            .available_ports
+                            .get(self.selected_port_idx)
+                            .map(|p| p.display_name.as_str())
+                            .unwrap_or("No serial ports detected");
 
-        ui.add_space(16.0);
-        ui.group(|ui| {
-            ui.label(RichText::new("SYSTEM READINESS").color(COLOR_TEXT_PRIMARY).strong());
-            ui.label("• Native Windows serial port subsystem: READY");
-            ui.label("• Ring buffer backpressure engine: OPTIMAL");
-            ui.label("• Vault write journal: IDLE");
+                        egui::ComboBox::from_id_salt("welcome_port_select")
+                            .selected_text(RichText::new(current_display).color(COLOR_TEXT_PRIMARY))
+                            .width(340.0)
+                            .show_ui(ui, |ui| {
+                                for (idx, port) in self.available_ports.iter().enumerate() {
+                                    let is_selected = self.selected_port_idx == idx;
+                                    if ui.selectable_label(is_selected, &port.display_name).clicked() {
+                                        self.selected_port_idx = idx;
+                                        self.sniff_result = None;
+                                    }
+                                }
+                            });
+
+                        if ui.button("🔄 Scan Ports").clicked() {
+                            self.available_ports = crate::hardware::scan_available_ports();
+                            if self.selected_port_idx >= self.available_ports.len() {
+                                self.selected_port_idx = 0;
+                            }
+                            self.sniff_result = None;
+                        }
+                    });
+
+                    ui.add_space(8.0);
+
+                    // Baud rate grid buttons and custom text edit
+                    ui.horizontal(|ui| {
+                        ui.label(RichText::new("Baud Rate:").color(COLOR_TEXT_PRIMARY).strong());
+                        let standard_bauds = [9600, 115200, 230400, 460800, 921600, 2000000];
+                        for baud in standard_bauds {
+                            let is_selected = self.selected_baud == baud;
+                            let btn_text = if is_selected {
+                                RichText::new(format!("{baud}")).color(COLOR_SIGNAL_TX).strong()
+                            } else {
+                                RichText::new(format!("{baud}")).color(COLOR_TEXT_MUTED)
+                            };
+                            if ui.button(btn_text).clicked() {
+                                self.selected_baud = baud;
+                                self.custom_baud_str = baud.to_string();
+                            }
+                        }
+
+                        ui.add_space(4.0);
+                        ui.label(RichText::new("Custom:").color(COLOR_TEXT_MUTED).small());
+                        let response = ui.add(
+                            egui::TextEdit::singleline(&mut self.custom_baud_str)
+                                .desired_width(75.0),
+                        );
+                        if response.changed() {
+                            if let Ok(val) = self.custom_baud_str.trim().parse::<u32>() {
+                                self.selected_baud = val;
+                            }
+                        }
+                    });
+
+                    ui.add_space(8.0);
+
+                    // Framing format ComboBox
+                    ui.horizontal(|ui| {
+                        ui.label(RichText::new("Framing:").color(COLOR_TEXT_PRIMARY).strong());
+                        let framing_options = [
+                            "Line-Delimited (\\n)",
+                            "COBS (0x00 framing)",
+                            "Length-Prefixed (u16)",
+                            "Raw Binary Stream",
+                        ];
+                        egui::ComboBox::from_id_salt("welcome_framing_select")
+                            .selected_text(RichText::new(&self.selected_framing).color(COLOR_TEXT_PRIMARY))
+                            .width(240.0)
+                            .show_ui(ui, |ui| {
+                                for option in framing_options {
+                                    let is_selected = self.selected_framing == option;
+                                    if ui.selectable_label(is_selected, option).clicked() {
+                                        self.selected_framing = option.to_string();
+                                    }
+                                }
+                            });
+                    });
+
+                    ui.add_space(12.0);
+
+                    // Action buttons row
+                    ui.horizontal(|ui| {
+                        let connect_btn = egui::Button::new(
+                            RichText::new("🔌 Connect Microcontroller")
+                                .color(Color32::BLACK)
+                                .strong(),
+                        )
+                        .fill(COLOR_SIGNAL_RX);
+
+                        if ui.add(connect_btn).clicked() {
+                            self.pending_action = Some(TabAction::StartHardwareSession);
+                        }
+
+                        let sniff_label = if self.is_sniffing {
+                            "⏳ Probing Candidate Bauds..."
+                        } else {
+                            "🔍 Auto-Detect Baud & Framing"
+                        };
+                        let sniff_btn = egui::Button::new(
+                            RichText::new(sniff_label).color(COLOR_SIGNAL_TX).strong(),
+                        );
+                        if ui.add_enabled(!self.is_sniffing, sniff_btn).clicked() {
+                            if let Some(port) = self.available_ports.get(self.selected_port_idx) {
+                                self.is_sniffing = true;
+                                self.sniff_result = Some("Probing candidate baud rates...".to_string());
+                                let port_name = port.port_name.clone();
+                                let tx = self.sniff_tx.clone();
+                                std::thread::spawn(move || {
+                                    let res = crate::hardware::sniff_port_baud_and_framing(&port_name);
+                                    let _ = tx.send(res);
+                                });
+                            }
+                        }
+                    });
+
+                    if let Some(ref result) = self.sniff_result {
+                        ui.add_space(6.0);
+                        let color = if result.starts_with('✓') {
+                            COLOR_SIGNAL_RX
+                        } else {
+                            COLOR_SIGNAL_TRIGGER
+                        };
+                        ui.label(RichText::new(result).color(color).monospace().small());
+                    }
+                });
+
+            ui.add_space(12.0);
+
+            // Card 2: Simulator & Demos Card
+            egui::Frame::NONE
+                .fill(COLOR_SURFACE_CARD)
+                .stroke(Stroke::new(1.0_f32, COLOR_BORDER_HAIRLINE))
+                .corner_radius(CornerRadius::same(4))
+                .inner_margin(Margin::same(12))
+                .show(ui, |ui| {
+                    ui.label(
+                        RichText::new("SIMULATOR & DEMONSTRATION RIGS")
+                            .color(COLOR_SIGNAL_TRIGGER)
+                            .strong()
+                            .monospace()
+                            .small(),
+                    );
+                    ui.add_space(6.0);
+
+                    if ui
+                        .button(
+                            RichText::new("⚡ Launch IMU Loopback Demo (Simulated HIL)")
+                                .color(COLOR_SIGNAL_TX)
+                                .strong(),
+                        )
+                        .clicked()
+                    {
+                        self.pending_action = Some(TabAction::LoadImuDemo);
+                    }
+
+                    ui.add_space(8.0);
+                    ui.label(
+                        RichText::new("Built-in virtual instruments for hardware-less testing:")
+                            .color(COLOR_TEXT_MUTED)
+                            .small(),
+                    );
+                    ui.label(
+                        RichText::new("• Protocol Dissector Lab: Live binary parsing, payload schema inspection, and packet inspector.")
+                            .color(COLOR_TEXT_PRIMARY)
+                            .small(),
+                    );
+                    ui.label(
+                        RichText::new("• Telemetry Oscilloscope: High-rate multi-channel plotting with real-time hardware trigger logic.")
+                            .color(COLOR_TEXT_PRIMARY)
+                            .small(),
+                    );
+                    ui.label(
+                        RichText::new("• Fault Injection Rig: Controlled bit-error rates (BER), frame drops, and packet jitter.")
+                            .color(COLOR_TEXT_PRIMARY)
+                            .small(),
+                    );
+                });
+
+            ui.add_space(12.0);
+
+            // Card 3: Quick Jump cards
+            egui::Frame::NONE
+                .fill(COLOR_SURFACE_CARD)
+                .stroke(Stroke::new(1.0_f32, COLOR_BORDER_HAIRLINE))
+                .corner_radius(CornerRadius::same(4))
+                .inner_margin(Margin::same(12))
+                .show(ui, |ui| {
+                    ui.label(
+                        RichText::new("QUICK JUMP WORKSPACES")
+                            .color(COLOR_TEXT_PRIMARY)
+                            .strong()
+                            .monospace()
+                            .small(),
+                    );
+                    ui.add_space(6.0);
+
+                    ui.horizontal_wrapped(|ui| {
+                        if ui.button(RichText::new("🔬 Protocol Lab").strong()).clicked() {
+                            self.pending_action = Some(TabAction::SelectPreset("Protocol Lab"));
+                        }
+                        if ui.button(RichText::new("📈 Scope").strong()).clicked() {
+                            self.pending_action = Some(TabAction::SelectPreset("Scope"));
+                        }
+                        if ui.button(RichText::new("🛠 HIL Rig").strong()).clicked() {
+                            self.pending_action = Some(TabAction::SelectPreset("HIL Rig"));
+                        }
+                        if ui.button(RichText::new("📦 Diff & Vault").strong()).clicked() {
+                            self.pending_action = Some(TabAction::SelectPreset("Comprehensive"));
+                        }
+                    });
+                });
+
+            ui.add_space(12.0);
         });
     }
 
@@ -269,6 +535,40 @@ impl BaudForgeTabViewer {
             ui.radio_value(&mut self.tx_hex_mode, false, "ASCII");
             ui.radio_value(&mut self.tx_hex_mode, true, "HEX Bytes");
 
+            if !self.tx_hex_mode {
+                ui.separator();
+                ui.label(RichText::new("EOL:").color(COLOR_TEXT_MUTED));
+                egui::ComboBox::from_id_salt("tx_eol_select")
+                    .selected_text(match self.tx_line_ending {
+                        crate::session::LineEnding::None => "None",
+                        crate::session::LineEnding::Lf => "LF (\\n)",
+                        crate::session::LineEnding::Cr => "CR (\\r)",
+                        crate::session::LineEnding::CrLf => "CRLF (\\r\\n)",
+                    })
+                    .show_ui(ui, |ui| {
+                        ui.selectable_value(
+                            &mut self.tx_line_ending,
+                            crate::session::LineEnding::CrLf,
+                            "CRLF (\\r\\n)",
+                        );
+                        ui.selectable_value(
+                            &mut self.tx_line_ending,
+                            crate::session::LineEnding::Lf,
+                            "LF (\\n)",
+                        );
+                        ui.selectable_value(
+                            &mut self.tx_line_ending,
+                            crate::session::LineEnding::Cr,
+                            "CR (\\r)",
+                        );
+                        ui.selectable_value(
+                            &mut self.tx_line_ending,
+                            crate::session::LineEnding::None,
+                            "None",
+                        );
+                    });
+            }
+
             ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
                 if ui.button("Clear History").clicked() {
                     self.tx_history.clear();
@@ -302,8 +602,35 @@ impl BaudForgeTabViewer {
             let enter_pressed = response.lost_focus() && ui.input(|i| i.key_pressed(egui::Key::Enter));
 
             if ui.button(RichText::new("Send ▶").strong()).clicked() || enter_pressed {
-                if !self.tx_input.trim().is_empty() {
-                    self.tx_history.push(format!("TX -> {}", self.tx_input.trim()));
+                let trimmed = self.tx_input.trim();
+                if !trimmed.is_empty() {
+                    let cmd = if self.tx_hex_mode {
+                        let clean = trimmed.replace("0x", "").replace(',', " ");
+                        let bytes: Result<Vec<u8>, _> = clean
+                            .split_whitespace()
+                            .map(|s| u8::from_str_radix(s, 16))
+                            .collect();
+                        match bytes {
+                            Ok(b) if !b.is_empty() => {
+                                self.tx_history.push(format!("TX [HEX] -> {:02X?}", b));
+                                Some(crate::session::TxCommand::Hex(b))
+                            }
+                            _ => {
+                                self.tx_history.push(format!("TX [ERR] -> Invalid hex payload: {}", trimmed));
+                                None
+                            }
+                        }
+                    } else {
+                        self.tx_history.push(format!("TX -> {}", trimmed));
+                        Some(crate::session::TxCommand::Ascii(
+                            trimmed.to_string(),
+                            self.tx_line_ending,
+                        ))
+                    };
+
+                    if let Some(tx_cmd) = cmd {
+                        self.pending_tx = Some(tx_cmd);
+                    }
                     self.tx_input.clear();
                 }
             }
@@ -312,10 +639,13 @@ impl BaudForgeTabViewer {
         ui.horizontal(|ui| {
             ui.label(RichText::new("Presets:").color(COLOR_TEXT_MUTED).small());
             if ui.small_button("AT+STATUS").clicked() {
-                self.tx_input = "AT+STATUS\r\n".to_string();
+                self.tx_input = "AT+STATUS".to_string();
+            }
+            if ui.small_button("AT+PING").clicked() {
+                self.tx_input = "AT+PING".to_string();
             }
             if ui.small_button("AT+RESET").clicked() {
-                self.tx_input = "AT+RESET\r\n".to_string();
+                self.tx_input = "AT+RESET".to_string();
             }
             if ui.small_button("SYNC_BURST").clicked() {
                 self.tx_input = "BAUD_PING".to_string();

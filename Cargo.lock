@@ -440,8 +440,10 @@ version = "0.8.0"
 dependencies = [
  "bforge-core",
  "bforge-dissect",
+ "bforge-framer",
  "bforge-hal",
  "bforge-storage",
+ "crossbeam-channel",
  "eframe",
  "egui",
  "egui_dock",

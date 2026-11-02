@@ -47,6 +47,8 @@ pub struct BaudForgeApp {
     pub current_preset: &'static str,
     /// Hardware session status.
     pub session_status: SessionStatus,
+    /// Active live session pump controller.
+    pub active_session: Option<crate::session::SessionController>,
     /// Active serial port name.
     pub port_name: String,
     /// Configured baud rate.
@@ -76,6 +78,7 @@ impl BaudForgeApp {
             tab_viewer: BaudForgeTabViewer::default(),
             current_preset: "Default",
             session_status: SessionStatus::Connected,
+            active_session: None,
             port_name: "COM3 (Virtual Loopback)".to_string(),
             baud_rate: 921600,
             framing_format: "COBS+CRC32".to_string(),
@@ -104,12 +107,57 @@ impl BaudForgeApp {
         if let Some(action) = self.tab_viewer.pending_action.take() {
             match action {
                 TabAction::SelectPreset(preset) => self.switch_preset(preset),
-                TabAction::QuickConnect => {
-                    self.session_status = SessionStatus::Connected;
+                TabAction::QuickConnect | TabAction::StartHardwareSession => {
+                    if let Some(mut prev) = self.active_session.take() {
+                        prev.stop();
+                    }
+
+                    let port = self
+                        .tab_viewer
+                        .available_ports
+                        .get(self.tab_viewer.selected_port_idx)
+                        .map(|p| p.port_name.clone())
+                        .unwrap_or_else(|| self.port_name.clone());
+                    let baud = self.tab_viewer.selected_baud;
+                    let framing = self.tab_viewer.selected_framing.clone();
+
+                    match crate::session::SessionController::start_hardware(&port, baud, &framing) {
+                        Ok(session) => {
+                            self.active_session = Some(session);
+                            self.port_name = port;
+                            self.baud_rate = baud;
+                            self.framing_format = framing;
+                            self.session_status = SessionStatus::Connected;
+                        }
+                        Err(err) => {
+                            self.tab_viewer
+                                .serial_lines
+                                .push(format!("[HAL-ERR] {}", err));
+                            self.session_status = SessionStatus::Idle;
+                        }
+                    }
                 }
                 TabAction::LoadImuDemo => {
-                    self.session_status = SessionStatus::Connected;
-                    self.switch_preset("Scope");
+                    if let Some(mut prev) = self.active_session.take() {
+                        prev.stop();
+                    }
+
+                    match crate::session::SessionController::start_imu_demo() {
+                        Ok(session) => {
+                            self.active_session = Some(session);
+                            self.port_name = "DEMO-IMU (Simulated)".to_string();
+                            self.baud_rate = 921600;
+                            self.framing_format = "COBS+CRC32 (IMU)".to_string();
+                            self.session_status = SessionStatus::Connected;
+                            self.switch_preset("Scope");
+                        }
+                        Err(err) => {
+                            self.tab_viewer
+                                .serial_lines
+                                .push(format!("[DEMO-ERR] {}", err));
+                            self.session_status = SessionStatus::Idle;
+                        }
+                    }
                 }
                 TabAction::OpenProtocolLab => {
                     self.switch_preset("Protocol Lab");
@@ -154,6 +202,19 @@ impl BaudForgeApp {
                             .monospace(),
                     );
                     ui.label(RichText::new("v0.9.0").color(COLOR_TEXT_MUTED).small());
+
+                    if self.active_session.is_some() {
+                        ui.add_space(6.0);
+                        if ui
+                            .button(RichText::new("⏹ Disconnect").color(COLOR_SIGNAL_TRIGGER).small().strong())
+                            .clicked()
+                        {
+                            if let Some(mut s) = self.active_session.take() {
+                                s.stop();
+                            }
+                            self.session_status = SessionStatus::Idle;
+                        }
+                    }
 
                     ui.separator();
 
@@ -236,6 +297,15 @@ impl BaudForgeApp {
                             .monospace(),
                     );
 
+                    if self.active_session.is_some() {
+                        if ui.small_button("⏹ Disconnect").clicked() {
+                            if let Some(mut s) = self.active_session.take() {
+                                s.stop();
+                            }
+                            self.session_status = SessionStatus::Idle;
+                        }
+                    }
+
                     ui.separator();
 
                     // Hardware port and baud
@@ -279,6 +349,60 @@ impl eframe::App for BaudForgeApp {
 
         self.handle_tab_actions();
 
+        // 1. Drain incoming live events from session controller
+        let events = self
+            .active_session
+            .as_ref()
+            .map(|s| s.poll_events())
+            .unwrap_or_default();
+
+        let had_events = !events.is_empty();
+
+        for event in events {
+            match event {
+                crate::session::RxEvent::Line(line) => {
+                    self.tab_viewer.serial_lines.push(line);
+                    if self.tab_viewer.serial_lines.len() > 5000 {
+                        let excess = self.tab_viewer.serial_lines.len() - 5000;
+                        self.tab_viewer.serial_lines.drain(0..excess);
+                    }
+                    self.tab_viewer.serial_autoscroll = true;
+                }
+                crate::session::RxEvent::Bytes(bytes) => {
+                    self.tab_viewer.hex_data = bytes;
+                }
+                crate::session::RxEvent::Stats {
+                    rx_bytes,
+                    tx_bytes,
+                    packets_per_sec,
+                } => {
+                    self.rx_bytes = rx_bytes;
+                    self.tx_bytes = tx_bytes;
+                    self.packets_per_sec = packets_per_sec;
+                }
+                crate::session::RxEvent::Connected { port, baud } => {
+                    self.port_name = port;
+                    self.baud_rate = baud;
+                    self.session_status = SessionStatus::Connected;
+                }
+                crate::session::RxEvent::Disconnected(_) => {
+                    self.session_status = SessionStatus::Idle;
+                }
+                crate::session::RxEvent::Error(err) => {
+                    self.tab_viewer
+                        .serial_lines
+                        .push(format!("[ERROR] {}", err));
+                }
+            }
+        }
+
+        // 2. Transmit pending commands requested by user controls
+        if let Some(cmd) = self.tab_viewer.pending_tx.take() {
+            if let Some(ref session) = self.active_session {
+                session.send_tx(cmd);
+            }
+        }
+
         self.render_top_bar(ctx);
         self.render_bottom_bar(ctx);
 
@@ -289,5 +413,10 @@ impl eframe::App for BaudForgeApp {
                     .style(dock_style(ctx))
                     .show_inside(ui, &mut self.tab_viewer);
             });
+
+        // 3. Request continuous repaint while streaming or when events arrive
+        if self.active_session.is_some() || had_events {
+            ctx.request_repaint_after(std::time::Duration::from_millis(16));
+        }
     }
 }

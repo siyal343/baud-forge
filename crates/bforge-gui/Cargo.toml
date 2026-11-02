@@ -8,6 +8,7 @@ repository.workspace = true
 [dependencies]
 bforge-core = { workspace = true }
 bforge-hal = { workspace = true }
+bforge-framer = { workspace = true }
 bforge-storage = { workspace = true }
 bforge-dissect = { workspace = true }
 eframe = { version = "0.31", default-features = false, features = ["default_fonts", "wgpu"] }
@@ -15,6 +16,7 @@ egui = { version = "0.31" }
 egui_dock = { version = "0.16", features = ["serde"] }
 egui_plot = { version = "0.31" }
 serialport = { workspace = true }
+crossbeam-channel = { workspace = true }
 serde = { workspace = true }
 serde_json = { workspace = true }
 toml = { workspace = true }
