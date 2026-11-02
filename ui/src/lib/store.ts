@@ -146,6 +146,7 @@ export function createWorkbenchStore() {
   // Dialog & Modal State
   const [paletteOpen, setPaletteOpen] = createSignal(false)
   const [settingsOpen, setSettingsOpen] = createSignal(false)
+  const [showNewWorkspaceModal, setShowNewWorkspaceModal] = createSignal(false)
 
   // Timeline & Playback
   const [at, setAt] = createSignal<number | null>(null)
@@ -190,9 +191,7 @@ export function createWorkbenchStore() {
   })
 
   const plottedKeys = createMemo(() => {
-    const chosen = plotted().filter((entry) => plotKeys().includes(entry.key))
-    if (chosen.length > 0) return chosen
-    return plotKeys().slice(0, 1).map((key) => ({ key, mode: 'line' as TraceMode }))
+    return plotted().filter((entry) => plotKeys().includes(entry.key))
   })
 
   function plotField(key: string, mode: TraceMode = 'line') {
@@ -691,6 +690,7 @@ export function createWorkbenchStore() {
     diffLoading,
     diffError,
     diffReport,
+    setDiffReport,
     runDiff,
     // UI state
     consoleTab,
@@ -701,6 +701,8 @@ export function createWorkbenchStore() {
     setPaletteOpen,
     settingsOpen,
     setSettingsOpen,
+    showNewWorkspaceModal,
+    setShowNewWorkspaceModal,
     bridge,
     setBridge,
     renderer,

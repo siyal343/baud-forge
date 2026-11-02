@@ -58,16 +58,56 @@ const DEMO_BMS_XML = `<?xml version="1.0" encoding="UTF-8"?>
 
 export function DashboardPanel(props: { store: WorkbenchStore }) {
   const { store } = props
-  const [selectedDashboard, setSelectedDashboard] = createSignal<'motor' | 'bms' | 'custom'>('motor')
-  const [customXml, setCustomXml] = createSignal(DEMO_MOTOR_XML)
+  const [selectedDashboard, setSelectedDashboard] = createSignal<'gallery' | 'motor' | 'bms' | 'custom'>('gallery')
+  const [customXml, setCustomXml] = createSignal('')
   const [isEditing, setIsEditing] = createSignal(false)
 
   const activeXml = createMemo(() => {
     const sel = selectedDashboard()
-    if (sel === 'motor') return DEMO_MOTOR_XML
-    if (sel === 'bms') return DEMO_BMS_XML
+    if (sel === 'gallery') return ''
+    if (sel === 'motor') return customXml() || DEMO_MOTOR_XML
+    if (sel === 'bms') return customXml() || DEMO_BMS_XML
     return customXml()
   })
+
+  async function loadTemplate(type: 'motor' | 'bms') {
+    try {
+      const filename = type === 'motor' ? 'motor-diagnostics.xml' : 'battery-bms.xml'
+      const res = await fetch(`/dashboards/${filename}`)
+      if (res.ok) {
+        const text = await res.text()
+        if (text && text.trim().length > 0) {
+          setCustomXml(text)
+          setSelectedDashboard(type)
+          setIsEditing(false)
+          return
+        }
+      }
+    } catch {
+      // Offline or sandboxed fallback
+    }
+    const fallback = type === 'motor' ? DEMO_MOTOR_XML : DEMO_BMS_XML
+    setCustomXml(fallback)
+    setSelectedDashboard(type)
+    setIsEditing(false)
+  }
+
+  function handleFileUpload(e: Event) {
+    const target = e.currentTarget as HTMLInputElement
+    const file = target.files?.[0]
+    if (!file) return
+    const reader = new FileReader()
+    reader.onload = (event) => {
+      const content = event.target?.result as string
+      if (typeof content === 'string' && content.trim().length > 0) {
+        setCustomXml(content)
+        setSelectedDashboard('custom')
+        setIsEditing(false)
+      }
+    }
+    reader.readAsText(file)
+    target.value = ''
+  }
 
   const dashboardContext = createMemo(() => {
     const rows = store.rawRows()
@@ -103,47 +143,163 @@ export function DashboardPanel(props: { store: WorkbenchStore }) {
           <select
             class="dashboard-select"
             value={selectedDashboard()}
-            onChange={(e) => setSelectedDashboard(e.currentTarget.value as any)}
+            onChange={(e) => {
+              const val = e.currentTarget.value as 'gallery' | 'motor' | 'bms' | 'custom'
+              if (val === 'motor') void loadTemplate('motor')
+              else if (val === 'bms') void loadTemplate('bms')
+              else setSelectedDashboard(val)
+            }}
             aria-label="select dashboard"
           >
+            <option value="gallery">Declarative Template Gallery</option>
             <option value="motor">BLDC Motor Diagnostics</option>
             <option value="bms">High-Voltage Battery BMS</option>
             <option value="custom">Custom XML Dashboard</option>
           </select>
-          <button
-            type="button"
-            class="chip action"
-            onClick={() => setIsEditing(!isEditing())}
-          >
-            {isEditing() ? 'view dashboard' : 'edit xml'}
-          </button>
+          <Show when={activeXml().trim() !== ''}>
+            <button
+              type="button"
+              class="chip action"
+              onClick={() => setIsEditing(!isEditing())}
+            >
+              {isEditing() ? 'view dashboard' : 'edit xml'}
+            </button>
+            <button
+              type="button"
+              class="chip action"
+              onClick={() => {
+                setSelectedDashboard('gallery')
+                setCustomXml('')
+                setIsEditing(false)
+              }}
+              title="Return to Template Gallery"
+            >
+              gallery
+            </button>
+          </Show>
         </div>
       </div>
 
       <Show
-        when={!isEditing()}
+        when={activeXml().trim() !== ''}
         fallback={
-          <div class="dashboard-xml-editor">
-            <textarea
-              class="dashboard-xml-textarea"
-              value={customXml()}
-              onInput={(e) => {
-                setCustomXml(e.currentTarget.value)
-                setSelectedDashboard('custom')
-              }}
-              spellcheck={false}
-              aria-label="dashboard xml source"
-            />
+          <div class="dashboard-zero-state">
+            <div class="dashboard-gallery-card">
+              <div class="gallery-header">
+                <span class="gallery-pill">DECLARATIVE INSTRUMENTATION</span>
+                <h2 class="gallery-title">Declarative XML Dashboards</h2>
+                <p class="gallery-subtitle">
+                  Choose a pre-built instrument template or load your own custom XML definition.
+                </p>
+              </div>
+
+              <div class="template-cards-grid">
+                {/* 1. Motor & ESC Diagnostics */}
+                <div class="template-card">
+                  <div class="template-card-header">
+                    <div class="template-card-icon motor">
+                      <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                        <circle cx="12" cy="12" r="9" />
+                        <path d="M12 12l4-4" />
+                        <path d="M12 6v2" />
+                        <path d="M18 12h-2" />
+                        <path d="M6 12H8" />
+                      </svg>
+                    </div>
+                    <div>
+                      <span class="template-category">Propulsion &amp; Drive</span>
+                      <h3 class="template-title">Motor &amp; ESC Diagnostics</h3>
+                    </div>
+                  </div>
+                  <p class="template-desc">
+                    RPM dial gauge, motor temperature gauge, DC bus voltage, and live phase current chart.
+                  </p>
+                  <button
+                    type="button"
+                    class="btn-template"
+                    onClick={() => void loadTemplate('motor')}
+                  >
+                    Load Motor Diagnostics
+                  </button>
+                </div>
+
+                {/* 2. Battery BMS & Cell Monitor */}
+                <div class="template-card">
+                  <div class="template-card-header">
+                    <div class="template-card-icon bms">
+                      <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                        <rect x="2" y="7" width="18" height="11" rx="2" />
+                        <path d="M22 11v3" />
+                        <path d="M7 11v3" />
+                        <path d="M11 11v3" />
+                        <path d="M15 11v3" />
+                      </svg>
+                    </div>
+                    <div>
+                      <span class="template-category">Energy Storage</span>
+                      <h3 class="template-title">Battery BMS &amp; Cell Monitor</h3>
+                    </div>
+                  </div>
+                  <p class="template-desc">
+                    Pack state-of-charge gauge, 8-cell voltage grid, cell delta bar, and thermal sensors.
+                  </p>
+                  <button
+                    type="button"
+                    class="btn-template"
+                    onClick={() => void loadTemplate('bms')}
+                  >
+                    Load Battery BMS
+                  </button>
+                </div>
+              </div>
+
+              <div class="gallery-footer">
+                <span class="upload-caption">Or load custom instrument XML definition from disk:</span>
+                <label class="btn-upload-label">
+                  <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                    <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4" />
+                    <polyline points="17 8 12 3 7 8" />
+                    <line x1="12" y1="3" x2="12" y2="15" />
+                  </svg>
+                  <span>Select XML File…</span>
+                  <input
+                    type="file"
+                    accept=".xml"
+                    onChange={handleFileUpload}
+                    class="sr-only"
+                    aria-label="Upload XML file"
+                  />
+                </label>
+              </div>
+            </div>
           </div>
         }
       >
-        <div class="dashboard-view-wrapper">
-          <DashboardRenderer
-            xml={activeXml()}
-            context={dashboardContext}
-            onAction={handleAction}
-          />
-        </div>
+        <Show
+          when={!isEditing()}
+          fallback={
+            <div class="dashboard-xml-editor">
+              <textarea
+                class="dashboard-xml-textarea"
+                value={customXml()}
+                onInput={(e) => {
+                  setCustomXml(e.currentTarget.value)
+                  setSelectedDashboard('custom')
+                }}
+                spellcheck={false}
+                aria-label="dashboard xml source"
+              />
+            </div>
+          }
+        >
+          <div class="dashboard-view-wrapper">
+            <DashboardRenderer
+              xml={activeXml()}
+              context={dashboardContext}
+              onAction={handleAction}
+            />
+          </div>
+        </Show>
       </Show>
     </div>
   )

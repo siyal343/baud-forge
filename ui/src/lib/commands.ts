@@ -15,6 +15,13 @@ export interface CommandDef {
 
 export const COMMAND_DEFINITIONS: CommandDef[] = [
   {
+    id: 'workspace.new',
+    label: 'Create New Workspace',
+    category: 'General',
+    defaultKey: 'Ctrl+N',
+    description: 'Open visual New Workspace Wizard',
+  },
+  {
     id: 'palette.open',
     label: 'Open Command Palette',
     category: 'Navigation',

@@ -147,7 +147,7 @@
       }
 
       main {
-        width: min(720px, 92vw);
+        width: min(840px, 94vw);
         padding: 32px 0 24px;
       }
 
@@ -195,10 +195,151 @@
         padding: 20px;
       }
 
-      /* 3-Column Action Tiles */
+      /* Section Headers */
+      .section-header-box {
+        margin: 18px 0 10px;
+        display: flex;
+        flex-direction: column;
+        gap: 2px;
+      }
+
+      .section-title-line {
+        font-family: var(--font-sans);
+        font-size: 11px;
+        font-weight: 700;
+        letter-spacing: 0.1em;
+        text-transform: uppercase;
+        color: var(--text-primary);
+        display: flex;
+        align-items: center;
+        gap: 8px;
+      }
+
+      .section-subtitle-line {
+        font-size: 11px;
+        color: var(--text-muted);
+        line-height: 1.4;
+      }
+
+      /* 5-Tile Guided Labs Grid (3 on top row, 2 on bottom row) */
+      .lab-grid {
+        display: grid;
+        grid-template-columns: repeat(6, 1fr);
+        gap: 12px;
+        margin-bottom: 20px;
+      }
+
+      .lab-card {
+        background: var(--bg-surface-2);
+        border: 1px solid var(--border-hairline);
+        border-radius: 8px;
+        padding: 16px;
+        display: flex;
+        flex-direction: column;
+        justify-content: space-between;
+        gap: 14px;
+        cursor: pointer;
+        transition: transform 140ms var(--ease-out), background-color 140ms ease, border-color 140ms ease, box-shadow 140ms ease;
+      }
+
+      .lab-card:nth-child(1),
+      .lab-card:nth-child(2),
+      .lab-card:nth-child(3) {
+        grid-column: span 2;
+      }
+
+      .lab-card:nth-child(4),
+      .lab-card:nth-child(5) {
+        grid-column: span 3;
+      }
+
+      .lab-card:hover {
+        background: var(--bg-surface-3);
+        border-color: var(--border-strong);
+        box-shadow: 0 4px 18px rgba(0, 0, 0, 0.4);
+      }
+
+      .lab-card:active {
+        transform: scale(0.985);
+      }
+
+      .lab-card-top {
+        display: flex;
+        flex-direction: column;
+        gap: 8px;
+      }
+
+      .lab-card-header {
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+      }
+
+      .lab-tag {
+        font-family: var(--font-mono);
+        font-size: 9px;
+        font-weight: 600;
+        letter-spacing: 0.08em;
+        text-transform: uppercase;
+        color: var(--sig-tx);
+        background: var(--sig-tx-dim);
+        border: 1px solid rgba(6, 182, 212, 0.25);
+        border-radius: 3px;
+        padding: 2px 6px;
+      }
+
+      .lab-title {
+        font-size: 13px;
+        font-weight: 600;
+        color: var(--text-primary);
+        margin-top: 2px;
+      }
+
+      .lab-desc {
+        font-size: 11px;
+        color: var(--text-muted);
+        line-height: 1.45;
+      }
+
+      .lab-tile-btn {
+        width: 100%;
+        height: 30px;
+        background: var(--bg-surface-1);
+        border: 1px solid var(--border-hairline);
+        border-radius: 6px;
+        color: var(--text-primary);
+        font-family: var(--font-sans);
+        font-size: 11px;
+        font-weight: 600;
+        letter-spacing: 0.02em;
+        display: inline-flex;
+        align-items: center;
+        justify-content: center;
+        gap: 6px;
+        cursor: pointer;
+        transition: transform 140ms var(--ease-out), background-color 120ms ease, border-color 120ms ease, color 120ms ease, box-shadow 120ms ease;
+      }
+
+      .lab-card:hover .lab-tile-btn {
+        border-color: rgba(6, 182, 212, 0.35);
+        color: var(--sig-tx);
+      }
+
+      .lab-tile-btn:hover {
+        background: var(--sig-tx) !important;
+        color: #031117 !important;
+        border-color: var(--sig-tx) !important;
+        box-shadow: 0 0 12px rgba(6, 182, 212, 0.45);
+      }
+
+      .lab-tile-btn:active {
+        transform: scale(0.97);
+      }
+
+      /* 2-Column Action Tiles */
       .action-grid {
         display: grid;
-        grid-template-columns: repeat(3, 1fr);
+        grid-template-columns: repeat(2, 1fr);
         gap: 12px;
         margin-bottom: 16px;
       }
@@ -637,6 +778,22 @@
         box-shadow: none;
       }
 
+      @media (max-width: 768px) {
+        .lab-grid {
+          grid-template-columns: 1fr;
+        }
+        .lab-card:nth-child(1),
+        .lab-card:nth-child(2),
+        .lab-card:nth-child(3),
+        .lab-card:nth-child(4),
+        .lab-card:nth-child(5) {
+          grid-column: span 1;
+        }
+        .action-grid {
+          grid-template-columns: 1fr;
+        }
+      }
+
       @media (max-width: 640px) {
         .quick-grid {
           grid-template-columns: 1fr;
@@ -649,6 +806,8 @@
           animation: none;
         }
         .action-tile,
+        .lab-card,
+        .lab-tile-btn,
         .btn-subtle,
         .btn-primary,
         .btn-icon,
@@ -656,6 +815,8 @@
           transition: background-color 120ms ease, border-color 120ms ease;
         }
         .action-tile:active,
+        .lab-card:active,
+        .lab-tile-btn:active,
         .btn-subtle:active,
         .btn-primary:active,
         .btn-icon:active,
@@ -768,6 +929,118 @@
           </div>
         </div>
 
+        <!-- Guided Workbench Labs & Templates -->
+        <div class="section-header-box">
+          <div class="section-title-line">
+            <span>EXPLORE WORKBENCHES &amp; LABS</span>
+          </div>
+          <div class="section-subtitle-line">1-click interactive environments with simulated hardware</div>
+        </div>
+
+        <div class="lab-grid">
+          <!-- 1. Protocol Dissector Lab -->
+          <div class="lab-card">
+            <div class="lab-card-top">
+              <div class="lab-card-header">
+                <div class="tile-icon-box" title="Protocol Dissector Lab">
+                  <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round">
+                    <path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/>
+                    <polyline points="14 2 14 8 20 8"/>
+                    <line x1="8" y1="13" x2="16" y2="13"/>
+                    <line x1="8" y1="17" x2="13" y2="17"/>
+                    <circle cx="17" cy="17" r="1.5"/>
+                  </svg>
+                </div>
+                <span class="lab-tag">DECODER</span>
+              </div>
+              <div class="lab-title">Protocol Dissector Lab</div>
+              <div class="lab-desc">Decode structured binary packets (C header structs, MAVLink, Kaitai) with live 16-byte hex inspector and field color bands.</div>
+            </div>
+            <button type="button" class="lab-tile-btn" data-preset="protocol">Launch Protocol Lab</button>
+          </div>
+
+          <!-- 2. Telemetry & Oscilloscope -->
+          <div class="lab-card">
+            <div class="lab-card-top">
+              <div class="lab-card-header">
+                <div class="tile-icon-box" title="Telemetry & Live Scope">
+                  <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round">
+                    <polyline points="22 12 18 12 15 21 9 3 6 12 2 12"/>
+                  </svg>
+                </div>
+                <span class="lab-tag">SCOPE</span>
+              </div>
+              <div class="lab-title">Telemetry &amp; Live Scope</div>
+              <div class="lab-desc">Extract real-time numeric timeseries from decoded packets into multi-channel oscilloscope waveform plots.</div>
+            </div>
+            <button type="button" class="lab-tile-btn" data-preset="telemetry">Launch Telemetry Scope</button>
+          </div>
+
+          <!-- 3. Declarative XML Dashboards -->
+          <div class="lab-card">
+            <div class="lab-card-top">
+              <div class="lab-card-header">
+                <div class="tile-icon-box" title="Interactive XML Dashboards">
+                  <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round">
+                    <circle cx="12" cy="12" r="9"/>
+                    <polyline points="12 12 16 8"/>
+                    <circle cx="12" cy="12" r="1.5"/>
+                  </svg>
+                </div>
+                <span class="lab-tag">DASHBOARD</span>
+              </div>
+              <div class="lab-title">Interactive XML Dashboards</div>
+              <div class="lab-desc">Monitor live instruments (circular gauges, strip charts, status LEDs, switches) rendered from declarative XML schemas.</div>
+            </div>
+            <button type="button" class="lab-tile-btn" data-preset="dashboards">Launch Dashboard Lab</button>
+          </div>
+
+          <!-- 4. HIL Bridge & Fault Rig -->
+          <div class="lab-card">
+            <div class="lab-card-top">
+              <div class="lab-card-header">
+                <div class="tile-icon-box" title="HIL Bridge & Fault Injection">
+                  <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round">
+                    <polygon points="13 2 3 14 12 14 11 22 21 10 12 10 13 2"/>
+                  </svg>
+                </div>
+                <span class="lab-tag">HIL &amp; FAULT</span>
+              </div>
+              <div class="lab-title">HIL Bridge &amp; Fault Injection</div>
+              <div class="lab-desc">Dual-port forwarding bus (OBC ⇄ EPS) with real-time fault injection: bit flips, corrupt CRC, packet drops, and jitter.</div>
+            </div>
+            <button type="button" class="lab-tile-btn" data-preset="fault">Launch HIL Bridge Lab</button>
+          </div>
+
+          <!-- 5. Session Diff & Regression -->
+          <div class="lab-card">
+            <div class="lab-card-top">
+              <div class="lab-card-header">
+                <div class="tile-icon-box" title="Session Diff & Golden Run">
+                  <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round">
+                    <circle cx="18" cy="18" r="3"/>
+                    <circle cx="6" cy="6" r="3"/>
+                    <path d="M13 6h3a2 2 0 0 1 2 2v7"/>
+                    <line x1="6" y1="9" x2="6" y2="21"/>
+                  </svg>
+                </div>
+                <span class="lab-tag">DIFF &amp; RUN</span>
+              </div>
+              <div class="lab-title">Session Diff &amp; Golden Run</div>
+              <div class="lab-desc">Semantic comparison between two recorded sessions to detect timing drift, dropped frames, and divergent fields.</div>
+            </div>
+            <button type="button" class="lab-tile-btn" data-preset="diff">Launch Session Diff</button>
+          </div>
+        </div>
+
+        <!-- Project Actions -->
+        <div class="section-header-box" style="margin-top: 10px;">
+          <div class="section-title-line">
+            <span>PROJECT ACTIONS</span>
+          </div>
+          <div class="section-subtitle-line">Load local workspace configurations or inspect recorded session vaults</div>
+        </div>
+
         <div class="action-grid">
           <button id="open" type="button" class="action-tile">
             <div class="tile-icon-box">
@@ -778,21 +1051,8 @@
               </svg>
             </div>
             <div class="tile-content">
-              <div class="tile-title">Open Workspace</div>
+              <div class="tile-title">Open Workspace (.bforge.toml)</div>
               <div class="tile-desc">Load a .bforge.toml configuration</div>
-            </div>
-          </button>
-
-          <button id="demo" type="button" class="action-tile">
-            <div class="tile-icon-box">
-              <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round">
-                <rect x="2" y="2" width="20" height="20" rx="3"/>
-                <path d="m10 8 6 4-6 4V8z"/>
-              </svg>
-            </div>
-            <div class="tile-content">
-              <div class="tile-title">Launch Live Demo</div>
-              <div class="tile-desc">Run virtual dual-port HIL bus</div>
             </div>
           </button>
 
@@ -806,10 +1066,12 @@
               </svg>
             </div>
             <div class="tile-content">
-              <div class="tile-title">Inspect Vault</div>
+              <div class="tile-title">Review Recorded Vault (.bflog)</div>
               <div class="tile-desc">Replay and dissect .bflog file</div>
             </div>
           </button>
+
+          <button id="demo" type="button" style="display: none;" aria-hidden="true"></button>
         </div>
 
         <div class="vault-bar">
@@ -988,6 +1250,66 @@
 
       let chosenVault = null;
 
+      const PRESET_MAPPING = {
+        protocol: 'Protocol Debug',
+        telemetry: 'Telemetry & Oscilloscope',
+        dashboards: 'Dashboards',
+        fault: 'Bring-up',
+        diff: 'Session Diff'
+      };
+
+      function resolvePreset(presetOrKey) {
+        return PRESET_MAPPING[presetOrKey] || presetOrKey;
+      }
+
+      async function startDemoWithPreset(rawPreset) {
+        const presetName = resolvePreset(rawPreset);
+        say('loading lab preset: ' + presetName + ' …');
+        let path = 'examples/loopback-demo.bforge.toml';
+        const invoker = invoke || window.__TAURI_INTERNALS__?.invoke;
+
+        if (invoker) {
+          try {
+            const demoPath = await invoker('demo_workspace');
+            if (demoPath) {
+              path = demoPath;
+            }
+          } catch (err) {
+            console.warn('demo_workspace lookup failed, using fallback:', err);
+          }
+
+          try {
+            say('starting ' + path + ' …');
+            const base = await invoker('start_workspace', { path, vault: chosenVault });
+            say('engine on ' + base, 'ok');
+            const url = 'index.html?api=' + encodeURIComponent(base) + '&preset=' + encodeURIComponent(presetName);
+            window.location.href = url;
+          } catch (error) {
+            say(String(error.message || error), 'err');
+          }
+        } else {
+          // Web preview / fallback mode
+          const url = 'index.html?preset=' + encodeURIComponent(presetName);
+          window.location.href = url;
+        }
+      }
+
+      document.querySelectorAll('.lab-tile-btn').forEach((btn) => {
+        btn.onclick = (e) => {
+          e.stopPropagation();
+          const preset = btn.getAttribute('data-preset');
+          startDemoWithPreset(preset);
+        };
+      });
+
+      document.querySelectorAll('.lab-card').forEach((card) => {
+        card.onclick = (e) => {
+          if (e.target.closest('.lab-tile-btn')) return;
+          const btn = card.querySelector('.lab-tile-btn');
+          if (btn) btn.click();
+        };
+      });
+
       function showVault() {
         const label = document.getElementById('vault');
         label.textContent = chosenVault ? chosenVault : 'records to a temporary file';
@@ -995,7 +1317,7 @@
         document.getElementById('clearVault').disabled = !chosenVault;
       }
 
-      async function start(path) {
+      async function start(path, preset) {
         if (!invoke) {
           say('This page needs the desktop application.', 'err');
           return;
@@ -1005,7 +1327,11 @@
           const base = await invoke('start_workspace', { path, vault: chosenVault });
           say('engine on ' + base, 'ok');
           // The workbench is bundled with the app; the engine is only its API.
-          window.location.replace('index.html?api=' + encodeURIComponent(base));
+          let dest = 'index.html?api=' + encodeURIComponent(base);
+          if (preset) {
+            dest += '&preset=' + encodeURIComponent(preset);
+          }
+          window.location.href = dest;
         } catch (error) {
           say(String(error), 'err');
         }
@@ -1055,18 +1381,11 @@
         }
       };
 
-      demoButton.onclick = async () => {
-        if (!invoke) {
-          say('This page needs the desktop application.', 'err');
-          return;
-        }
-        try {
-          const path = await invoke('demo_workspace');
-          if (path) await start(path);
-        } catch (error) {
-          say(String(error), 'err');
-        }
-      };
+      if (demoButton) {
+        demoButton.onclick = async () => {
+          startDemoWithPreset('Bring-up');
+        };
+      }
 
       document.getElementById('pickVault').onclick = async () => {
         try {

@@ -1,0 +1,58 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<bforge-dashboard title="High-Voltage Battery BMS Monitor" version="1.0" refresh-ms="100"
+                  xmlns="http://baudforge.dev/schema/dashboard/v1"
+                  xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+                  xsi:schemaLocation="http://baudforge.dev/schema/dashboard/v1 ../schemas/bforge-dashboard-v1.xsd">
+  <grid columns="2" gap="14">
+    <!-- State of Charge & Pack Level -->
+    <card title="Battery Pack State">
+      <stack direction="horizontal" gap="12">
+        <gauge source="fields.soc" min="0" max="100" unit="%" label="State of Charge">
+          <zones low="20" high="95" warn-color="#f59e0b" fault-color="#f43f5e" />
+        </gauge>
+        <stack direction="vertical" gap="8">
+          <numeric-display source="fields.pack_voltage" label="Pack Voltage" unit="V" precision="2" />
+          <numeric-display source="fields.pack_current" label="Pack Current" unit="A" precision="2" />
+        </stack>
+      </stack>
+    </card>
+
+    <!-- Cell Balance Status Indicators -->
+    <card title="Cell Balancing Matrix">
+      <stack direction="vertical" gap="10">
+        <stack direction="horizontal" gap="12">
+          <led source="fields.cell1_bal" label="Cell 1 Bal" on-color="#10b981" pulse="true" />
+          <led source="fields.cell2_bal" label="Cell 2 Bal" on-color="#10b981" pulse="true" />
+          <led source="fields.cell3_bal" label="Cell 3 Bal" on-color="#10b981" pulse="true" />
+          <led source="fields.cell4_bal" label="Cell 4 Bal" on-color="#10b981" pulse="true" />
+        </stack>
+        <stack direction="horizontal" gap="12">
+          <led source="fields.cell5_bal" label="Cell 5 Bal" on-color="#10b981" pulse="true" />
+          <led source="fields.cell6_bal" label="Cell 6 Bal" on-color="#10b981" pulse="true" />
+          <led source="fields.cell7_bal" label="Cell 7 Bal" on-color="#10b981" pulse="true" />
+          <led source="fields.cell8_bal" label="Cell 8 Bal" on-color="#10b981" pulse="true" />
+        </stack>
+        <numeric-display source="max(fields.cell1_v, fields.cell2_v) - min(fields.cell1_v, fields.cell2_v)" label="Cell Delta" unit="mV" precision="3" />
+      </stack>
+    </card>
+
+    <!-- Voltage & Current Dynamics -->
+    <card title="Transient Pack Current">
+      <chart source="fields.pack_current" min="-30" max="30" color="#10b981" height="140" duration-ms="10000" />
+    </card>
+
+    <!-- Charger Contactor Controls -->
+    <card title="BMS Contactor &amp; Charger Control">
+      <stack direction="vertical" gap="14">
+        <stack direction="horizontal" gap="16">
+          <switch target="charger_enable" label="Main Charger Contactor" on-value="true" off-value="false" />
+          <led source="fields.precharge_done" label="Precharge OK" on-color="#06b6d4" />
+        </stack>
+        <stack direction="horizontal" gap="12">
+          <slider target="charge_current_limit" min="1" max="32" step="1" label="Charge Limit (A)" />
+          <button label="DISENGAGE CONTACTOR" command="bms_disconnect" variant="danger" />
+        </stack>
+      </stack>
+    </card>
+  </grid>
+</bforge-dashboard>

@@ -37,6 +37,7 @@ export const DEFAULT_COLUMNS: ColumnSetting[] = [
 ]
 
 export const DEFAULT_KEYBINDINGS: Record<string, string> = {
+  'workspace.new': 'Ctrl+N',
   'palette.open': 'Ctrl+K',
   'workspace.save': 'Ctrl+S',
   'filter.focus': '/',

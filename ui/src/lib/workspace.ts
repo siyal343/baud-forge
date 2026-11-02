@@ -8,6 +8,30 @@ export interface FramingModeDef {
   description: string
 }
 
+export interface WizardPortInput {
+  id: string
+  transport?: 'serial' | 'tcp-client' | 'tcp-server' | 'udp' | string
+  device?: string
+  address?: string
+  baud_rate?: number
+  framing?: string
+  checksum?: string | null
+  dissector_file?: string
+  dissector_struct?: string
+}
+
+export interface WizardBridgeInput {
+  id: string
+  a: string
+  b: string
+  forward?: boolean
+}
+
+export interface WorkspaceSynthesizeOptions {
+  name?: string
+  version?: string
+}
+
 export const FRAMING_MODES: FramingModeDef[] = [
   {
     id: 'delimiter',
@@ -44,33 +68,41 @@ export const FRAMING_MODES: FramingModeDef[] = [
 /**
  * Generate a client-side synthesized .bforge.toml string based on ports and bridges.
  */
-export function synthesizeWorkspaceToml(ports: PortView[], bridges: BridgeView[] = []): string {
+export function synthesizeWorkspaceToml(
+  ports: (PortView | WizardPortInput)[],
+  bridges: (BridgeView | WizardBridgeInput)[] = [],
+  options?: WorkspaceSynthesizeOptions,
+): string {
+  const wsName = options?.name?.trim() || 'baudforge-workspace'
+  const wsVersion = options?.version || '1.0'
   const lines: string[] = [
     '# BaudForge Precision Instrument Workspace Configuration',
     '# Synthesized from active UI session state',
     '[workspace]',
-    'name = "baudforge-workspace"',
-    'version = "1.0"',
+    `name = ${JSON.stringify(wsName)}`,
+    `version = ${JSON.stringify(wsVersion)}`,
     '',
   ]
 
   for (const port of ports) {
+    const p = port as WizardPortInput
     lines.push('[[ports]]')
-    lines.push(`id = ${JSON.stringify(port.id)}`)
-    if (port.device) {
-      if (port.device.includes(':')) {
-        lines.push('transport = "tcp-client"')
-        lines.push(`address = ${JSON.stringify(port.device)}`)
-      } else {
-        lines.push(`device_path = ${JSON.stringify(port.device)}`)
-      }
-    } else {
-      lines.push(`device_path = ${JSON.stringify(port.id)}`)
-    }
-    lines.push(`baud_rate = ${port.baud_rate || 115200}`)
+    lines.push(`id = ${JSON.stringify(p.id)}`)
 
-    const mode = (port.framing || 'cobs').toLowerCase().replace(/-/g, '_')
-    const crcPart = port.checksum ? `, crc = ${JSON.stringify(port.checksum)}` : ''
+    const transport = p.transport || (p.device && p.device.includes(':') ? 'tcp-client' : 'serial')
+    if (transport === 'serial') {
+      const dev = p.device || p.id
+      lines.push(`device_path = ${JSON.stringify(dev)}`)
+    } else {
+      lines.push(`transport = ${JSON.stringify(transport)}`)
+      const addr = p.address || p.device || '127.0.0.1:9100'
+      lines.push(`address = ${JSON.stringify(addr)}`)
+    }
+
+    lines.push(`baud_rate = ${p.baud_rate || 115200}`)
+
+    const mode = (p.framing || 'cobs').toLowerCase().replace(/-/g, '_')
+    const crcPart = p.checksum ? `, crc = ${JSON.stringify(p.checksum)}` : ''
 
     if (mode === 'delimiter') {
       lines.push(`framing = { mode = "delimiter", delimiter = 10${crcPart} }`)
@@ -85,6 +117,13 @@ export function synthesizeWorkspaceToml(ports: PortView[], bridges: BridgeView[]
     } else {
       lines.push(`framing = { mode = "cobs"${crcPart} }`)
     }
+
+    if (p.dissector_file && p.dissector_file.trim()) {
+      const dFile = p.dissector_file.trim()
+      const dStruct = p.dissector_struct?.trim() ? `, root_struct = ${JSON.stringify(p.dissector_struct.trim())}` : ''
+      lines.push(`dissector = { type = "c_header", file = ${JSON.stringify(dFile)}${dStruct} }`)
+    }
+
     lines.push('')
   }
 

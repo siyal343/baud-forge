@@ -3,8 +3,10 @@ import { WindowControls } from './components/WindowControls'
 import { CommandPalette } from './components/CommandPalette'
 import type { CommandAction } from './components/CommandPalette'
 import { SettingsModal } from './components/SettingsModal'
+import { NewWorkspaceModal } from './components/NewWorkspaceModal'
+import { HelpModal } from './components/HelpModal'
 import { DockContainer } from './components/dock/DockContainer'
-import { BUILTIN_PANELS, getDefaultLayout } from './lib/dock/presets'
+import { BUILTIN_PANELS, getDefaultLayout, normalizePresetName } from './lib/dock/presets'
 import type { DockNode } from './lib/dock/types'
 import { loadSettings, saveSettings } from './lib/settings'
 import { initCommandRouter, registerCommandHandler } from './lib/commands'
@@ -30,14 +32,17 @@ export default function App() {
 
   // Layout Management
   const initialSettings = loadSettings()
-  const initialPreset = initialSettings.activePreset || 'Bring-up'
+  const urlParams = new URLSearchParams(typeof location !== 'undefined' ? location.search : '')
+  const urlPreset = urlParams.get('preset')
+  const initialPreset = urlPreset ? normalizePresetName(urlPreset) : (initialSettings.activePreset || 'Bring-up')
   const initialTree =
-    initialPreset === 'Custom' && initialSettings.customPresets?.Custom
+    !urlPreset && initialPreset === 'Custom' && initialSettings.customPresets?.Custom
       ? (initialSettings.customPresets.Custom as DockNode)
       : getDefaultLayout(initialPreset)
 
   const [dockLayout, setDockLayout] = createSignal<DockNode>(initialTree)
   const [activePreset, setActivePreset] = createSignal<string>(initialPreset)
+  const [showHelp, setShowHelp] = createSignal(false)
 
   function applyPreset(name: string) {
     const nextTree = getDefaultLayout(name)
@@ -85,8 +90,7 @@ export default function App() {
   }
 
   // Popout Standalone View
-  const params = new URLSearchParams(typeof location !== 'undefined' ? location.search : '')
-  const popoutTarget = params.get('popout')
+  const popoutTarget = urlParams.get('popout')
   if (popoutTarget) {
     return (
       <div class="popout-standalone">
@@ -111,6 +115,7 @@ export default function App() {
       cleanupRouter,
       registerCommandHandler('palette.open', () => store.setPaletteOpen(true)),
       registerCommandHandler('settings.open', () => store.setSettingsOpen(true)),
+      registerCommandHandler('workspace.new', () => store.setShowNewWorkspaceModal(true)),
       registerCommandHandler('workspace.save', () => void store.saveWorkspace()),
       registerCommandHandler('dvr.toggle_play', () => store.togglePlay()),
       registerCommandHandler('dvr.snap_live', () => store.snapLive()),
@@ -118,12 +123,46 @@ export default function App() {
       registerCommandHandler('preset.bringup', () => applyPreset('Bring-up')),
       registerCommandHandler('preset.debug', () => applyPreset('Protocol Debug')),
       registerCommandHandler('preset.telemetry', () => applyPreset('Telemetry & Oscilloscope')),
+      registerCommandHandler('preset.dashboards', () => applyPreset('Dashboards')),
+      registerCommandHandler('preset.hil', () => applyPreset('HIL & Fault Rig')),
+      registerCommandHandler('preset.diff', () => applyPreset('Session Diff')),
+      registerCommandHandler('help.open', () => setShowHelp(true)),
     ]
 
     const onKeyDown = (e: KeyboardEvent) => {
+      const target = e.target as HTMLElement | null
+      const isInput = target && (target.tagName === 'INPUT' || target.tagName === 'TEXTAREA' || target.isContentEditable)
+
       if ((e.ctrlKey || e.metaKey) && (e.key === 's' || e.key === 'S')) {
         e.preventDefault()
         void store.saveWorkspace()
+        return
+      }
+      if ((e.ctrlKey || e.metaKey) && (e.key === 'n' || e.key === 'N')) {
+        e.preventDefault()
+        store.setShowNewWorkspaceModal(true)
+        return
+      }
+      if (((e.ctrlKey || e.metaKey) && (e.key === 'h' || e.key === 'H')) || e.key === 'F1') {
+        e.preventDefault()
+        setShowHelp((prev) => !prev)
+        return
+      }
+      if ((e.ctrlKey || e.metaKey || e.altKey) && !isInput) {
+        const presets = [
+          'Bring-up',
+          'Protocol Debug',
+          'Telemetry & Oscilloscope',
+          'Dashboards',
+          'HIL & Fault Rig',
+          'Session Diff',
+        ]
+        const num = parseInt(e.key, 10)
+        if (num >= 1 && num <= 6) {
+          e.preventDefault()
+          applyPreset(presets[num - 1])
+          return
+        }
       }
     }
     window.addEventListener('keydown', onKeyDown)
@@ -136,6 +175,20 @@ export default function App() {
 
   // Command Palette Actions
   const paletteActions = createMemo<CommandAction[]>(() => [
+    {
+      id: 'open-help',
+      label: 'Open Workbench Guide & Quick Reference',
+      category: 'General',
+      shortcut: 'Ctrl+H / F1',
+      run: () => setShowHelp(true),
+    },
+    {
+      id: 'new-workspace',
+      label: 'Create New Workspace (Visual Wizard)',
+      category: 'General',
+      shortcut: 'Ctrl+N',
+      run: () => store.setShowNewWorkspaceModal(true),
+    },
     {
       id: 'open-settings',
       label: 'Open Workbench Settings & Appearance',
@@ -154,28 +207,49 @@ export default function App() {
       id: 'preset-bringup',
       label: 'Layout Preset: Hardware Bring-up',
       category: 'Layout',
-      shortcut: 'Alt+1',
+      shortcut: 'Ctrl+1',
       run: () => applyPreset('Bring-up'),
     },
     {
       id: 'preset-debug',
       label: 'Layout Preset: Protocol Debug',
       category: 'Layout',
-      shortcut: 'Alt+2',
+      shortcut: 'Ctrl+2',
       run: () => applyPreset('Protocol Debug'),
     },
     {
       id: 'preset-telemetry',
       label: 'Layout Preset: Telemetry & Oscilloscope',
       category: 'Layout',
-      shortcut: 'Alt+3',
+      shortcut: 'Ctrl+3',
       run: () => applyPreset('Telemetry & Oscilloscope'),
+    },
+    {
+      id: 'preset-dashboards',
+      label: 'Layout Preset: Interactive Dashboards',
+      category: 'Layout',
+      shortcut: 'Ctrl+4',
+      run: () => applyPreset('Dashboards'),
+    },
+    {
+      id: 'preset-hil',
+      label: 'Layout Preset: HIL & Fault Rig',
+      category: 'Layout',
+      shortcut: 'Ctrl+5',
+      run: () => applyPreset('HIL & Fault Rig'),
+    },
+    {
+      id: 'preset-diff',
+      label: 'Layout Preset: Session Diff',
+      category: 'Layout',
+      shortcut: 'Ctrl+6',
+      run: () => applyPreset('Session Diff'),
     },
     {
       id: 'preset-minimal',
       label: 'Layout Preset: Minimal Stream',
       category: 'Layout',
-      shortcut: 'Alt+4',
+      shortcut: 'Alt+M',
       run: () => applyPreset('Minimal Stream'),
     },
     {
@@ -297,17 +371,28 @@ export default function App() {
               class="chip action preset-selector"
               value={activePreset()}
               onChange={(e) => applyPreset(e.currentTarget.value)}
-              title="Layout Preset"
+              title="Layout Preset (Ctrl+1..6)"
               aria-label="select layout preset"
             >
-              <option value="Bring-up">Bring-up</option>
-              <option value="Protocol Debug">Protocol Debug</option>
-              <option value="Telemetry & Oscilloscope">Telemetry</option>
-              <option value="Minimal Stream">Minimal</option>
+              <option value="Bring-up">🔌 Bring-up</option>
+              <option value="Protocol Debug">🔬 Protocol Debug</option>
+              <option value="Telemetry & Oscilloscope">📊 Telemetry &amp; Oscilloscope</option>
+              <option value="Dashboards">🎛️ Dashboards</option>
+              <option value="HIL & Fault Rig">⚡ HIL &amp; Fault Rig</option>
+              <option value="Session Diff">⚖️ Session Diff</option>
+              <option value="Minimal Stream">Minimal Stream</option>
               <option value="Custom" disabled>Custom</option>
             </select>
           </div>
 
+          <button
+            type="button"
+            class="tb-btn"
+            title="Create New Workspace (Ctrl+N)"
+            onClick={() => store.setShowNewWorkspaceModal(true)}
+          >
+            + New Workspace
+          </button>
           <button
             type="button"
             class="tb-btn"
@@ -382,6 +467,14 @@ export default function App() {
           >
             ⚙ Settings
           </button>
+          <button
+            type="button"
+            class="tb-btn tb-icon-btn"
+            title="Help & Quick Reference (Ctrl+H / F1)"
+            onClick={() => setShowHelp(true)}
+          >
+            ?
+          </button>
           <select
             class="chip action export"
             disabled={store.exporting() || !store.session()}
@@ -433,6 +526,9 @@ export default function App() {
         <span class="shortcut-hint" onClick={() => store.setSettingsOpen(true)} title="open settings dialog (Ctrl+,)">
           ⚙ Ctrl+,
         </span>
+        <span class="shortcut-hint" onClick={() => setShowHelp(true)} title="open help & reference (Ctrl+H / F1)">
+          ? F1
+        </span>
       </footer>
 
       {/* Command Palette Modal */}
@@ -446,6 +542,19 @@ export default function App() {
       <SettingsModal
         open={store.settingsOpen()}
         onClose={() => store.setSettingsOpen(false)}
+      />
+
+      {/* New Workspace Wizard Modal */}
+      <NewWorkspaceModal
+        open={store.showNewWorkspaceModal()}
+        onClose={() => store.setShowNewWorkspaceModal(false)}
+      />
+
+      {/* Help & Cheatsheet Modal */}
+      <HelpModal
+        open={showHelp()}
+        onClose={() => setShowHelp(false)}
+        onSelectPreset={(presetName) => applyPreset(presetName)}
       />
     </div>
   )

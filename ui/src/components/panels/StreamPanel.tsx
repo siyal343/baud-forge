@@ -39,6 +39,11 @@ export function StreamPanel(props: { store: WorkbenchStore }) {
     Math.max(0, (totalRows() - endIndex()) * getRowHeight()),
   )
 
+  const isRawStream = createMemo(() => {
+    const rows = store.allRows()
+    return rows.length > 0 && !rows.some((row) => row.fields && row.fields.length > 0)
+  })
+
   function onViewportScroll(event: Event) {
     const el = event.currentTarget as HTMLDivElement
     store.setScrollTop(el.scrollTop)
@@ -220,6 +225,25 @@ export function StreamPanel(props: { store: WorkbenchStore }) {
           </button>
         </div>
       </div>
+
+      <Show when={isRawStream()}>
+        <div class="stream-raw-banner">
+          <div class="banner-icon-text">
+            <span class="banner-icon" aria-hidden="true">ℹ</span>
+            <span class="banner-text">
+              Raw stream active. Attach a C Header (.h), MAVLink XML, or Kaitai Struct to dissect fields into columns.
+            </span>
+          </div>
+          <button
+            type="button"
+            class="chip action banner-btn"
+            onClick={() => store.setShowNewWorkspaceModal(true)}
+            title="Configure dissector in workspace settings"
+          >
+            Attach Dissector
+          </button>
+        </div>
+      </Show>
 
       <div class="stream-viewport" ref={viewportRef} onScroll={onViewportScroll}>
         <table>
