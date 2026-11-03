@@ -296,7 +296,100 @@ For visual designers building Figma components and screen layouts:
 
 ---
 
-## 6. Verification & Implementation Reference
+## 6. Easy Onboarding & Zero-State UX for Each Workspace
+
+Hardware tools often fail user onboarding by displaying empty, unconfigured black voids. BaudForge requires **active zero-state guidance** for every workspace preset. When a workspace opens without active hardware or files, it must provide instant one-click starter actions.
+
+### 6.1 Onboarding Design Principles
+1. **Never Show an Empty Void:** If no data exists, present interactive cards with sample data generators.
+2. **One-Click Hardwareless Demonstration:** Every workspace must provide a sample action that works without physical hardware plugged into the workstation.
+3. **Visual Dataflow Diagrams:** Show simple block diagrams so the engineer understands data direction at a glance.
+4. **Contextual Action Chips:** Show dynamic action chips when upstream data becomes available (e.g. suggesting traces when struct fields exist).
+
+---
+
+### 6.2 Workspace 1: Hardware Setup & Welcome Onboarding
+* **Scenario:** The user opens BaudForge for the first time or connects a new microcontroller board.
+* **Left Column Onboarding (Physical Hardware Target):**
+  * Display detected USB device details in a monospace badge: `303A:1001 (Espressif ESP32-C3)`.
+  * Display the `🔍 Auto-Detect Baud & Framing` button as an assistive action.
+  * Default `DTR (High)` to checked to protect the microcontroller from continuous bootloader resets.
+  * Provide inline diagnostic status cards (Amber border on probe failure, Emerald border on lock).
+* **Right Column Onboarding (Simulation & Session Vault):**
+  * **Interactive Demo Card:** `⚡ Launch IMU Loopback Demo (Simulated HIL)` with visual dataflow:
+    `[Mock IMU] ──▶ [FIFO Loopback] ──▶ [Dissector]`.
+  * **Recent Session Vault List:** Quick-access list of recent `.bflog` files with file sizes and one-click `Load & Replay` buttons.
+  * **Direct Vault Folder Access:** `📂 Open Vault Directory` button to open the operating system file manager.
+
+---
+
+### 6.3 Workspace 2: Protocol Dissector Lab Onboarding
+* **Scenario:** The user receives raw byte packets but has not yet attached a protocol schema.
+* **Zero-State Card (Schema Selector):**
+  * **Option A (Bundled Sample):** `📄 Load Sample C Header (telemetry_packets.h)`.
+    * Instantly unpacks sample binary packets into `ImuPacket` with acceleration, gyro, and temperature.
+  * **Option B (Aerospace Pack):** `🛰 Load Standard Aerospace Pack` (Select CCSDS, CSP, or MAVLink).
+  * **Option C (Custom Header):** `📂 Browse C Header (.h) or Protobuf (.proto)`.
+* **Visual Structural Guide:**
+  * Render an illustrated packet layout showing how struct definitions map to byte offsets:
+    `[uint16_t sync (2B)] [uint8_t id (1B)] [float32 val (4B)] [uint16_t crc (2B)]`.
+* **Contextual Hint Banner:**
+  * "Click any frame row in the stream to inspect fields. Click any field in the tree to highlight its raw bytes in the hex viewer."
+
+---
+
+### 6.4 Workspace 3: Telemetry Oscilloscope Onboarding
+* **Scenario:** The user opens the oscilloscope, but no signal traces are added yet.
+* **Zero-State Card (Signal Discovery & Test Generator):**
+  * **Automatic Trace Suggestions:** If a dissector is active, show one-click suggestion chips:
+    `Suggested Traces: [+ Add v_batt]  [+ Add gyro_z]  [+ Add current_ma]`.
+  * **Synthetic Waveform Generator:** `⚡ Add Synthetic Test Traces (Sine, Triangle, Square)` so the user can verify plot controls, zoom levels, and cursors without physical inputs.
+* **Interactive Tooling Guide:**
+  * Display a compact card explaining measurement cursors:
+    * `Cursor T1 (Cyan)` and `Cursor T2 (Amber)`: Drag across the canvas to measure $\Delta t$ and frequency ($1/\Delta t$).
+    * `Hardware Trigger`: Configure rising edge (`↗`) or falling edge (`↘`) on any digital bit.
+
+---
+
+### 6.5 Workspace 4: HIL Fault Injection Rig Onboarding
+* **Scenario:** The engineer wants to validate fault tolerance without writing complex test scripts.
+* **Safety Interlock Banner:**
+  * Prominent dual-state banner: `DISARMED (CLEAN BYPASS)` (Muted Grey) vs `ARMED (INJECTING FAULTS)` (High-Contrast Red Accent).
+* **One-Click Pre-Packaged Fault Scenarios:**
+  * **Card 1: Radiation Single-Event Upset (SEU):** Injects random single-bit flips at $10^{-5}$ probability.
+  * **Card 2: Lossy RF Link / Channel Noise:** Drops 1 in every 10 packets.
+  * **Card 3: Checksum Rejection Test:** Inverts CRC-16 checksum bytes to verify target discard logic.
+  * **Card 4: Bus Congestion & Jitter:** Injects $50\text{ ms}$ synthetic latency jitter into bridged packets.
+* **Visual Topology Block Diagram:**
+  * Illustrates the physical or virtual bridge flow:
+    `[Port A: OBC] ──▶ [BaudForge Interceptor] ──(Injected Faults)──▶ [Port B: Radio]`.
+
+---
+
+### 6.6 Workspace 5: Session Diff & Vault Analysis Onboarding
+* **Scenario:** The user wants to compare two test runs to isolate firmware timing regressions.
+* **Dual Drop-Zone Zero-State:**
+  * **Left Card:** `📁 Drop Golden Baseline (.bflog) here or [Browse]`.
+  * **Right Card:** `📁 Drop Test Run (.bflog) here or [Browse]`.
+* **One-Click Sample Comparison:**
+  * `⚡ Load Sample Pass/Fail Pair (nominal_run.bflog vs fault_run.bflog)`.
+  * Instantly loads a side-by-side view highlighting timing regressions and corrupted fields.
+* **Regression Metric Callouts:**
+  * Shows four key indicators ready to populate: `Matched Frames`, `Timing Regressions (>5% Δt)`, `Corrupted Values`, and `Missing Frames`.
+
+---
+
+### 6.7 New Workspace Wizard & Quick-Start Templates
+When the user clicks `+ New Workspace`, display a modal dialog with five domain-specific templates:
+1. **Microcontroller Firmware Debugger:** Preconfigures UART serial (`115200 8N1`), bootloader pulse buttons, and line-delimited terminal.
+2. **Aerospace & Drone Rig:** Preconfigures MAVLink / CCSDS protocol dissectors, APID filters, and telemetry charts.
+3. **Industrial Bus Sniffer:** Preconfigures Modbus RTU / RS-485 with idle-gap framing ($3.5$ char times) and hex inspector.
+4. **HIL Fault & Stress Rig:** Preconfigures dual-port active bridge, master fault safety switch, and packet drop counters.
+5. **Pure Simulation Lab:** Preconfigures virtual mock IMU stream for software-only development.
+
+---
+
+## 7. Verification & Implementation Reference
 
 * **Engine Communication Layer:** All inputs and outputs map to JSON structs defined in [`crates/bforge-core/src/contract.rs`](file:///f:/Datapack/Personal/Programa/baud-forge/crates/bforge-core/src/contract.rs) and the HTTP/WebSocket streaming endpoint in `crates/bforge-core/src/serve.rs`.
 * **Zero Overhead Constraint:** Telemetry waveforms and terminal grids must be designed to accommodate continuous ingestion at 12 Mbaud without layout shifts.
