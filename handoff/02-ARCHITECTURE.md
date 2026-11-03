@@ -21,7 +21,7 @@ bforge-gui ─┘               ├─ bforge-storage  vault: format, writer, re
 | `bforge-dissect` | C header → IR → decoded fields; native packs; the encoder that builds frames from typed values | Sockets, threads, time |
 | `bforge-elf` | ELF sections, DWARF lookup, symbol scan, demangling | Anything frame-shaped |
 | `bforge-script` | A sandboxed Lua runtime with an instruction budget | I/O, threads, time |
-| `bforge-core` | The engine: session, pipeline, faults, bridges, tail, contract (`ui.rs`), serve, assert, symbols | Platform dialogs, HTML |
+| `bforge-core` | The engine: session, pipeline, faults, bridges, tail, contract (`contract.rs`), serve, assert, symbols | Platform dialogs, HTML |
 | `bforge-cli` | Argument parsing and the commands: config, ports, record, replay, status, serve, tail, assert, export, vault (info, repair), yield | Logic that belongs in core |
 | `bforge-gui` | Tauri shell around the same HTTP contract; the bundled frontend lives in `ui/` | Anything the browser page cannot also do |
 
@@ -61,7 +61,7 @@ Rules that hold along this path:
 
 ## The contract
 
-`crates/bforge-core/src/ui.rs` is the single description of what a client sees:
+`crates/bforge-core/src/contract.rs` is the single description of what a client sees:
 `UiSnapshot`, `PortView`, `PinsView`, `BridgeView`, `SessionView`, `UiEvent`, `CONTRACT_VERSION`.
 
 - Change it in one place and both clients follow: the desktop window and the served page load

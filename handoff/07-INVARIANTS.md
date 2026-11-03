@@ -61,7 +61,7 @@ the wrong bits, which is worse than an unparsed payload.
 
 ### I9. One contract, two clients
 
-`crates/bforge-core/src/ui.rs` is the only description of what a client sees. The desktop window
+`crates/bforge-core/src/contract.rs` is the only description of what a client sees. The desktop window
 and the served page load the same frontend. Adding a field means updating `tests/contract.rs`.
 
 ### I10. The window never blocks on the engine
