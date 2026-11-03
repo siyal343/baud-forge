@@ -1,36 +1,11 @@
 # Quickstart
 
-Five minutes, three ways in. Pick the one that matches what is on your desk.
+Five minutes to capturing, decoding, and asserting live hardware telemetry using the BaudForge CLI.
 
-## Nothing installed yet: the Windows window
+## Installation & Command Line Setup
 
-1. Open <https://github.com/siyal343/baud-forge/releases/latest>.
-2. Download `BaudForge_<version>_x64-setup.exe` and `SHA256SUMS.txt`.
-3. Check the download, then run it:
-
-   ```powershell
-   Get-FileHash .\BaudForge_*_x64-setup.exe -Algorithm SHA256   # compare with SHA256SUMS.txt
-   ```
-
-4. Windows shows *"Windows protected your PC"*. Choose **More info → Run anyway**. The
-   binaries are unsigned; signing is deferred, and the checksum is how you know the file is
-   the one CI built.
-5. The installer puts a **BaudForge** shortcut in the Start menu.
-6. Start it from a terminal so it can be given a workspace:
-
-   ```powershell
-   & "$env:LOCALAPPDATA\BaudForge\bforge-gui.exe" examples\loopback-demo.toml
-   ```
-
-   The window opens, the engine starts, and a vault is written to `%TEMP%`.
-
-The GUI needs a workspace file; without one it says so and exits. The two example workspaces
-ship in the repository — download the source zip, or clone it, to get them.
-
-## The command line, no installer
-
-Every release also carries the CLI per platform: `bforge-windows-x86_64.exe`,
-`bforge-linux-x86_64`, `bforge-macos-aarch64`, and four more.
+Every release carries the standalone `bforge` CLI binary per platform: `bforge-windows-x86_64.exe`,
+`bforge-linux-x86_64`, `bforge-macos-aarch64`, and more.
 
 ```sh
 bforge help
