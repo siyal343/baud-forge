@@ -18,7 +18,8 @@ pub mod session;
 pub mod slab;
 pub mod symbolize;
 pub mod tail;
-pub mod ui;
+pub mod contract;
+pub use contract as ui;
 pub mod validate;
 
 pub use validate::ConfigIssue;

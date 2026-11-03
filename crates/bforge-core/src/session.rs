@@ -11,7 +11,7 @@ use crate::pipeline::{Pipeline, PipelineConfig, YieldRequest};
 use crate::series::{SeriesSet, SeriesUpdate};
 use crate::symbolize::symbolize;
 use crate::tail::{Stream, TailError, TailRow, tail_config};
-use crate::ui::{
+use crate::contract::{
     BridgeView, CONTRACT_VERSION, EventBus, PinsView, PortView, SessionView, UiEvent, UiSnapshot,
 };
 use crate::{BridgeConfig, PortConfig, ProjectConfig};

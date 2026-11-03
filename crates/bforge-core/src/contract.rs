@@ -1,8 +1,8 @@
-//! The UI state contract (F1.7.1, F1.7.2).
+//! The engine state contract and event bus.
 //!
-//! Every state the six workbench bands draw comes from here. The GUI and the
+//! Every state the engine publishes comes from here. External clients and the
 //! headless CLI read the same types, so a counter cannot mean one thing on
-//! screen and another in CI.
+//! a dashboard and another in CI.
 //!
 //! The contract version is fixed at 1. Add a field freely; change the meaning of
 //! a field only with a new version.

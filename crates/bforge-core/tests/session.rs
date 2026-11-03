@@ -1,7 +1,7 @@
 //! Session, snapshot, event and replay tests (F1.5.3, F1.5.4, F1.7.1 to F1.7.3).
 
 use bforge_core::session::{ReplayOptions, Session, SessionPort, replay_to};
-use bforge_core::ui::{CONTRACT_VERSION, EventBus, UiEvent};
+use bforge_core::contract::{CONTRACT_VERSION, EventBus, UiEvent};
 use bforge_hal::mock::MockTransport;
 use bforge_storage::{LogHeader, LogReader, LogWriter, RawChunk};
 use std::path::PathBuf;

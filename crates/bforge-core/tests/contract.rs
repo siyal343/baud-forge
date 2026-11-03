@@ -5,7 +5,7 @@
 //! gains a field without a source fails here, not on a screen nobody has built yet.
 
 use bforge_core::session::{Session, SessionPort};
-use bforge_core::ui::CONTRACT_VERSION;
+use bforge_core::contract::CONTRACT_VERSION;
 use bforge_hal::mock::MockTransport;
 use serde_json::Value;
 use std::time::{Duration, Instant};

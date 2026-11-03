@@ -10,7 +10,7 @@
 //! authentication, upgrade when a socket transport other than loopback is served`.
 
 use crate::session::{Session, SessionError};
-use crate::ui::UiEvent;
+use crate::contract::UiEvent;
 use std::io::{BufRead, BufReader, Read, Write};
 use std::net::{SocketAddr, TcpListener, TcpStream};
 use std::sync::atomic::{AtomicBool, AtomicU64, Ordering};
@@ -108,7 +108,7 @@ struct PinJob {
     rts: bool,
     pulse: Option<Duration>,
     steps: Option<Vec<crate::pipeline::PinStep>>,
-    reply: std::sync::mpsc::SyncSender<Result<crate::ui::PinsView, String>>,
+    reply: std::sync::mpsc::SyncSender<Result<crate::contract::PinsView, String>>,
 }
 
 /// One `POST /api/yield`: release a port for a window so a flash tool can use it.
@@ -303,7 +303,7 @@ impl Server {
                         .map_err(|error| error.to_string()),
                     _ => session
                         .set_pins(&job.port, job.dtr, job.rts, job.pulse)
-                        .map(|()| crate::ui::PinsView {
+                        .map(|()| crate::contract::PinsView {
                             dtr: job.dtr,
                             rts: job.rts,
                             ..Default::default()
@@ -547,7 +547,7 @@ fn handle(mut stream: TcpStream, shared: Arc<Shared>, stop: Arc<AtomicBool>) {
             let body = format!(
                 "{{\"ok\":true,\"service\":\"bforge-serve\",\"version\":\"{}\",\"contract\":{}}}",
                 env!("CARGO_PKG_VERSION"),
-                crate::ui::CONTRACT_VERSION
+                crate::contract::CONTRACT_VERSION
             );
             respond(&mut stream, "200 OK", "application/json", body.as_bytes());
         }
