@@ -11,15 +11,8 @@ Repository: `https://github.com/siyal343/baud-forge`
 ```text
 baud-forge/
 ├── .github/                      # CI/CD workflows (build, test, release, nightly)
-├── archive/                      # Preserved historical implementations
-│   └── gui/                      # Archived GUI codebases & documentation
-│       ├── crates/
-│       │   ├── bforge-gui/       # Native egui/eframe desktop application
-│       │   └── bforge-gui-legacy/# Legacy Tauri v2 host
-│       ├── ui/                   # SolidJS/TypeScript frontend source
-│       ├── docs/                 # 21 GUI design & implementation reports
-│       ├── scripts/              # GUI test runners
-│       └── README.md             # Revival instructions
+├── archive/                      # Local archive (git-ignored, excluded from repository commits)
+│   └── gui/                      # Preserved GUI codebases, tests & documentation
 ├── crates/                       # Active headless Rust workspace
 │   ├── bforge-hal/               # Physical & virtual transport drivers
 │   ├── bforge-framer/            # Delimiter, COBS, SLIP, length-prefix framing
