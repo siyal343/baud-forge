@@ -9,8 +9,6 @@ members = [
     "crates/bforge-script",
     "crates/bforge-core",
     "crates/bforge-cli",
-    "crates/bforge-gui",
-    "crates/bforge-gui-legacy/src-tauri",
 ]
 
 [workspace.package]
