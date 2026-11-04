@@ -56,6 +56,20 @@ export class EngineApiClient {
     }
   }
 
+  /** Hardware serial ports currently visible to the OS (GET /api/devices). */
+  async getDevices(): Promise<
+    Array<{ device_path: string; vid_pid?: string | null; serial?: string | null }>
+  > {
+    try {
+      const res = await this.fetchWithTimeout('/api/devices');
+      if (!res.ok) return [];
+      const data = await res.json();
+      return Array.isArray(data) ? data : [];
+    } catch {
+      return [];
+    }
+  }
+
   subscribeEvents(
     onSnapshot: (snapshot: UiSnapshot) => void,
     onUiEvent: (event: UiEvent) => void,
@@ -272,10 +286,13 @@ export function exportPacketsClientSide(
       const tsNs = pkt.timestampNs || pkt.timestampUs * 1000;
       const sec = (pkt.timestampUs / 1e6).toFixed(6);
       const hex = pkt.rawHex || pkt.rawBytes.map((b) => b.toString(16).padStart(2, '0').toUpperCase()).join('');
+      // Quote the printable-ASCII column — payload text containing commas or
+      // quotes previously corrupted every subsequent field in the row.
       const text = pkt.rawBytes
         .map((b) => (b >= 32 && b <= 126 ? String.fromCharCode(b) : '.'))
-        .join('');
-      out += `${pkt.seqId},${tsNs},${sec},${pkt.port},${pkt.direction.toLowerCase()},0,${pkt.rawBytes.length},${hex},${text}\n`;
+        .join('')
+        .replace(/"/g, '""');
+      out += `${pkt.seqId},${tsNs},${sec},${pkt.port},${pkt.direction.toLowerCase()},0,${pkt.rawBytes.length},${hex},"${text}"\n`;
     }
     const blob = new Blob([out], { type: 'text/csv;charset=utf-8' });
     triggerFileDownload(blob, `bforge-capture-${timestampStr}.csv`);

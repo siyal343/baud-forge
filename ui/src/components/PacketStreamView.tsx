@@ -1,4 +1,5 @@
 import React, { useRef, useEffect, useState, useCallback, useMemo } from 'react';
+import { useShallow } from 'zustand/react/shallow';
 import { useWorkstationStore } from '../store/useWorkstationStore';
 import {
   ArrowDownCircle,
@@ -38,6 +39,7 @@ export const PacketStreamView: React.FC = () => {
     selectedPacket,
     autoScroll,
     filterText,
+    directionFilter,
     dataBits,
     parity,
     stopBits,
@@ -46,7 +48,25 @@ export const PacketStreamView: React.FC = () => {
     setAutoScroll,
     clearStream,
     setFilterText,
-  } = useWorkstationStore();
+    setDirectionFilter,
+  } = useWorkstationStore(
+    useShallow((s) => ({
+      packets: s.packets,
+      selectedPacket: s.selectedPacket,
+      autoScroll: s.autoScroll,
+      filterText: s.filterText,
+      directionFilter: s.directionFilter,
+      dataBits: s.dataBits,
+      parity: s.parity,
+      stopBits: s.stopBits,
+      delimiterMode: s.delimiterMode,
+      selectPacket: s.selectPacket,
+      setAutoScroll: s.setAutoScroll,
+      clearStream: s.clearStream,
+      setFilterText: s.setFilterText,
+      setDirectionFilter: s.setDirectionFilter,
+    }))
+  );
 
   const headerRef = useRef<HTMLDivElement>(null);
   const containerRef = useRef<HTMLDivElement>(null);
@@ -146,8 +166,12 @@ export const PacketStreamView: React.FC = () => {
     return STREAM_COLUMNS.reduce((acc, c) => acc + (colWidths[c.id] || c.defaultWidth), 0);
   }, [colWidths]);
 
+  const directionFiltered = directionFilter === 'all'
+    ? packets
+    : packets.filter((p) => p.direction.toLowerCase() === directionFilter);
+
   const filteredPackets = filterText.trim()
-    ? packets.filter((p) => {
+    ? directionFiltered.filter((p) => {
         const query = filterText.toLowerCase();
         return (
           p.protocol.toLowerCase().includes(query) ||
@@ -156,7 +180,7 @@ export const PacketStreamView: React.FC = () => {
           p.direction.toLowerCase().includes(query)
         );
       })
-    : packets;
+    : directionFiltered;
 
   const totalRows = filteredPackets.length;
 
@@ -296,6 +320,24 @@ export const PacketStreamView: React.FC = () => {
             <span className="text-[#00E5FF] uppercase font-semibold">{delimiterMode}</span>
             <Settings2 className="w-2.5 h-2.5 text-[#64748B] ml-0.5" />
           </button>
+
+          {/* Direction filter chips (spec 2.3: All/RX/TX/FAULT) */}
+          <div className="flex items-center rounded border border-[#222D3D] overflow-hidden shrink-0">
+            {(['all', 'rx', 'tx', 'fault'] as const).map((dir) => (
+              <button
+                key={dir}
+                onClick={() => setDirectionFilter(dir)}
+                title={`Show only ${dir.toUpperCase()} frames`}
+                className={`px-1.5 py-0.5 text-[9px] font-mono transition-colors ${
+                  directionFilter === dir
+                    ? 'bg-[#00E5FF]/20 text-[#00E5FF] font-bold'
+                    : 'text-[#64748B] hover:text-[#94A3B8] hover:bg-[#1E2638]'
+                }`}
+              >
+                {dir.toUpperCase()}
+              </button>
+            ))}
+          </div>
 
           {/* Stream Search / Filter Input */}
           <div className="relative flex items-center min-w-[120px] max-w-[220px] flex-1">

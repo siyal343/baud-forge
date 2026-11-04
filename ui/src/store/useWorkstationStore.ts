@@ -1,6 +1,8 @@
 import { create } from 'zustand';
 import { PacketRow, DissectedField, ScopeSignalSample, PinsView, PortView } from '../types';
 import { generateSampleImuPacket, generateScopeSample } from '../services/simulationEngine';
+import { engineApi } from '../services/engineApi';
+import { toast } from './useToastStore';
 
 interface WorkstationState {
   // Connection & Port
@@ -24,6 +26,8 @@ interface WorkstationState {
   hoveredField: DissectedField | null;
   autoScroll: boolean;
   filterText: string;
+  directionFilter: 'all' | 'rx' | 'tx' | 'fault';
+  isScanningPorts: boolean;
 
   // Oscilloscope & Telemetry
   scopeSamples: ScopeSignalSample[];
@@ -80,6 +84,8 @@ interface WorkstationState {
   setSelectedPort: (port: string) => void;
   setBaudRate: (baud: number) => void;
   setFraming: (framing: string) => void;
+  setDirectionFilter: (filter: 'all' | 'rx' | 'tx' | 'fault') => void;
+  rescanPorts: () => Promise<void>;
   setUartConfig: (cfg: Partial<{
     dataBits: number;
     parity: 'none' | 'even' | 'odd' | 'mark' | 'space';
@@ -122,6 +128,13 @@ const MAX_SCOPE_SAMPLES = 600;
 // is written to the store so subscribers re-render at 1 Hz, not per packet.
 const rateTimestamps: number[] = [];
 let yieldTimerId: number | null = null;
+
+// Monotonic SeqId source. The previous schemes (Date.now() % 100000 for TX
+// rows, timestamp_ms % 1000000 for engine frames) collided whenever two
+// frames landed in the same millisecond, producing duplicate React keys and
+// wrong DVR stepping. Every packet entering the store is renumbered here.
+let nextSeqId = 1;
+const withUniqueSeqId = (pkt: PacketRow): PacketRow => ({ ...pkt, seqId: nextSeqId++ });
 
 const getSavedUartConfig = () => {
   try {
@@ -169,6 +182,8 @@ export const useWorkstationStore = create<WorkstationState>((set, get) => ({
   hoveredField: null,
   autoScroll: true,
   filterText: '',
+  directionFilter: 'all',
+  isScanningPorts: false,
 
   // Oscilloscope
   scopeSamples: [],
@@ -249,6 +264,27 @@ export const useWorkstationStore = create<WorkstationState>((set, get) => ({
   setSelectedPort: (port) => set({ selectedPort: port }),
   setBaudRate: (baudRate) => set({ baudRate }),
   setFraming: (framing) => set({ framing }),
+  setDirectionFilter: (directionFilter) => set({ directionFilter }),
+  rescanPorts: async () => {
+    set({ isScanningPorts: true });
+    try {
+      const devices = await engineApi.getDevices();
+      if (devices.length > 0) {
+        set({
+          availablePorts: devices.map((d) => ({
+            id: d.device_path,
+            device: d.vid_pid || 'Serial Device',
+            description: d.serial ? `S/N ${d.serial}` : 'Hardware port',
+          })),
+        });
+        toast.success('Port scan complete', `${devices.length} hardware port(s) found.`);
+      } else {
+        toast.warn('No hardware ports found', 'Simulated loopback ports remain available.');
+      }
+    } finally {
+      set({ isScanningPorts: false });
+    }
+  },
   setUartConfig: (cfg) => {
     set((state) => {
       const updated = {
@@ -368,6 +404,18 @@ export const useWorkstationStore = create<WorkstationState>((set, get) => ({
       yieldTimerId = null;
     }
     set({ isYielded: true, yieldRemainingSecs: seconds, portState: 'yielded' });
+    // Tell the engine so session streaming actually pauses on the wire.
+    // Fire-and-forget with an honest warning when the engine is offline.
+    engineApi
+      .yieldPort(get().selectedPort, seconds)
+      .then((ok) => {
+        if (!ok) {
+          toast.warn(
+            'Yield not acknowledged by engine',
+            `Local countdown running, but the engine did not confirm the ${seconds}s yield on ${get().selectedPort}.`
+          );
+        }
+      });
     yieldTimerId = window.setInterval(() => {
       const { yieldRemainingSecs } = get();
       if (yieldRemainingSecs <= 1) {
@@ -408,7 +456,7 @@ export const useWorkstationStore = create<WorkstationState>((set, get) => ({
     let t = 100000;
     for (let i = 0; i < 30; i++) {
       const injectFault = i === 12; // Inject fault on frame 12
-      const pkt = generateSampleImuPacket('COM8', injectFault, 50000);
+      const pkt = withUniqueSeqId(generateSampleImuPacket('COM8', injectFault, 50000));
       samples.push(pkt);
       scopePts.push(generateScopeSample(pkt.timestampUs));
       t = pkt.timestampUs;
@@ -424,7 +472,8 @@ export const useWorkstationStore = create<WorkstationState>((set, get) => ({
 
   recordTx: (bytes) => set((state) => ({ txBytes: state.txBytes + bytes })),
 
-  addPacket: (pkt) => {
+  addPacket: (rawPkt) => {
+    const pkt = withUniqueSeqId(rawPkt);
     rateTimestamps.push(Date.now());
     if (rateTimestamps.length > 400) rateTimestamps.splice(0, rateTimestamps.length - 400);
     set((state) => {
@@ -448,6 +497,7 @@ export const useWorkstationStore = create<WorkstationState>((set, get) => ({
 
   addPacketBatch: (batch) => {
     if (!batch.length) return;
+    batch = batch.map(withUniqueSeqId);
     const now = Date.now();
     for (let i = 0; i < batch.length; i++) rateTimestamps.push(now);
     if (rateTimestamps.length > 400) rateTimestamps.splice(0, rateTimestamps.length - 400);

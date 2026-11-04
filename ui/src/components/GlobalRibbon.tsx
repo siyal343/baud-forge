@@ -53,6 +53,8 @@ export const GlobalRibbon: React.FC = () => {
     isFaultArmed,
     isSimulated,
     isRecording,
+    isScanningPorts,
+    rescanPorts,
     uiScale,
     activePreset,
     connect,
@@ -88,6 +90,8 @@ export const GlobalRibbon: React.FC = () => {
       isFaultArmed: s.isFaultArmed,
       isSimulated: s.isSimulated,
       isRecording: s.isRecording,
+      isScanningPorts: s.isScanningPorts,
+      rescanPorts: s.rescanPorts,
       uiScale: s.uiScale,
       activePreset: s.activePreset,
       connect: s.connect,
@@ -192,7 +196,15 @@ export const GlobalRibbon: React.FC = () => {
           </select>
           <button
             title="Rescan hardware ports"
-            className="text-[#64748B] hover:text-[#00E5FF] transition-colors p-0.5"
+            onClick={() => {
+              void rescanPorts();
+            }}
+            disabled={isScanningPorts}
+            className={`transition-colors p-0.5 ${
+              isScanningPorts
+                ? 'text-[#00E5FF] animate-spin'
+                : 'text-[#64748B] hover:text-[#00E5FF]'
+            }`}
           >
             <RefreshCw className="w-2.5 h-2.5" />
           </button>
@@ -533,7 +545,7 @@ export const GlobalRibbon: React.FC = () => {
               isRecording ? 'bg-white' : 'bg-[#EF4444]'
             }`}
           />
-          <span className="hidden sm:inline">{isRecording ? 'REC' : 'REC'}</span>
+          <span className="hidden sm:inline">{isRecording ? '● REC' : 'STANDBY'}</span>
         </button>
 
         {/* Multi-Format Vault Export Dialog */}

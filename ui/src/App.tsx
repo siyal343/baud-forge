@@ -161,10 +161,14 @@ export const App: React.FC = () => {
   // Global Keyboard Shortcuts
   useEffect(() => {
     const handleKeyDown = (e: KeyboardEvent) => {
-      // Ignore if typing in input or textarea
+      // Ignore if focus is in a text field, or on an interactive control —
+      // Space/arrow keys must activate buttons and selects, not the DVR.
+      const tag = document.activeElement?.tagName;
       if (
-        document.activeElement?.tagName === 'INPUT' ||
-        document.activeElement?.tagName === 'TEXTAREA'
+        tag === 'INPUT' ||
+        tag === 'TEXTAREA' ||
+        tag === 'SELECT' ||
+        tag === 'BUTTON'
       ) {
         return;
       }

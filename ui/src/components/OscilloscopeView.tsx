@@ -807,11 +807,19 @@ export const OscilloscopeView: React.FC = () => {
     stats.fftPeakFreq,
   ]);
 
+  // Mirror of isRunning for the render loop (no effect-lag on toggle).
+  const runningRef = useRef(isRunning);
+  runningRef.current = isRunning;
+
   // Request Animation Frame Render Loop
   useEffect(() => {
     let animId: number;
     const loop = () => {
       renderCanvas();
+      // While STOPPED the frame is static: draw once per state change
+      // (cursor drags, HUD moves and ribbon tweaks re-create renderCanvas,
+      // re-running this effect) instead of repainting at 60 fps forever.
+      if (!runningRef.current) return;
       animId = requestAnimationFrame(loop);
     };
     animId = requestAnimationFrame(loop);
