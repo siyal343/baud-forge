@@ -1,5 +1,6 @@
 import React, { useState, useRef, useEffect } from 'react';
 import { createPortal } from 'react-dom';
+import { useShallow } from 'zustand/react/shallow';
 import { useWorkstationStore } from '../store/useWorkstationStore';
 import {
   Zap,
@@ -72,7 +73,43 @@ export const GlobalRibbon: React.FC = () => {
     requestSaveLayout,
     requestRestoreSavedLayout,
     hasSavedLayout,
-  } = useWorkstationStore();
+  } = useWorkstationStore(
+    useShallow((s) => ({
+      isConnected: s.isConnected,
+      selectedPort: s.selectedPort,
+      baudRate: s.baudRate,
+      dataBits: s.dataBits,
+      parity: s.parity,
+      stopBits: s.stopBits,
+      delimiterMode: s.delimiterMode,
+      availablePorts: s.availablePorts,
+      isYielded: s.isYielded,
+      yieldRemainingSecs: s.yieldRemainingSecs,
+      isFaultArmed: s.isFaultArmed,
+      isSimulated: s.isSimulated,
+      isRecording: s.isRecording,
+      uiScale: s.uiScale,
+      activePreset: s.activePreset,
+      connect: s.connect,
+      disconnect: s.disconnect,
+      setSelectedPort: s.setSelectedPort,
+      setBaudRate: s.setBaudRate,
+      triggerFlashYield: s.triggerFlashYield,
+      reclaimPort: s.reclaimPort,
+      toggleFaultArm: s.toggleFaultArm,
+      toggleSimulationMode: s.toggleSimulationMode,
+      toggleRecording: s.toggleRecording,
+      loadSampleCapture: s.loadSampleCapture,
+      setUiScale: s.setUiScale,
+      setExportModalOpen: s.setExportModalOpen,
+      setActivePreset: s.setActivePreset,
+      requestOpenPanel: s.requestOpenPanel,
+      requestResetLayout: s.requestResetLayout,
+      requestSaveLayout: s.requestSaveLayout,
+      requestRestoreSavedLayout: s.requestRestoreSavedLayout,
+      hasSavedLayout: s.hasSavedLayout,
+    }))
+  );
 
   const [saveSuccessMsg, setSaveSuccessMsg] = useState(false);
 

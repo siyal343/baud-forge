@@ -1,5 +1,7 @@
 import React, { useState, useEffect, useRef } from 'react';
+import { useShallow } from 'zustand/react/shallow';
 import { useWorkstationStore } from '../store/useWorkstationStore';
+import { toast } from '../store/useToastStore';
 import {
   Send,
   Terminal,
@@ -106,6 +108,67 @@ export const isHexString = (str: string): boolean => {
 };
 
 /**
+ * Real checksum engines (bitwise, no tables — payloads here are tiny).
+ * Replaces the previous modular-sum implementations that were labeled as
+ * CRC-16-CCITT / CRC-32C but were plain byte sums.
+ */
+export const crc16CcittFalse = (bytes: number[]): number => {
+  // CRC-16/CCITT-FALSE: poly 0x1021, init 0xFFFF, no reflection, no xorout.
+  let crc = 0xffff;
+  for (const b of bytes) {
+    crc ^= b << 8;
+    for (let i = 0; i < 8; i++) {
+      crc = crc & 0x8000 ? ((crc << 1) ^ 0x1021) & 0xffff : (crc << 1) & 0xffff;
+    }
+  }
+  return crc;
+};
+
+export const crc16Modbus = (bytes: number[]): number => {
+  // CRC-16/MODBUS: poly 0x8005 (reflected 0xA001), init 0xFFFF, reflect in/out.
+  let crc = 0xffff;
+  for (const b of bytes) {
+    crc ^= b;
+    for (let i = 0; i < 8; i++) {
+      crc = crc & 0x0001 ? ((crc >> 1) ^ 0xa001) & 0xffff : crc >> 1;
+    }
+  }
+  return crc;
+};
+
+export const crc32c = (bytes: number[]): number => {
+  // CRC-32C (Castagnoli): reflected poly 0x82F63B78, init/xorout 0xFFFFFFFF.
+  let crc = 0xffffffff;
+  for (const b of bytes) {
+    crc ^= b;
+    for (let i = 0; i < 8; i++) {
+      crc = crc & 0x00000001 ? ((crc >>> 1) ^ 0x82f63b78) >>> 0 : crc >>> 1;
+    }
+  }
+  return (crc ^ 0xffffffff) >>> 0;
+};
+
+/** Checksum byte sequence to append on the wire, per algorithm convention. */
+export const checksumBytes = (kind: string, bytes: number[]): number[] => {
+  if (kind === 'sum8') {
+    return [bytes.reduce((acc, b) => (acc + b) & 0xff, 0)];
+  }
+  if (kind === 'crc16') {
+    const crc = crc16CcittFalse(bytes);
+    return [(crc >> 8) & 0xff, crc & 0xff]; // big-endian (network order)
+  }
+  if (kind === 'crc16modbus') {
+    const crc = crc16Modbus(bytes);
+    return [crc & 0xff, (crc >> 8) & 0xff]; // little-endian per MODBUS spec
+  }
+  if (kind === 'crc32') {
+    const crc = crc32c(bytes);
+    return [crc & 0xff, (crc >> 8) & 0xff, (crc >> 16) & 0xff, (crc >>> 24) & 0xff]; // little-endian
+  }
+  return [];
+};
+
+/**
  * Dynamically format payload for hover inspection based strictly on Command Forge's active mode
  */
 export const formatPayloadForHover = (
@@ -154,7 +217,14 @@ export const formatPayloadForHover = (
 };
 
 export const CommandForge: React.FC = () => {
-  const { selectedPort, isConnected, addPacket } = useWorkstationStore();
+  const { selectedPort, isConnected, addPacket, recordTx } = useWorkstationStore(
+    useShallow((s) => ({
+      selectedPort: s.selectedPort,
+      isConnected: s.isConnected,
+      addPacket: s.addPacket,
+      recordTx: s.recordTx,
+    }))
+  );
 
   const [mode, setMode] = useState<'hex' | 'ascii'>('hex');
   const [payload, setPayload] = useState('AA 55 01 02 00 00 00 00');
@@ -218,16 +288,34 @@ export const CommandForge: React.FC = () => {
   };
 
   // Draggable separator handler
+  const dragWidthRef = useRef<number>(leftColWidth);
+  const dragHandlersRef = useRef<{ move: (ev: MouseEvent) => void; up: () => void } | null>(null);
+
+  // If the panel unmounts mid-drag, remove the window listeners.
+  useEffect(() => {
+    return () => {
+      if (dragHandlersRef.current) {
+        window.removeEventListener('mousemove', dragHandlersRef.current.move);
+        window.removeEventListener('mouseup', dragHandlersRef.current.up);
+        document.body.style.cursor = '';
+        document.body.style.userSelect = '';
+        dragHandlersRef.current = null;
+      }
+    };
+  }, []);
+
   const handleSeparatorMouseDown = (e: React.MouseEvent) => {
     e.preventDefault();
     const startX = e.clientX;
     const startWidth = leftColWidth;
+    dragWidthRef.current = startWidth;
     document.body.style.cursor = 'col-resize';
     document.body.style.userSelect = 'none';
 
     const handleMouseMove = (ev: MouseEvent) => {
       const delta = ev.clientX - startX;
       const newWidth = Math.max(180, Math.min(650, startWidth + delta));
+      dragWidthRef.current = newWidth; // ref is the source of truth for persist
       setLeftColWidth(newWidth);
     };
 
@@ -236,11 +324,15 @@ export const CommandForge: React.FC = () => {
       document.body.style.userSelect = '';
       window.removeEventListener('mousemove', handleMouseMove);
       window.removeEventListener('mouseup', handleMouseUp);
+      dragHandlersRef.current = null;
+      // Persist the FINAL dragged width — the old closure captured the
+      // pre-drag `leftColWidth`, so localStorage always stored one drag behind.
       try {
-        localStorage.setItem('bforge_cmd_col_width', String(leftColWidth));
+        localStorage.setItem('bforge_cmd_col_width', String(dragWidthRef.current));
       } catch (_) {}
     };
 
+    dragHandlersRef.current = { move: handleMouseMove, up: handleMouseUp };
     window.addEventListener('mousemove', handleMouseMove);
     window.addEventListener('mouseup', handleMouseUp);
   };
@@ -264,14 +356,13 @@ export const CommandForge: React.FC = () => {
       return `Sum8: 0x${sum.toString(16).padStart(2, '0').toUpperCase()}`;
     }
     if (autoCrc === 'crc16') {
-      let sum = 0;
-      for (const b of bytes) sum = (sum + b) & 0xffff;
-      return `CRC16: 0x${sum.toString(16).padStart(4, '0').toUpperCase()}`;
+      return `CRC16: 0x${crc16CcittFalse(bytes).toString(16).padStart(4, '0').toUpperCase()}`;
+    }
+    if (autoCrc === 'crc16modbus') {
+      return `CRC16-MB: 0x${crc16Modbus(bytes).toString(16).padStart(4, '0').toUpperCase()}`;
     }
     if (autoCrc === 'crc32') {
-      let sum = 0;
-      for (const b of bytes) sum = (sum + b) >>> 0;
-      return `CRC32: 0x${sum.toString(16).padStart(8, '0').toUpperCase()}`;
+      return `CRC32C: 0x${crc32c(bytes).toString(16).padStart(8, '0').toUpperCase()}`;
     }
     return '';
   };
@@ -280,33 +371,36 @@ export const CommandForge: React.FC = () => {
     const text = customPayload ?? payload;
     if (!text.trim()) return;
 
-    let hexToSend = text;
+    let bytes: number[];
     const isHex = mode === 'hex' || isHexString(text);
 
     if (!isHex) {
       const ending = lineEnding === 'lf' ? '\n' : lineEnding === 'crlf' ? '\r\n' : '';
       const fullText = text.endsWith('\n') ? text : text + ending;
-      hexToSend = Array.from(new TextEncoder().encode(fullText))
-        .map((b) => b.toString(16).padStart(2, '0'))
-        .join(' ');
+      bytes = Array.from(new TextEncoder().encode(fullText));
     } else {
-      // Normalize hex string
-      hexToSend = text
-        .trim()
-        .split(/\s+/)
-        .map((t) => t.replace(/^0x/i, '').padStart(2, '0'))
-        .join(' ');
+      const tokens = text.trim().split(/\s+/).filter(Boolean);
+      const invalid = tokens.find((t) => !/^(0x)?[0-9a-fA-F]{1,2}$/.test(t));
+      if (invalid) {
+        toast.error('Invalid hex token', `"${invalid}" is not a 1-2 digit hex byte — send aborted.`);
+        return;
+      }
+      bytes = tokens.map((t) => parseInt(t.replace(/^0x/i, ''), 16));
     }
 
-    // Dispatch via engineApi
-    await engineApi.sendBytes(selectedPort, hexToSend);
+    // Auto-checksum: append the checksum bytes to the wire payload.
+    const checksum = autoCrc === 'none' ? [] : checksumBytes(autoCrc, bytes);
+    const wireBytes = [...bytes, ...checksum];
+    const hexToSend = wireBytes.map((b) => b.toString(16).padStart(2, '0')).join(' ');
 
-    // Record into local packet stream store
-    const bytes = hexToSend
-      .trim()
-      .split(/\s+/)
-      .map((h) => parseInt(h, 16))
-      .filter((n) => !isNaN(n));
+    // Dispatch via engineApi — the result is checked, never discarded.
+    const ok = await engineApi.sendBytes(selectedPort, hexToSend);
+    if (!ok) {
+      toast.warn(
+        'Engine unreachable — TX recorded locally only',
+        `No bytes reached ${selectedPort}. Start the bforge engine to transmit on the wire.`
+      );
+    }
 
     const now = new Date();
     const timeStr =
@@ -322,14 +416,17 @@ export const CommandForge: React.FC = () => {
       timeStr,
       direction: 'TX',
       port: selectedPort,
-      length: bytes.length,
-      rawBytes: bytes,
+      length: wireBytes.length,
+      rawBytes: wireBytes,
       rawHex: hexToSend.toUpperCase(),
       protocol: 'Command',
-      summary: `TX (${mode.toUpperCase()}): ${text.trim()}`,
+      summary: `TX (${mode.toUpperCase()}): ${text.trim()}${
+        checksum.length ? ` + ${autoCrc.toUpperCase()} (${checksum.length}B)` : ''
+      }${ok ? '' : ' [engine offline]'}`,
       dissectedFields: [],
       hasError: false,
     });
+    recordTx(wireBytes.length);
   };
 
   const executeCommand = (cmd: UserCommand) => {
@@ -854,8 +951,9 @@ export const CommandForge: React.FC = () => {
                 className="w-full bg-[#10141D] border border-[#222D3D] rounded px-2 py-1 text-xs text-[#E2E8F0] focus:outline-none focus:border-[#00E5FF]"
               >
                 <option value="none">None</option>
-                <option value="crc16">CRC-16-CCITT</option>
-                <option value="crc32">CRC-32C</option>
+                <option value="crc16">CRC-16-CCITT (0xB4B8 test)</option>
+                <option value="crc16modbus">CRC-16-MODBUS</option>
+                <option value="crc32">CRC-32C (Castagnoli)</option>
                 <option value="sum8">Checksum-8</option>
               </select>
             </div>

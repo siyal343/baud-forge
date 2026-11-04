@@ -157,6 +157,12 @@ export const ElfSymbolView: React.FC = () => {
           <span className="text-[9px] px-1.5 py-0.2 rounded bg-[#1E2638] text-[#00E5FF] border border-[#00E5FF]/30">
             DWARF & TOKENS
           </span>
+          <span
+            data-tooltip="This panel currently renders a built-in demonstration dataset — symbols are not yet loaded from a real ELF binary."
+            className="text-[9px] px-1.5 py-0.2 rounded bg-[#FBBF24]/15 text-[#FBBF24] border border-[#FBBF24]/50 font-bold cursor-help"
+          >
+            DEMO DATA
+          </span>
         </div>
 
         {/* Tab Buttons */}

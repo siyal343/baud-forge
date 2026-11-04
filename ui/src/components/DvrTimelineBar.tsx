@@ -1,4 +1,5 @@
-import React from 'react';
+import React, { useMemo } from 'react';
+import { useShallow } from 'zustand/react/shallow';
 import { useWorkstationStore } from '../store/useWorkstationStore';
 import { Play, Pause, ChevronLeft, ChevronRight, Radio, AlertCircle } from 'lucide-react';
 
@@ -14,12 +15,29 @@ export const DvrTimelineBar: React.FC = () => {
     stepFrame,
     setPlaybackSpeed,
     seekToTimestamp,
-  } = useWorkstationStore();
+  } = useWorkstationStore(
+    useShallow((s) => ({
+      packets: s.packets,
+      selectedPacket: s.selectedPacket,
+      isLive: s.isLive,
+      isPaused: s.isPaused,
+      playbackSpeed: s.playbackSpeed,
+      setDvrLive: s.setDvrLive,
+      setDvrPaused: s.setDvrPaused,
+      stepFrame: s.stepFrame,
+      setPlaybackSpeed: s.setPlaybackSpeed,
+      seekToTimestamp: s.seekToTimestamp,
+    }))
+  );
 
   const totalPackets = packets.length;
-  const currentIdx = selectedPacket
-    ? packets.findIndex((p) => p.seqId === selectedPacket.seqId)
-    : totalPackets - 1;
+  // seqId lookup memoized — a linear findIndex over up to 10 000 packets
+  // previously ran on every 20 Hz tick even while idle.
+  const selectedIndex = useMemo(
+    () => (selectedPacket ? packets.findIndex((p) => p.seqId === selectedPacket.seqId) : -1),
+    [packets, selectedPacket]
+  );
+  const currentIdx = selectedIndex >= 0 ? selectedIndex : totalPackets - 1;
 
   const handleSliderChange = (e: React.ChangeEvent<HTMLInputElement>) => {
     const idx = parseInt(e.target.value, 10);

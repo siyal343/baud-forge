@@ -1,4 +1,5 @@
 import React, { useEffect } from 'react';
+import { useShallow } from 'zustand/react/shallow';
 import { useWorkstationStore } from './store/useWorkstationStore';
 import { GlobalRibbon } from './components/GlobalRibbon';
 import { WorkstationDock } from './components/WorkstationDock';
@@ -6,6 +7,7 @@ import { DvrTimelineBar } from './components/DvrTimelineBar';
 import { StatusFooter } from './components/StatusFooter';
 import { VaultExportModal } from './components/VaultExportModal';
 import { TooltipOverlay } from './components/TooltipOverlay';
+import { ToastHost } from './components/ToastHost';
 import { generateSampleImuPacket } from './services/simulationEngine';
 import { engineApi } from './services/engineApi';
 import { PacketDirection } from './types';
@@ -26,7 +28,24 @@ export const App: React.FC = () => {
     setDvrPaused,
     triggerFlashYield,
     updateSnapshot,
-  } = useWorkstationStore();
+  } = useWorkstationStore(
+    useShallow((s) => ({
+      isConnected: s.isConnected,
+      isSimulated: s.isSimulated,
+      isPaused: s.isPaused,
+      isFaultArmed: s.isFaultArmed,
+      selectedPort: s.selectedPort,
+      uiScale: s.uiScale,
+      setUiScale: s.setUiScale,
+      addPacket: s.addPacket,
+      addPacketBatch: s.addPacketBatch,
+      loadSampleCapture: s.loadSampleCapture,
+      stepFrame: s.stepFrame,
+      setDvrPaused: s.setDvrPaused,
+      triggerFlashYield: s.triggerFlashYield,
+      updateSnapshot: s.updateSnapshot,
+    }))
+  );
 
   // Initial demo capture load on start so screen is immediately rich with realistic data
   useEffect(() => {
@@ -203,6 +222,9 @@ export const App: React.FC = () => {
 
       {/* 6. Global Dark Engineering Tooltip Surface */}
       <TooltipOverlay />
+
+      {/* 7. Global Feedback Toasts (engine errors, TX/fault/pin results) */}
+      <ToastHost />
     </div>
   );
 };

@@ -107,6 +107,7 @@ interface WorkstationState {
   toggleRecording: () => void;
   clearStream: () => void;
   loadSampleCapture: () => void;
+  recordTx: (bytes: number) => void;
   addPacket: (pkt: PacketRow) => void;
   addPacketBatch: (pkts: PacketRow[]) => void;
   updatePins: (pins: Partial<PinsView>) => void;
@@ -115,6 +116,12 @@ interface WorkstationState {
 
 const MAX_PACKETS = 10000;
 const MAX_SCOPE_SAMPLES = 600;
+
+// Live packet-rate metering: timestamps of recently added packets, sampled
+// once per second. Kept outside the reactive state — only the computed rate
+// is written to the store so subscribers re-render at 1 Hz, not per packet.
+const rateTimestamps: number[] = [];
+let yieldTimerId: number | null = null;
 
 const getSavedUartConfig = () => {
   try {
@@ -270,7 +277,12 @@ export const useWorkstationStore = create<WorkstationState>((set, get) => ({
   },
 
   selectField: (field) => set({ selectedField: field }),
-  setHoveredField: (field) => set({ hoveredField: field }),
+  setHoveredField: (field) => {
+    // Skip no-op hovers (leave/enter between non-field rows) — without this
+    // guard every row hover in the dissector triggers a full-app re-render.
+    if (get().hoveredField === field) return;
+    set({ hoveredField: field });
+  },
   setAutoScroll: (autoScroll) => set({ autoScroll }),
   setFilterText: (filterText) => set({ filterText }),
 
@@ -349,11 +361,20 @@ export const useWorkstationStore = create<WorkstationState>((set, get) => ({
   setPlaybackSpeed: (speed) => set({ playbackSpeed: speed }),
 
   triggerFlashYield: (seconds = 30) => {
+    // Replace any running yield countdown instead of stacking a second
+    // interval that would double-decrement and double-reclaim the port.
+    if (yieldTimerId !== null) {
+      clearInterval(yieldTimerId);
+      yieldTimerId = null;
+    }
     set({ isYielded: true, yieldRemainingSecs: seconds, portState: 'yielded' });
-    const timer = setInterval(() => {
+    yieldTimerId = window.setInterval(() => {
       const { yieldRemainingSecs } = get();
       if (yieldRemainingSecs <= 1) {
-        clearInterval(timer);
+        if (yieldTimerId !== null) {
+          clearInterval(yieldTimerId);
+          yieldTimerId = null;
+        }
         get().reclaimPort();
       } else {
         set({ yieldRemainingSecs: yieldRemainingSecs - 1 });
@@ -401,7 +422,11 @@ export const useWorkstationStore = create<WorkstationState>((set, get) => ({
     });
   },
 
+  recordTx: (bytes) => set((state) => ({ txBytes: state.txBytes + bytes })),
+
   addPacket: (pkt) => {
+    rateTimestamps.push(Date.now());
+    if (rateTimestamps.length > 400) rateTimestamps.splice(0, rateTimestamps.length - 400);
     set((state) => {
       const newPackets = state.packets.length >= MAX_PACKETS
         ? [...state.packets.slice(state.packets.length - MAX_PACKETS + 1), pkt]
@@ -423,6 +448,9 @@ export const useWorkstationStore = create<WorkstationState>((set, get) => ({
 
   addPacketBatch: (batch) => {
     if (!batch.length) return;
+    const now = Date.now();
+    for (let i = 0; i < batch.length; i++) rateTimestamps.push(now);
+    if (rateTimestamps.length > 400) rateTimestamps.splice(0, rateTimestamps.length - 400);
     set((state) => {
       let combined = state.packets.concat(batch);
       if (combined.length > MAX_PACKETS) {
@@ -465,3 +493,15 @@ export const useWorkstationStore = create<WorkstationState>((set, get) => ({
     }
   },
 }));
+
+// Recompute the footer packet rate once per second from the rolling
+// timestamp window. Replaces the previous hardcoded `packetRate: 20`.
+if (typeof window !== 'undefined') {
+  setInterval(() => {
+    const cutoff = Date.now() - 2000;
+    while (rateTimestamps.length > 0 && rateTimestamps[0] < cutoff) rateTimestamps.shift();
+    const rate = Math.round(rateTimestamps.length / 2);
+    const current = useWorkstationStore.getState().packetRate;
+    if (rate !== current) useWorkstationStore.setState({ packetRate: rate });
+  }, 1000);
+}

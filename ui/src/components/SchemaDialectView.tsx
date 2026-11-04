@@ -141,6 +141,12 @@ export const SchemaDialectView: React.FC = () => {
           <span className="text-[9px] px-1.5 py-0.2 rounded bg-[#1E2638] text-[#00E5FF] border border-[#00E5FF]/30">
             RUNTIME SCHEMAS
           </span>
+          <span
+            data-tooltip="The schema sandbox and dissection table currently use a built-in demonstration dataset — APPLY TO WORKSPACE is not yet wired to the engine."
+            className="text-[9px] px-1.5 py-0.2 rounded bg-[#FBBF24]/15 text-[#FBBF24] border border-[#FBBF24]/50 font-bold cursor-help"
+          >
+            DEMO DATA
+          </span>
         </div>
 
         {/* Format Selector Pills */}

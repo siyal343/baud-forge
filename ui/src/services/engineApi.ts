@@ -18,9 +18,28 @@ export class EngineApiClient {
     this.baseUrl = baseUrl;
   }
 
+  /**
+   * Fetch with a hard deadline. Without this a hung / black-holed engine
+   * (or the dev server when the Rust host is not running) would leave
+   * callers awaiting forever — the root cause of the silent-no-op TX bug.
+   */
+  private async fetchWithTimeout(
+    path: string,
+    init?: RequestInit,
+    timeoutMs = 3500
+  ): Promise<Response> {
+    const controller = new AbortController();
+    const timer = setTimeout(() => controller.abort(), timeoutMs);
+    try {
+      return await fetch(`${this.baseUrl}${path}`, { ...init, signal: controller.signal });
+    } finally {
+      clearTimeout(timer);
+    }
+  }
+
   async checkHealth(): Promise<boolean> {
     try {
-      const res = await fetch(`${this.baseUrl}/api/health`, { method: 'GET' });
+      const res = await this.fetchWithTimeout('/api/health', { method: 'GET' });
       return res.ok;
     } catch {
       return false;
@@ -29,7 +48,7 @@ export class EngineApiClient {
 
   async getSnapshot(): Promise<UiSnapshot | null> {
     try {
-      const res = await fetch(`${this.baseUrl}/api/snapshot`);
+      const res = await this.fetchWithTimeout('/api/snapshot');
       if (!res.ok) return null;
       return await res.json();
     } catch {
@@ -97,7 +116,7 @@ export class EngineApiClient {
 
   async sendBytes(port: string, hexBytes: string, paceMs?: number): Promise<boolean> {
     try {
-      const res = await fetch(`${this.baseUrl}/api/send`, {
+      const res = await this.fetchWithTimeout('/api/send', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
@@ -114,7 +133,7 @@ export class EngineApiClient {
 
   async yieldPort(port: string, seconds: number): Promise<boolean> {
     try {
-      const res = await fetch(`${this.baseUrl}/api/yield`, {
+      const res = await this.fetchWithTimeout('/api/yield', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ port, seconds }),
@@ -127,7 +146,7 @@ export class EngineApiClient {
 
   async setFault(port: string, profile: any): Promise<boolean> {
     try {
-      const res = await fetch(`${this.baseUrl}/api/fault`, {
+      const res = await this.fetchWithTimeout('/api/fault', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ port, profile }),
@@ -140,7 +159,7 @@ export class EngineApiClient {
 
   async setPins(port: string, dtr: boolean, rts: boolean, pulseMs?: number): Promise<boolean> {
     try {
-      const res = await fetch(`${this.baseUrl}/api/pins`, {
+      const res = await this.fetchWithTimeout('/api/pins', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ port, dtr, rts, pulse_ms: pulseMs }),
@@ -156,7 +175,7 @@ export class EngineApiClient {
     steps: Array<{ dtr: boolean; rts: boolean; wait_ms: number }>
   ): Promise<boolean> {
     try {
-      const res = await fetch(`${this.baseUrl}/api/pins`, {
+      const res = await this.fetchWithTimeout('/api/pins', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ port, steps }),
@@ -170,7 +189,7 @@ export class EngineApiClient {
   async getDiff(pathA: string, pathB: string): Promise<any> {
     try {
       const params = new URLSearchParams({ a: pathA, b: pathB });
-      const res = await fetch(`${this.baseUrl}/api/diff?${params.toString()}`);
+      const res = await this.fetchWithTimeout(`/api/diff?${params.toString()}`);
       if (!res.ok) return null;
       return await res.json();
     } catch {
@@ -191,7 +210,7 @@ export class EngineApiClient {
     }
   ): Promise<boolean> {
     try {
-      const res = await fetch(`${this.baseUrl}/api/fault`, {
+      const res = await this.fetchWithTimeout('/api/fault', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
@@ -221,7 +240,7 @@ export class EngineApiClient {
   } | null> {
     try {
       const params = path ? `?path=${encodeURIComponent(path)}` : '';
-      const res = await fetch(`${this.baseUrl}/api/vault${params}`);
+      const res = await this.fetchWithTimeout(`/api/vault${params}`);
       if (!res.ok) return null;
       return await res.json();
     } catch {

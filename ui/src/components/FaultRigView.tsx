@@ -1,10 +1,19 @@
 import React, { useState } from 'react';
+import { useShallow } from 'zustand/react/shallow';
 import { useWorkstationStore } from '../store/useWorkstationStore';
+import { useToastStore } from '../store/useToastStore';
 import { engineApi } from '../services/engineApi';
 import { ShieldAlert, ShieldCheck, Zap, AlertTriangle, RefreshCw } from 'lucide-react';
 
 export const FaultRigView: React.FC = () => {
-  const { selectedPort, isFaultArmed, toggleFaultArm } = useWorkstationStore();
+  const { selectedPort, isFaultArmed, toggleFaultArm } = useWorkstationStore(
+    useShallow((s) => ({
+      selectedPort: s.selectedPort,
+      isFaultArmed: s.isFaultArmed,
+      toggleFaultArm: s.toggleFaultArm,
+    }))
+  );
+  const pushToast = useToastStore((s) => s.pushToast);
 
   const [faultKind, setFaultKind] = useState<'bit_flip' | 'drop' | 'truncate' | 'corrupt_crc' | 'delay'>('bit_flip');
   const [flipRateExp, setFlipRateExp] = useState(5); // 10^-5
@@ -33,10 +42,17 @@ export const FaultRigView: React.FC = () => {
         options.jitter_ms = jitterMs;
       }
 
-      await engineApi.setFaultConfig(selectedPort, faultKind, options);
-      setStatusMsg(`Fault [${faultKind}] active`);
+      const ok = await engineApi.setFaultConfig(selectedPort, faultKind, options);
+      if (ok) {
+        setStatusMsg(`Fault [${faultKind}] active`);
+        pushToast('success', 'Fault primitive applied', `${faultKind} is live on ${selectedPort}.`);
+      } else {
+        setStatusMsg('Engine unreachable — fault NOT applied');
+        pushToast('error', 'Fault apply failed', `The bforge engine did not accept the ${faultKind} profile for ${selectedPort}.`);
+      }
     } catch {
       setStatusMsg('Fault configuration failed');
+      pushToast('error', 'Fault configuration failed');
     } finally {
       setTimeout(() => setStatusMsg(null), 2500);
     }
@@ -46,24 +62,42 @@ export const FaultRigView: React.FC = () => {
     if (isFaultArmed) {
       toggleFaultArm();
     }
-    await engineApi.setFaultConfig(selectedPort, 'off');
-    setStatusMsg('All faults disarmed — clean link restored');
+    const ok = await engineApi.setFaultConfig(selectedPort, 'off');
+    if (ok) {
+      setStatusMsg('All faults disarmed — clean link restored');
+      pushToast('success', 'Faults disarmed', 'Clean link restored on ' + selectedPort + '.');
+    } else {
+      setStatusMsg('Engine unreachable — disarm command not delivered');
+      pushToast('error', 'Disarm failed', `The engine did not accept the disarm command for ${selectedPort}.`);
+    }
     setTimeout(() => setStatusMsg(null), 2000);
   };
 
   const triggerOneShotCorruptCrc = async () => {
-    setStatusMsg('Dispatched one-shot CRC corruption...');
     // Send fault bad_crc 3 to physical firmware
     const faultHex = '66 61 75 6c 74 20 62 61 64 5f 63 72 63 20 33 0a';
-    await engineApi.sendBytes(selectedPort, faultHex);
+    const ok = await engineApi.sendBytes(selectedPort, faultHex);
+    if (ok) {
+      setStatusMsg('Dispatched one-shot CRC corruption...');
+      pushToast('success', 'One-shot CRC corruption sent', `3 bad-CRC frames requested on ${selectedPort}.`);
+    } else {
+      setStatusMsg('Engine unreachable — one-shot NOT delivered');
+      pushToast('error', 'One-shot not delivered', `No engine connection on ${selectedPort} — firmware trigger never left the workstation.`);
+    }
     setTimeout(() => setStatusMsg(null), 1500);
   };
 
   const triggerOneShotDrop = async () => {
-    setStatusMsg('Dispatched one-shot frame drop...');
     // Send fault drop 2 to physical firmware
     const faultHex = '66 61 75 6c 74 20 64 72 6f 70 20 32 0a';
-    await engineApi.sendBytes(selectedPort, faultHex);
+    const ok = await engineApi.sendBytes(selectedPort, faultHex);
+    if (ok) {
+      setStatusMsg('Dispatched one-shot frame drop...');
+      pushToast('success', 'One-shot frame drop sent', `2 dropped frames requested on ${selectedPort}.`);
+    } else {
+      setStatusMsg('Engine unreachable — one-shot NOT delivered');
+      pushToast('error', 'One-shot not delivered', `No engine connection on ${selectedPort} — firmware trigger never left the workstation.`);
+    }
     setTimeout(() => setStatusMsg(null), 1500);
   };
 

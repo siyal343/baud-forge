@@ -45,26 +45,14 @@ export const SessionDiffView: React.FC = () => {
       if (data && !data.error) {
         setResult(data);
       } else {
-        // Fallback demo result for UI visualization if file not currently on disk
-        setResult({
-          records_a: 122,
-          records_b: 122,
-          frames_a: 122,
-          frames_b: 120,
-          identical: false,
-          first_divergence: {
-            record: 42,
-            reason: 'Field value delta exceeded tolerance in payload',
-            field: 'v_batt_mv',
-          },
-          changed_fields: [
-            { name: 'v_batt_mv', occurrences: 18, sample_a: '7412 mV', sample_b: '7428 mV' },
-            { name: 'gyro_z', occurrences: 4, sample_a: '0.012 rad/s', sample_b: '0.045 rad/s' },
-            { name: 'flags', occurrences: 1, sample_a: '0x00', sample_b: '0x02' },
-          ],
-          missing_from_a: 0,
-          missing_from_b: 2,
-        });
+        // Honest failure: never fabricate a diff. A validation tool that
+        // invents divergences is worse than one that reports it is offline.
+        setResult(null);
+        setError(
+          data?.error
+            ? String(data.error)
+            : 'Engine unreachable (or vault missing) — no real comparison available. Start the bforge engine and ensure both .bflog paths exist.'
+        );
       }
     } catch (err: any) {
       setError(err?.message || 'Diff failed');

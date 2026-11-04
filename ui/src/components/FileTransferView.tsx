@@ -1,4 +1,5 @@
 import React, { useState, useEffect, useRef } from 'react';
+import { useShallow } from 'zustand/react/shallow';
 import {
   Upload,
   Download,
@@ -24,7 +25,13 @@ interface TransferBlock {
 }
 
 export const FileTransferView: React.FC = () => {
-  const { selectedPort, triggerFlashYield, isYielded } = useWorkstationStore();
+  const { selectedPort, triggerFlashYield, isYielded } = useWorkstationStore(
+    useShallow((s) => ({
+      selectedPort: s.selectedPort,
+      triggerFlashYield: s.triggerFlashYield,
+      isYielded: s.isYielded,
+    }))
+  );
 
   const [mode, setMode] = useState<ModemMode>('xmodem-crc');
   const [direction, setDirection] = useState<TransferDirection>('send');
@@ -40,6 +47,22 @@ export const FileTransferView: React.FC = () => {
   const [lastBlockPreview, setLastBlockPreview] = useState<TransferBlock | null>(null);
 
   const transferIntervalRef = useRef<number | null>(null);
+  // Guards the deferred handshake setTimeouts: closing the dockview tab
+  // mid-handshake must not spawn a fresh transfer interval after unmount.
+  const aliveRef = useRef(true);
+
+  // Unmount cleanup — without this a mid-transfer tab close left the interval
+  // running invisibly, spamming marker frames to the serial port until
+  // "completion" with no way to stop it from the UI.
+  useEffect(() => {
+    return () => {
+      aliveRef.current = false;
+      if (transferIntervalRef.current !== null) {
+        window.clearInterval(transferIntervalRef.current);
+        transferIntervalRef.current = null;
+      }
+    };
+  }, []);
 
   // Compute block size based on mode
   const blockSize = mode === 'xmodem-1k' || (mode === 'ymodem' && currentBlock > 0) ? 1024 : 128;
@@ -74,6 +97,7 @@ export const FileTransferView: React.FC = () => {
 
       // Simulate initial handshake ACK / 'C'
       setTimeout(() => {
+        if (!aliveRef.current) return;
         addLog(`Received receiver sync character '${mode === 'xmodem-checksum' ? 'NAK' : 'C'}'. Beginning transmission.`);
         setStatus('transferring');
         startBlockTransmission();
@@ -81,6 +105,7 @@ export const FileTransferView: React.FC = () => {
     } else {
       addLog(`Sending polling character '${mode === 'xmodem-checksum' ? 'NAK' : 'C'}' to target...`);
       setTimeout(() => {
+        if (!aliveRef.current) return;
         setStatus('transferring');
         startBlockReception();
       }, 600);

@@ -1,5 +1,7 @@
 import React, { useState } from 'react';
+import { useShallow } from 'zustand/react/shallow';
 import { useWorkstationStore } from '../store/useWorkstationStore';
+import { useToastStore } from '../store/useToastStore';
 import { engineApi } from '../services/engineApi';
 import { Sliders, Play, Plus, Trash2, Cpu, RotateCcw, Zap } from 'lucide-react';
 
@@ -11,7 +13,14 @@ interface Step {
 }
 
 export const PinSequencerView: React.FC = () => {
-  const { selectedPort, pins, updatePins } = useWorkstationStore();
+  const { selectedPort, pins, updatePins } = useWorkstationStore(
+    useShallow((s) => ({
+      selectedPort: s.selectedPort,
+      pins: s.pins,
+      updatePins: s.updatePins,
+    }))
+  );
+  const pushToast = useToastStore((s) => s.pushToast);
 
   const [dtrState, setDtrState] = useState(pins.dtr);
   const [rtsState, setRtsState] = useState(pins.rts);
@@ -28,12 +37,20 @@ export const PinSequencerView: React.FC = () => {
     setDtrState(dtr);
     setRtsState(rts);
     updatePins({ dtr, rts });
-    await engineApi.setPins(selectedPort, dtr, rts);
+    const ok = await engineApi.setPins(selectedPort, dtr, rts);
+    if (!ok) {
+      pushToast('error', 'Pin toggle not delivered', `Engine did not accept DTR:${dtr ? 1 : 0}/RTS:${rts ? 1 : 0} for ${selectedPort}.`);
+    }
   };
 
   const handlePulse = async (pulseMs: number) => {
     setStatusMsg(`Pulsing lines for ${pulseMs} ms...`);
-    await engineApi.setPins(selectedPort, dtrState, rtsState, pulseMs);
+    const ok = await engineApi.setPins(selectedPort, dtrState, rtsState, pulseMs);
+    if (ok) {
+      pushToast('success', 'Reset pulse sent', `${pulseMs} ms pulse on ${selectedPort}.`);
+    } else {
+      pushToast('error', 'Pulse not delivered', `Engine unreachable — no pulse on ${selectedPort}.`);
+    }
     setTimeout(() => setStatusMsg(null), 1500);
   };
 
@@ -79,10 +96,17 @@ export const PinSequencerView: React.FC = () => {
         rts: s.rts,
         wait_ms: s.wait_ms,
       }));
-      await engineApi.runPinSequence(selectedPort, payload);
-      setStatusMsg('Sequence completed successfully');
+      const ok = await engineApi.runPinSequence(selectedPort, payload);
+      if (ok) {
+        setStatusMsg('Sequence completed successfully');
+        pushToast('success', 'Pin sequence executed', `${steps.length}-step sequence completed on ${selectedPort}.`);
+      } else {
+        setStatusMsg('Engine unreachable — sequence NOT executed');
+        pushToast('error', 'Sequence not executed', `The engine did not accept the ${steps.length}-step sequence for ${selectedPort}.`);
+      }
     } catch {
       setStatusMsg('Sequence execution failed');
+      pushToast('error', 'Sequence execution failed');
     } finally {
       setRunning(false);
       setTimeout(() => setStatusMsg(null), 2500);
