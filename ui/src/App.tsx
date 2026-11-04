@@ -193,9 +193,18 @@ export const App: React.FC = () => {
   // Global Keyboard Shortcuts
   useEffect(() => {
     const handleKeyDown = (e: KeyboardEvent) => {
-      // Ignore if focus is in a text field, or on an interactive control —
-      // Space/arrow keys must activate buttons and selects, not the DVR.
       const tag = document.activeElement?.tagName;
+
+      // Escape works everywhere — including inside text fields — so the
+      // advertised "Clear filter (Esc)" behaves while typing in the filter.
+      if (e.key === 'Escape') {
+        setFilterText('');
+        if (tag === 'INPUT') (document.activeElement as HTMLElement)?.blur?.();
+        return;
+      }
+
+      // Otherwise ignore focus in a text field or on an interactive control —
+      // Space/arrow keys must activate buttons and selects, not the DVR.
       if (
         tag === 'INPUT' ||
         tag === 'TEXTAREA' ||
@@ -232,10 +241,6 @@ export const App: React.FC = () => {
         const filter = document.getElementById('bforge-stream-filter') as HTMLInputElement | null;
         filter?.focus();
         filter?.select();
-      } else if (e.key === 'Escape') {
-        // Advertised as "Clear filter (Esc)"
-        setFilterText('');
-        if (tag === 'INPUT') (document.activeElement as HTMLElement)?.blur?.();
       } else if (e.ctrlKey && e.code === 'KeyL') {
         // UX_ARCH §2.3: Ctrl+L clears the stream view
         e.preventDefault();

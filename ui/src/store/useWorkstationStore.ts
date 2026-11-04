@@ -540,7 +540,10 @@ export const useWorkstationStore = create<WorkstationState>((set, get) => ({
         packets: newPackets,
         scopeSamples: newScope,
         rxBytes: state.rxBytes + pkt.length,
+        // Live-follow: keep the highlighted hex/dissector field in sync with
+        // the newest frame, matching selectPacket's first-field behavior.
         selectedPacket: state.autoScroll ? pkt : state.selectedPacket,
+        selectedField: state.autoScroll ? (pkt.dissectedFields?.[0] ?? null) : state.selectedField,
       };
     });
   },
@@ -580,6 +583,7 @@ export const useWorkstationStore = create<WorkstationState>((set, get) => ({
         scopeSamples: combinedScope,
         rxBytes: state.rxBytes + addedBytes,
         selectedPacket: state.autoScroll ? lastPkt : state.selectedPacket,
+        selectedField: state.autoScroll ? (lastPkt.dissectedFields?.[0] ?? null) : state.selectedField,
       };
     });
   },
