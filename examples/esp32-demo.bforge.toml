@@ -14,5 +14,5 @@ version = "1.0"
 id = "esp"
 device_path = "COM8"
 baud_rate = 115200
-framing = { mode = "cobs" }
+framing = { mode = "cobs", crc = "crc32c" }
 dissector = { type = "c_header", file = "crates/bforge-dissect/tests/fixtures/imu_packet.h", root_struct = "ImuPacket" }

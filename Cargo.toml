@@ -9,6 +9,7 @@ members = [
     "crates/bforge-script",
     "crates/bforge-core",
     "crates/bforge-cli",
+    "crates/bforge-desktop",
 ]
 
 [workspace.package]

@@ -973,9 +973,11 @@ fn query(target: &str) -> std::collections::HashMap<String, String> {
 }
 
 /// Size and shape of the vault, so a scrubber knows its own range.
-fn vault_info(stream: &mut TcpStream, shared: &Arc<Shared>, _target: &str) {
-    let source = shared.vault.lock().unwrap().clone();
-    let Some(source) = source else {
+fn vault_info(stream: &mut TcpStream, shared: &Arc<Shared>, target: &str) {
+    let query_map = query(target);
+    let default_path = shared.vault.lock().unwrap().as_ref().map(|s| s.path.clone());
+    let path = query_map.get("path").map(std::path::PathBuf::from).or(default_path);
+    let Some(path) = path else {
         return respond(
             stream,
             "404 Not Found",
@@ -983,7 +985,7 @@ fn vault_info(stream: &mut TcpStream, shared: &Arc<Shared>, _target: &str) {
             b"{\"error\":\"no vault\"}",
         );
     };
-    let mut reader = match bforge_storage::LogReader::open(&source.path) {
+    let mut reader = match bforge_storage::LogReader::open(&path) {
         Ok(reader) => reader,
         Err(error) => {
             let body = format!("{{\"error\":\"{error}\"}}");
@@ -993,7 +995,7 @@ fn vault_info(stream: &mut TcpStream, shared: &Arc<Shared>, _target: &str) {
     let duration_ns = reader.last_timestamp_ns();
     let body = format!(
         "{{\"path\":{},\"records\":{},\"bytes\":{},\"damaged_tail\":{},\"duration_ms\":{}}}",
-        serde_json::json!(source.path.display().to_string()),
+        serde_json::json!(path.display().to_string()),
         reader.chunks(),
         reader.payload_bytes(),
         reader.damaged_tail(),
@@ -1009,8 +1011,10 @@ fn vault_info(stream: &mut TcpStream, shared: &Arc<Shared>, _target: &str) {
 /// desktop browser takes without complaint. A chunked writer is the next step if a
 /// capture ever needs to be larger than the memory it is served from.
 fn vault_export(stream: &mut TcpStream, shared: &Arc<Shared>, target: &str) {
-    let source = shared.vault.lock().unwrap().clone();
-    let Some(source) = source else {
+    let query = query(target);
+    let default_path = shared.vault.lock().unwrap().as_ref().map(|s| s.path.clone());
+    let path = query.get("path").map(std::path::PathBuf::from).or(default_path);
+    let Some(path) = path else {
         return respond(
             stream,
             "404 Not Found",
@@ -1018,7 +1022,6 @@ fn vault_export(stream: &mut TcpStream, shared: &Arc<Shared>, target: &str) {
             b"{\"error\":\"no vault\"}",
         );
     };
-    let query = query(target);
     let name = query.get("format").map(String::as_str).unwrap_or("csv");
     let Some(format) = bforge_storage::format_from_name(name) else {
         let body = format!(
@@ -1033,7 +1036,7 @@ fn vault_export(stream: &mut TcpStream, shared: &Arc<Shared>, target: &str) {
         );
     };
 
-    let mut reader = match bforge_storage::LogReader::open(&source.path) {
+    let mut reader = match bforge_storage::LogReader::open(&path) {
         Ok(reader) => reader,
         Err(error) => {
             let body = format!("{{\"error\":\"{error}\"}}");
@@ -1047,8 +1050,7 @@ fn vault_export(stream: &mut TcpStream, shared: &Arc<Shared>, target: &str) {
     }
 
     let extension = bforge_storage::format_extension(format);
-    let stem = source
-        .path
+    let stem = path
         .file_stem()
         .map(|stem| stem.to_string_lossy().to_string())
         .unwrap_or_else(|| "vault".to_string());

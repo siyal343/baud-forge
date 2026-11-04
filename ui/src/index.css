@@ -1,0 +1,159 @@
+@import "tailwindcss";
+@import "dockview/dist/styles/dockview.css";
+
+:root {
+  --bf-canvas: #0a0d13;
+  --bf-panel: #10141d;
+  --bf-subpanel: #161c28;
+  --bf-hover: #1e2638;
+  --bf-active: #26324a;
+  --bf-border-subtle: #1a2230;
+  --bf-border-strong: #2d3a4e;
+  --bf-text-primary: #e2e8f0;
+  --bf-text-secondary: #94a3b8;
+  --bf-text-muted: #64748b;
+  --bf-accent-cyan: #00e5ff;
+  --bf-accent-amber: #fbbf24;
+  --bf-status-ok: #10b981;
+  --bf-status-warn: #f59e0b;
+  --bf-status-fault: #ef4444;
+}
+
+html {
+  font-size: 11px;
+  height: 100%;
+  width: 100%;
+  overflow: hidden;
+}
+
+body {
+  height: 100%;
+  width: 100%;
+  overflow: hidden;
+  font-family: 'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+  color-scheme: dark;
+  -webkit-font-smoothing: antialiased;
+}
+
+.font-mono {
+  font-family: 'JetBrains Mono', ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace;
+  font-variant-numeric: tabular-nums;
+}
+
+/* Custom styling for Dockview to match BaudForge dark engineering aesthetic */
+.dockview-theme-dark.dockview-theme-baudforge,
+.dockview-theme-baudforge {
+  --dv-background-color: #0a0d13;
+  --dv-group-view-background-color: #0d111a;
+  --dv-tabs-and-actions-container-background-color: #121722;
+  --dv-activegroup-visiblepanel-tab-background-color: #10141d;
+  --dv-activegroup-hiddenpanel-tab-background-color: #161c28;
+  --dv-inactivegroup-visiblepanel-tab-background-color: #10141d;
+  --dv-inactivegroup-hiddenpanel-tab-background-color: #161c28;
+  --dv-activegroup-visiblepanel-tab-color: #00e5ff;
+  --dv-activegroup-hiddenpanel-tab-color: #94a3b8;
+  --dv-inactivegroup-visiblepanel-tab-color: #e2e8f0;
+  --dv-inactivegroup-hiddenpanel-tab-color: #64748b;
+  --dv-tab-divider-color: #1a2230;
+  --dv-separator-border: #222d3d;
+  --dv-sash-color: #222d3d;
+  --dv-sash-hover-color: #00e5ff;
+  --dv-sash-size: 4px;
+  --dv-drag-over-background-color: rgba(0, 229, 255, 0.15);
+  --dv-drag-over-border: 1px dashed #00e5ff;
+  --dv-drag-over-border-color: #00e5ff;
+  --dv-dnd-compass-color: #00e5ff;
+  --dv-dnd-compass-active-cell-color: #00e5ff;
+  --dv-tabs-and-actions-container-height: 24px;
+}
+
+.dockview-theme-baudforge .dockview-tab,
+.dockview-theme-dark .dockview-tab {
+  font-family: 'JetBrains Mono', monospace;
+  font-size: 10px;
+  font-weight: 600;
+  letter-spacing: 0.05em;
+  text-transform: uppercase;
+  height: 24px;
+  line-height: 24px;
+  border-right: 1px solid #1a2230;
+  cursor: grab;
+}
+
+.dockview-theme-baudforge .dockview-tab:active,
+.dockview-theme-dark .dockview-tab:active {
+  cursor: grabbing;
+}
+
+.dockview-theme-baudforge .dockview-tab.active-tab,
+.dockview-theme-dark .dockview-tab.active-tab {
+  border-top: 2px solid #00e5ff;
+  color: #00e5ff !important;
+}
+
+/* Floating Group Window Styling in Dockview */
+.dv-floating-overlay-host {
+  position: absolute !important;
+  pointer-events: none;
+  z-index: 500 !important;
+}
+
+.dv-floating-overlay-host > .dv-resize-container {
+  pointer-events: auto !important;
+  border: 1px solid #00e5ff !important;
+  border-radius: 6px !important;
+  box-shadow: 0 16px 48px rgba(0, 0, 0, 0.9) !important;
+  background-color: #10141d !important;
+  overflow: hidden;
+}
+
+.dv-floating-titlebar {
+  background-color: #161c28 !important;
+  border-bottom: 1px solid #222d3d !important;
+  height: 24px !important;
+}
+
+/* Global Tooltip Floating Surface (Specs 0036 UX Ergonomics) */
+.bf-tooltip {
+  position: fixed;
+  z-index: 100000;
+  background-color: #0e131f;
+  color: #e2e8f0;
+  border: 1px solid #2d3a4e;
+  border-radius: 4px;
+  padding: 3px 6px;
+  font-family: 'JetBrains Mono', monospace;
+  font-size: 9.5px;
+  line-height: 1.25;
+  white-space: nowrap;
+  pointer-events: none;
+  box-shadow: 0 4px 16px rgba(0, 0, 0, 0.7);
+  animation: bf-tooltip-fade 80ms ease-out;
+}
+
+@keyframes bf-tooltip-fade {
+  from {
+    opacity: 0;
+    transform: translateY(2px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+/* Custom scrollbars for high data density */
+::-webkit-scrollbar {
+  width: 4px;
+  height: 4px;
+}
+::-webkit-scrollbar-track {
+  background: #0a0d13;
+}
+::-webkit-scrollbar-thumb {
+  background: #222d3d;
+  border-radius: 2px;
+}
+::-webkit-scrollbar-thumb:hover {
+  background: #3a4b66;
+}

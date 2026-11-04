@@ -8,3 +8,8 @@
 *.bflog
 /archive/
 *.ico
+node_modules/
+ui/dist/
+.zcode/
+__pycache__/
+*.pyc
