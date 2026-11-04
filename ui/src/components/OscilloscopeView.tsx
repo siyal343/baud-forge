@@ -1,4 +1,5 @@
 import React, { useRef, useEffect, useState, useCallback, useMemo } from 'react';
+import { useShallow } from 'zustand/react/shallow';
 import { useWorkstationStore } from '../store/useWorkstationStore';
 import { ScopeSignalSample } from '../types';
 import {
@@ -41,7 +42,15 @@ export const OscilloscopeView: React.FC = () => {
     ch2Visible,
     logicRailsVisible,
     toggleChannel,
-  } = useWorkstationStore();
+  } = useWorkstationStore(
+    useShallow((s) => ({
+      scopeSamples: s.scopeSamples,
+      ch1Visible: s.ch1Visible,
+      ch2Visible: s.ch2Visible,
+      logicRailsVisible: s.logicRailsVisible,
+      toggleChannel: s.toggleChannel,
+    }))
+  );
 
   const containerRef = useRef<HTMLDivElement>(null);
   const canvasRef = useRef<HTMLCanvasElement>(null);
