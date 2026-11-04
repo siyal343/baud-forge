@@ -100,10 +100,13 @@ export const HexInspector: React.FC = () => {
         )}
 
         {activeField && (
-          <div className="flex items-center gap-1.5 text-[9.5px] font-mono text-[#00E5FF] truncate">
+          <div
+            data-tooltip={`Offset: 0x${activeField.offset.toString(16).padStart(2, '0').toUpperCase()}..0x${(activeField.offset + activeField.length - 1).toString(16).padStart(2, '0').toUpperCase()} | Value: ${String(activeField.decodedValue)}${activeField.unit ? ` ${activeField.unit}` : ''}`}
+            className="flex items-center gap-1.5 text-[9.5px] font-mono text-[#00E5FF] truncate cursor-help"
+          >
             <span className="w-1.5 h-1.5 rounded-full bg-[#00E5FF] animate-pulse" />
             <span className="truncate">
-              HL: {activeField.name} ({activeField.length}B)
+              HL: {activeField.name} · 0x{activeField.offset.toString(16).padStart(2, '0').toUpperCase()}..0x{(activeField.offset + activeField.length - 1).toString(16).padStart(2, '0').toUpperCase()} · {String(activeField.decodedValue)}
             </span>
           </div>
         )}

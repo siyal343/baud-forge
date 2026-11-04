@@ -997,7 +997,7 @@ export const CommandForge: React.FC = () => {
       {/* Add Command Popup Entry Modal (Without HEX/ASCII toggle per User Request 0) */}
       {isModalOpen && (
         <div className="fixed inset-0 z-50 bg-black/75 backdrop-blur-xs flex items-center justify-center p-4">
-          <div className="bg-[#121722] border border-[#00E5FF]/40 rounded-lg shadow-[0_0_25px_rgba(0,0,0,0.8)] w-full max-w-md p-4 flex flex-col gap-3 font-mono text-[11px] animate-in fade-in zoom-in-95 duration-100">
+          <div className="bg-[#121722] border border-[#00E5FF]/40 rounded-lg shadow-[0_0_25px_rgba(0,0,0,0.8)] w-full max-w-md p-4 flex flex-col gap-3 font-mono text-[11px]">
             {/* Modal Header */}
             <div className="flex items-center justify-between pb-2 border-b border-[#222D3D]">
               <div className="flex items-center gap-2">

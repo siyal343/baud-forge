@@ -143,7 +143,7 @@ export const VaultExportModal: React.FC = () => {
 
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/75 backdrop-blur-[2px] p-4">
-      <div className="bg-[#0E131F] border border-[#222D3D] rounded-lg shadow-2xl w-full max-w-2xl overflow-hidden flex flex-col font-sans text-[#E2E8F0] animate-in fade-in zoom-in-95 duration-150">
+      <div className="bg-[#0E131F] border border-[#222D3D] rounded-lg shadow-2xl w-full max-w-2xl overflow-hidden flex flex-col font-sans text-[#E2E8F0]">
         {/* Header */}
         <div className="flex items-center justify-between px-4 py-3 bg-[#161C28] border-b border-[#222D3D]">
           <div className="flex items-center gap-2">

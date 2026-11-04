@@ -97,7 +97,7 @@ export function generateSampleImuPacket(
       offset: 0,
       length: 2,
       rawHex: 'AA 55',
-      decodedValue: '0x55AA',
+      decodedValue: '0xAA55',
       unit: 'marker',
     },
     {

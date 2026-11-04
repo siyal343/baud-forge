@@ -1,11 +1,21 @@
 import React from 'react';
+import { useShallow } from 'zustand/react/shallow';
 import { useWorkstationStore } from '../store/useWorkstationStore';
+import { toast } from '../store/useToastStore';
 import { DissectedField } from '../types';
 import { CheckCircle2, AlertTriangle, Layers, LineChart } from 'lucide-react';
 
 export const ProtocolDissector: React.FC = () => {
   const { selectedPacket, selectedField, hoveredField, selectField, setHoveredField } =
-    useWorkstationStore();
+    useWorkstationStore(
+      useShallow((s) => ({
+        selectedPacket: s.selectedPacket,
+        selectedField: s.selectedField,
+        hoveredField: s.hoveredField,
+        selectField: s.selectField,
+        setHoveredField: s.setHoveredField,
+      }))
+    );
 
   const fields = selectedPacket?.dissectedFields || [];
   const activeField = hoveredField || selectedField;
@@ -116,6 +126,14 @@ export const ProtocolDissector: React.FC = () => {
                   {typeof f.decodedValue === 'number' && (
                     <button
                       title={`Plot ${f.name} in Oscilloscope`}
+                      onClick={() => {
+                        // Honest no-op: scope channels are hard-wired to the
+                        // demo sources until per-field signal binding lands.
+                        toast.info(
+                          'Signal binding not yet available',
+                          `${f.name} cannot be plotted yet — scope channels are currently fixed sources.`
+                        );
+                      }}
                       className="text-[#64748B] hover:text-[#00E5FF] p-0.5"
                     >
                       <LineChart className="w-3 h-3" />
