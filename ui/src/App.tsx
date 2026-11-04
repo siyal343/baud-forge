@@ -28,6 +28,8 @@ export const App: React.FC = () => {
     setDvrPaused,
     triggerFlashYield,
     updateSnapshot,
+    clearStream,
+    setFilterText,
   } = useWorkstationStore(
     useShallow((s) => ({
       isConnected: s.isConnected,
@@ -44,6 +46,8 @@ export const App: React.FC = () => {
       setDvrPaused: s.setDvrPaused,
       triggerFlashYield: s.triggerFlashYield,
       updateSnapshot: s.updateSnapshot,
+      clearStream: s.clearStream,
+      setFilterText: s.setFilterText,
     }))
   );
 
@@ -52,12 +56,92 @@ export const App: React.FC = () => {
     loadSampleCapture();
   }, [loadSampleCapture]);
 
-  // Try connecting to live Rust Engine (bforge serve /api/events)
+  // Try connecting to live Rust Engine (bforge serve /api/events).
+  // Retries health checks on a 5 s loop (so a late-starting engine is picked
+  // up without a reload) and re-subscribes with backoff when the SSE stream
+  // drops. The `disposed` guard prevents the post-unmount subscription race
+  // (StrictMode double-mounts included).
   useEffect(() => {
+    let disposed = false;
     let unsubscribe: (() => void) | null = null;
+    let retryTimer: number | null = null;
 
-    engineApi.checkHealth().then((isHealthy) => {
-      if (isHealthy) {
+    const handleFrameBatch = (rawFrames: any[]) => {
+      if (Array.isArray(rawFrames) && rawFrames.length > 0) {
+        const now = new Date();
+        const timeStr =
+          now.toTimeString().split(' ')[0] +
+          '.' +
+          String(now.getMilliseconds()).padStart(3, '0');
+
+        const batch = rawFrames.map((f: any, idx: number) => {
+          const bytes = f.hex
+            ? f.hex
+                .trim()
+                .split(/\s+/)
+                .map((h: string) => parseInt(h, 16))
+                .filter((n: number) => !isNaN(n))
+            : [];
+
+          const dissectedFields = (f.fields || []).map((field: any) => ({
+            name: field.name,
+            type: 'field',
+            offset: field.offset,
+            length: field.len,
+            rawHex: bytes
+              .slice(field.offset, field.offset + field.len)
+              .map((b: number) => b.toString(16).padStart(2, '0'))
+              .join(' ')
+              .toUpperCase(),
+            decodedValue: field.value,
+            unit: field.name.includes('mv')
+              ? 'mV'
+              : field.name.includes('us')
+              ? 'μs'
+              : field.name.includes('gyro')
+              ? 'rad/s'
+              : undefined,
+          }));
+
+          return {
+            seqId: Math.round(f.timestamp_us / 1000) % 1000000 || idx + 1,
+            timestampNs: f.timestamp_us * 1000,
+            timestampUs: f.timestamp_us,
+            deltaUs: f.delta_us,
+            timeStr,
+            direction: (f.direction === 'rx'
+              ? 'RX'
+              : f.direction === 'tx'
+              ? 'TX'
+              : 'FAULT') as PacketDirection,
+            port: f.port,
+            length: f.len,
+            rawBytes: bytes,
+            rawHex: f.hex || '',
+            protocol: f.protocol || 'ImuPacket',
+            summary:
+              f.text ||
+              (f.decode_error
+                ? `ERR: ${f.decode_error}`
+                : `Decoded ${dissectedFields.length} fields (${f.len}B)`),
+            dissectedFields,
+            hasError: !!f.decode_error,
+            errorMsg: f.decode_error,
+          };
+        });
+
+        addPacketBatch(batch);
+      }
+    };
+
+    const tryConnect = () => {
+      if (disposed) return;
+      engineApi.checkHealth().then((isHealthy) => {
+        if (disposed) return;
+        if (!isHealthy) {
+          retryTimer = window.setTimeout(tryConnect, 5000);
+          return;
+        }
         useWorkstationStore.setState({ isSimulated: false, isConnected: true });
         unsubscribe = engineApi.subscribeEvents(
           (snapshot) => {
@@ -66,78 +150,26 @@ export const App: React.FC = () => {
           (uiEvent) => {
             console.log('UI Event:', uiEvent);
           },
-          (rawFrames) => {
-            if (Array.isArray(rawFrames) && rawFrames.length > 0) {
-              const now = new Date();
-              const timeStr =
-                now.toTimeString().split(' ')[0] +
-                '.' +
-                String(now.getMilliseconds()).padStart(3, '0');
-
-              const batch = rawFrames.map((f: any, idx: number) => {
-                const bytes = f.hex
-                  ? f.hex
-                      .trim()
-                      .split(/\s+/)
-                      .map((h: string) => parseInt(h, 16))
-                      .filter((n: number) => !isNaN(n))
-                  : [];
-
-                const dissectedFields = (f.fields || []).map((field: any) => ({
-                  name: field.name,
-                  type: 'field',
-                  offset: field.offset,
-                  length: field.len,
-                  rawHex: bytes
-                    .slice(field.offset, field.offset + field.len)
-                    .map((b: number) => b.toString(16).padStart(2, '0'))
-                    .join(' ')
-                    .toUpperCase(),
-                  decodedValue: field.value,
-                  unit: field.name.includes('mv')
-                    ? 'mV'
-                    : field.name.includes('us')
-                    ? 'μs'
-                    : field.name.includes('gyro')
-                    ? 'rad/s'
-                    : undefined,
-                }));
-
-                return {
-                  seqId: Math.round(f.timestamp_us / 1000) % 1000000 || idx + 1,
-                  timestampNs: f.timestamp_us * 1000,
-                  timestampUs: f.timestamp_us,
-                  deltaUs: f.delta_us,
-                  timeStr,
-                  direction: (f.direction === 'rx'
-                    ? 'RX'
-                    : f.direction === 'tx'
-                    ? 'TX'
-                    : 'FAULT') as PacketDirection,
-                  port: f.port,
-                  length: f.len,
-                  rawBytes: bytes,
-                  rawHex: f.hex || '',
-                  protocol: f.protocol || 'ImuPacket',
-                  summary:
-                    f.text ||
-                    (f.decode_error
-                      ? `ERR: ${f.decode_error}`
-                      : `Decoded ${dissectedFields.length} fields (${f.len}B)`),
-                  dissectedFields,
-                  hasError: !!f.decode_error,
-                  errorMsg: f.decode_error,
-                };
-              });
-
-              addPacketBatch(batch);
+          handleFrameBatch,
+          undefined,
+          // SSE dropped: tear down and retry until the stream returns.
+          () => {
+            if (disposed) return;
+            if (unsubscribe) {
+              unsubscribe();
+              unsubscribe = null;
             }
+            retryTimer = window.setTimeout(tryConnect, 2000);
           }
         );
-      }
-    });
+      });
+    };
+
+    tryConnect();
 
     return () => {
+      disposed = true;
+      if (retryTimer !== null) clearTimeout(retryTimer);
       if (unsubscribe) unsubscribe();
     };
   }, [updateSnapshot, addPacketBatch]);
@@ -194,12 +226,26 @@ export const App: React.FC = () => {
       } else if (e.ctrlKey && e.shiftKey && e.code === 'KeyY') {
         e.preventDefault();
         triggerFlashYield(30);
+      } else if (e.key === '/') {
+        // Spec 2.3: '/' focuses the stream filter (advertised in its placeholder)
+        e.preventDefault();
+        const filter = document.getElementById('bforge-stream-filter') as HTMLInputElement | null;
+        filter?.focus();
+        filter?.select();
+      } else if (e.key === 'Escape') {
+        // Advertised as "Clear filter (Esc)"
+        setFilterText('');
+        if (tag === 'INPUT') (document.activeElement as HTMLElement)?.blur?.();
+      } else if (e.ctrlKey && e.code === 'KeyL') {
+        // UX_ARCH §2.3: Ctrl+L clears the stream view
+        e.preventDefault();
+        clearStream();
       }
     };
 
     window.addEventListener('keydown', handleKeyDown);
     return () => window.removeEventListener('keydown', handleKeyDown);
-  }, [setDvrPaused, stepFrame, triggerFlashYield, uiScale, setUiScale]);
+  }, [setDvrPaused, stepFrame, triggerFlashYield, setFilterText, clearStream, uiScale, setUiScale]);
 
   // Synchronize native webview zoom to document element for perfect responsive scaling
   useEffect(() => {

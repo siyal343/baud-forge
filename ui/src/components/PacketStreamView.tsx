@@ -344,6 +344,7 @@ export const PacketStreamView: React.FC = () => {
             <Search className="w-3 h-3 absolute left-1.5 text-[#64748B] pointer-events-none" />
             <input
               type="text"
+              id="bforge-stream-filter"
               placeholder="Filter stream (/)..."
               value={filterText}
               onChange={(e) => setFilterText(e.target.value)}

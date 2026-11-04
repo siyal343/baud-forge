@@ -56,6 +56,20 @@ export class EngineApiClient {
     }
   }
 
+  /** Open a hardware port session (POST /api/quick-connect). */
+  async quickConnect(device: string, baudRate: number): Promise<boolean> {
+    try {
+      const res = await this.fetchWithTimeout('/api/quick-connect', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ device, baud_rate: baudRate }),
+      });
+      return res.ok;
+    } catch {
+      return false;
+    }
+  }
+
   /** Hardware serial ports currently visible to the OS (GET /api/devices). */
   async getDevices(): Promise<
     Array<{ device_path: string; vid_pid?: string | null; serial?: string | null }>
@@ -276,7 +290,8 @@ export function triggerFileDownload(blob: Blob, filename: string) {
 
 export function exportPacketsClientSide(
   packets: PacketRow[],
-  format: 'csv' | 'saleae' | 'jsonl' | 'pcapng'
+  format: 'csv' | 'saleae' | 'jsonl' | 'pcapng',
+  baudRate = 115200
 ) {
   const timestampStr = new Date().toISOString().replace(/[:.]/g, '-');
 
@@ -298,11 +313,12 @@ export function exportPacketsClientSide(
     triggerFileDownload(blob, `bforge-capture-${timestampStr}.csv`);
   } else if (format === 'saleae') {
     let out = 'Time [s], value, parity, error\n';
+    const bitPeriodSec = 1 / baudRate; // per-byte UART framing period
     for (const pkt of packets) {
       const baseSec = pkt.timestampUs / 1e6;
       for (let i = 0; i < pkt.rawBytes.length; i++) {
         const byte = pkt.rawBytes[i];
-        const sec = (baseSec + i * 0.0000868).toFixed(6); // ~115.2k estimate
+        const sec = (baseSec + i * bitPeriodSec).toFixed(6);
         const hex = '0x' + byte.toString(16).padStart(2, '0').toUpperCase();
         out += `${sec}, ${hex}, none, \n`;
       }

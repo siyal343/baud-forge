@@ -126,7 +126,17 @@ export const DvrTimelineBar: React.FC = () => {
         {isPaused ? (
           <div className="flex items-center gap-1.5 px-2 py-0.5 bg-[#F59E0B]/20 border border-[#F59E0B]/50 text-[#F59E0B] rounded text-[10px] font-mono font-bold animate-pulse">
             <AlertCircle className="w-3 h-3" />
-            <span>PAUSED IN HISTORY</span>
+            <span>
+              PAUSED AT T-
+              {(
+                Math.max(
+                  0,
+                  (packets.length ? packets[packets.length - 1].timestampUs : 0) -
+                    (selectedPacket?.timestampUs ?? 0)
+                ) / 1e6
+              ).toFixed(3)}
+              s
+            </span>
           </div>
         ) : (
           <div className="flex items-center gap-1.5 px-2 py-0.5 bg-[#10B981]/20 border border-[#10B981]/50 text-[#10B981] rounded text-[10px] font-mono font-bold">

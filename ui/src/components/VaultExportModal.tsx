@@ -1,4 +1,5 @@
 import React, { useState, useEffect } from 'react';
+import { useShallow } from 'zustand/react/shallow';
 import {
   X,
   Download,
@@ -78,7 +79,15 @@ const FORMAT_OPTIONS: FormatOption[] = [
 ];
 
 export const VaultExportModal: React.FC = () => {
-  const { isExportModalOpen, setExportModalOpen, packets, vaultPath } = useWorkstationStore();
+  const { isExportModalOpen, setExportModalOpen, packets, vaultPath, baudRate } = useWorkstationStore(
+    useShallow((s) => ({
+      isExportModalOpen: s.isExportModalOpen,
+      setExportModalOpen: s.setExportModalOpen,
+      packets: s.packets,
+      vaultPath: s.vaultPath,
+      baudRate: s.baudRate,
+    }))
+  );
   const [selectedFormat, setSelectedFormat] = useState<ExportFormat>('pcapng');
   const [sourceMode, setSourceMode] = useState<'vault' | 'memory'>('vault');
   const [customVaultPath, setCustomVaultPath] = useState(vaultPath || 'vaults/session_001.bflog');
@@ -120,7 +129,7 @@ export const VaultExportModal: React.FC = () => {
         setStatusMessage(`Download initiated via engine endpoint /api/vault/export?format=${selectedFormat}`);
       } else {
         // Export live in-memory packets
-        exportPacketsClientSide(packets, selectedFormat);
+        exportPacketsClientSide(packets, selectedFormat, baudRate);
         setStatusMessage(`Exported ${packets.length.toLocaleString()} in-memory frames to ${selectedFormat.toUpperCase()}`);
       }
     } catch (err: any) {

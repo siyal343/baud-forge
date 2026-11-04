@@ -79,7 +79,7 @@ interface WorkstationState {
   requestRestoreSavedLayout: () => void;
   setHasSavedLayout: (saved: boolean) => void;
   setUiScale: (scale: number) => void;
-  connect: () => void;
+  connect: () => Promise<void>;
   disconnect: () => void;
   setSelectedPort: (port: string) => void;
   setBaudRate: (baud: number) => void;
@@ -135,6 +135,37 @@ let yieldTimerId: number | null = null;
 // wrong DVR stepping. Every packet entering the store is renumbered here.
 let nextSeqId = 1;
 const withUniqueSeqId = (pkt: PacketRow): PacketRow => ({ ...pkt, seqId: nextSeqId++ });
+
+/**
+ * Derive a scope point from a REAL decoded packet instead of synthesizing a
+ * sine wave. Values are read from the dissector's decoded fields (v_batt*,
+ * gyro_z*); when a frame carries no matching fields (e.g. a TX command row)
+ * the previous reading is held so the trace stays continuous.
+ */
+const scopeSampleFromPacket = (
+  pkt: PacketRow,
+  prev: ScopeSignalSample | null
+): ScopeSignalSample => {
+  const findVal = (re: RegExp): number | null => {
+    for (const f of pkt.dissectedFields ?? []) {
+      if (re.test(f.name)) {
+        const m = /-?\d+(?:\.\d+)?/.exec(String(f.decodedValue));
+        if (m) return parseFloat(m[0]);
+      }
+    }
+    return null;
+  };
+  let vBatt = findVal(/^v_batt/);
+  if (vBatt !== null && Math.abs(vBatt) < 100) vBatt *= 1000; // volts → mV
+  const gyroZ = findVal(/^gyro_z/);
+  return {
+    timestampUs: pkt.timestampUs,
+    vBattMv: vBatt ?? prev?.vBattMv ?? 0,
+    gyroZ: gyroZ ?? prev?.gyroZ ?? 0,
+    flags: [0, 0, 0],
+    mode: prev?.mode ?? 0,
+  };
+};
 
 const getSavedUartConfig = () => {
   try {
@@ -253,12 +284,27 @@ export const useWorkstationStore = create<WorkstationState>((set, get) => ({
     } catch (_) {}
     set({ uiScale: clamped });
   },
-  connect: () => {
-    set({ isConnected: true, portState: 'open' });
+  connect: async () => {
+    // Reach the engine so a real port session starts (serve.rs /api/quick-connect).
+    const ok = await engineApi.quickConnect(get().selectedPort, get().baudRate);
+    if (ok) {
+      set({ isConnected: true, portState: 'open' });
+      toast.success('Link opened', `${get().selectedPort} @ ${get().baudRate} baud connected by engine.`);
+    } else {
+      // Simulated-mode fallback: keep the local link state honest about the engine.
+      set({ isConnected: true, portState: 'open' });
+      toast.warn(
+        'Engine unreachable — simulated link only',
+        `${get().selectedPort} is open in the workstation, but no hardware session was started.`
+      );
+    }
   },
 
   disconnect: () => {
     set({ isConnected: false, portState: 'closed' });
+    // NOTE: serve.rs exposes no disconnect endpoint yet — the engine-side
+    // session (if any) keeps running; only the workstation link closes.
+    toast.info('Link closed', 'Workstation detached. An engine-side session may still be running.');
   },
 
   setSelectedPort: (port) => set({ selectedPort: port }),
@@ -481,7 +527,11 @@ export const useWorkstationStore = create<WorkstationState>((set, get) => ({
         ? [...state.packets.slice(state.packets.length - MAX_PACKETS + 1), pkt]
         : [...state.packets, pkt];
 
-      const scopePt = generateScopeSample(pkt.timestampUs);
+      // Scope data source: synthetic generator in simulation mode, decoded
+      // payload fields when frames come from the real engine.
+      const scopePt = state.isSimulated
+        ? generateScopeSample(pkt.timestampUs)
+        : scopeSampleFromPacket(pkt, state.scopeSamples[state.scopeSamples.length - 1] ?? null);
       const newScope = state.scopeSamples.length >= MAX_SCOPE_SAMPLES
         ? [...state.scopeSamples.slice(state.scopeSamples.length - MAX_SCOPE_SAMPLES + 1), scopePt]
         : [...state.scopeSamples, scopePt];
@@ -507,9 +557,16 @@ export const useWorkstationStore = create<WorkstationState>((set, get) => ({
         combined = combined.slice(combined.length - MAX_PACKETS);
       }
 
-      // Sample scope points from the newest frames
+      // Sample scope points from the newest frames (decoded payloads in HW mode)
       const newestFrames = batch.slice(-10);
-      const newScopeSamples = newestFrames.map((p) => generateScopeSample(p.timestampUs));
+      let prevSample = state.scopeSamples[state.scopeSamples.length - 1] ?? null;
+      const newScopeSamples = newestFrames.map((p) => {
+        const pt = state.isSimulated
+          ? generateScopeSample(p.timestampUs)
+          : scopeSampleFromPacket(p, prevSample);
+        prevSample = pt;
+        return pt;
+      });
       let combinedScope = state.scopeSamples.concat(newScopeSamples);
       if (combinedScope.length > MAX_SCOPE_SAMPLES) {
         combinedScope = combinedScope.slice(combinedScope.length - MAX_SCOPE_SAMPLES);
