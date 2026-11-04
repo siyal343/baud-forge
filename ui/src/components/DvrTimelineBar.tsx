@@ -9,9 +9,12 @@ export const DvrTimelineBar: React.FC = () => {
     selectedPacket,
     isLive,
     isPaused,
+    isReplaying,
     playbackSpeed,
     setDvrLive,
     setDvrPaused,
+    startReplay,
+    stopReplay,
     stepFrame,
     setPlaybackSpeed,
     seekToTimestamp,
@@ -21,9 +24,12 @@ export const DvrTimelineBar: React.FC = () => {
       selectedPacket: s.selectedPacket,
       isLive: s.isLive,
       isPaused: s.isPaused,
+      isReplaying: s.isReplaying,
       playbackSpeed: s.playbackSpeed,
       setDvrLive: s.setDvrLive,
       setDvrPaused: s.setDvrPaused,
+      startReplay: s.startReplay,
+      stopReplay: s.stopReplay,
       stepFrame: s.stepFrame,
       setPlaybackSpeed: s.setPlaybackSpeed,
       seekToTimestamp: s.seekToTimestamp,
@@ -53,17 +59,33 @@ export const DvrTimelineBar: React.FC = () => {
     <div className="h-[26px] bg-[#10141D] border-t border-[#222D3D] px-2.5 flex items-center justify-between shrink-0 select-none text-[11px]">
       {/* Transport Controls */}
       <div className="flex items-center gap-1.5">
-        {/* Play / Pause Toggle */}
+        {/* Play / Pause / Replay Toggle (spec 2.6: historical replay vs live) */}
         <button
-          onClick={() => setDvrPaused(!isPaused)}
+          onClick={() => {
+            if (isReplaying) stopReplay();
+            else if (isPaused) startReplay();
+            else setDvrPaused(true);
+          }}
           className={`p-1 rounded transition-colors ${
-            isPaused
+            isReplaying
+              ? 'bg-[#00E5FF] text-[#0A0D13] font-bold'
+              : isPaused
               ? 'bg-[#F59E0B] text-[#0A0D13] font-bold'
               : 'bg-[#161C28] text-[#E2E8F0] hover:bg-[#26324A]'
           }`}
-          title="Play / Pause Playback (Spacebar)"
+          title={
+            isReplaying
+              ? 'Pause replay'
+              : isPaused
+              ? 'Replay buffered frames from the scrub position'
+              : 'Pause live stream (Spacebar)'
+          }
         >
-          {isPaused ? <Play className="w-2.5 h-2.5 fill-current" /> : <Pause className="w-2.5 h-2.5" />}
+          {isPaused && !isReplaying ? (
+            <Play className="w-2.5 h-2.5 fill-current" />
+          ) : (
+            <Pause className="w-2.5 h-2.5" />
+          )}
         </button>
 
         {/* Step Back 1 Frame */}
@@ -84,12 +106,13 @@ export const DvrTimelineBar: React.FC = () => {
           <ChevronRight className="w-2.5 h-2.5" />
         </button>
 
-        {/* Speed Chips */}
+        {/* Speed Chips — live controls for the replay loop */}
         <div className="flex items-center gap-0.5 bg-[#161C28] border border-[#222D3D] rounded px-1 py-0.2 font-mono text-[9px]">
           {speedOptions.map((s) => (
             <button
               key={s}
               onClick={() => setPlaybackSpeed(s)}
+              title={`Replay speed ×${s}`}
               className={`px-1 py-0.2 rounded transition-colors ${
                 playbackSpeed === s
                   ? 'bg-[#26324A] text-[#00E5FF] font-semibold border border-[#00E5FF]/40'
@@ -123,7 +146,12 @@ export const DvrTimelineBar: React.FC = () => {
 
       {/* Right: Mode Status & Live Snap */}
       <div className="flex items-center gap-2">
-        {isPaused ? (
+        {isReplaying ? (
+          <div className="flex items-center gap-1.5 px-2 py-0.5 bg-[#00E5FF]/20 border border-[#00E5FF]/50 text-[#00E5FF] rounded text-[10px] font-mono font-bold animate-pulse">
+            <Play className="w-3 h-3" />
+            <span>REPLAYING ×{playbackSpeed}</span>
+          </div>
+        ) : isPaused ? (
           <div className="flex items-center gap-1.5 px-2 py-0.5 bg-[#F59E0B]/20 border border-[#F59E0B]/50 text-[#F59E0B] rounded text-[10px] font-mono font-bold animate-pulse">
             <AlertCircle className="w-3 h-3" />
             <span>

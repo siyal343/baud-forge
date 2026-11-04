@@ -40,6 +40,7 @@ interface WorkstationState {
   // DVR Timeline
   isLive: boolean;
   isPaused: boolean;
+  isReplaying: boolean;
   playbackSpeed: number;
   pausedTimestampUs: number | null;
 
@@ -103,6 +104,8 @@ interface WorkstationState {
   toggleChannel: (ch: 'ch1' | 'ch2' | 'logic') => void;
   setDvrLive: () => void;
   setDvrPaused: (val: boolean) => void;
+  startReplay: () => void;
+  stopReplay: () => void;
   seekToTimestamp: (tUs: number) => void;
   stepFrame: (direction: 'forward' | 'back') => void;
   setPlaybackSpeed: (speed: number) => void;
@@ -128,6 +131,11 @@ const MAX_SCOPE_SAMPLES = 600;
 // is written to the store so subscribers re-render at 1 Hz, not per packet.
 const rateTimestamps: number[] = [];
 let yieldTimerId: number | null = null;
+
+// DVR replay engine: walks the rolling packet buffer at playbackSpeed while
+// the live capture is paused. Timer + cursor live outside the reactive state.
+let replayTimerId: number | null = null;
+let replayIdx = 0;
 
 // Monotonic SeqId source. The previous schemes (Date.now() % 100000 for TX
 // rows, timestamp_ms % 1000000 for engine frames) collided whenever two
@@ -227,6 +235,7 @@ export const useWorkstationStore = create<WorkstationState>((set, get) => ({
   // DVR Timeline
   isLive: true,
   isPaused: false,
+  isReplaying: false,
   playbackSpeed: 1.0,
   pausedTimestampUs: null,
 
@@ -379,13 +388,16 @@ export const useWorkstationStore = create<WorkstationState>((set, get) => ({
     })),
 
   setDvrLive: () => {
-    set({ isLive: true, isPaused: false, pausedTimestampUs: null, autoScroll: true });
+    stopReplayTimer();
+    set({ isLive: true, isPaused: false, isReplaying: false, pausedTimestampUs: null, autoScroll: true });
   },
 
   setDvrPaused: (paused) => {
+    if (paused) stopReplayTimer();
     set((state) => ({
       isPaused: paused,
       isLive: !paused,
+      isReplaying: false,
       autoScroll: !paused,
       pausedTimestampUs: paused
         ? state.packets[state.packets.length - 1]?.timestampUs || null
@@ -393,7 +405,30 @@ export const useWorkstationStore = create<WorkstationState>((set, get) => ({
     }));
   },
 
+  // True replay (spec 2.6): walks the buffered frames from the current scrub
+  // position at playbackSpeed, updating stream/hex/scope as it goes. The
+  // live capture stays paused for the duration (isPaused remains true).
+  startReplay: () => {
+    const { packets, selectedPacket } = get();
+    if (!packets.length) return;
+    const currentIdx = selectedPacket
+      ? packets.findIndex((p) => p.seqId === selectedPacket.seqId)
+      : -1;
+    // Pausing a live stream leaves the cursor on the newest frame — replaying
+    // from there would end instantly, so rewind to the buffer start. A cursor
+    // left mid-buffer (after scrubbing) resumes from that position.
+    replayIdx = currentIdx >= 0 && currentIdx < packets.length - 1 ? currentIdx : 0;
+    set({ isPaused: true, isLive: false, isReplaying: true, autoScroll: false });
+    restartReplayTimer();
+  },
+
+  stopReplay: () => {
+    stopReplayTimer();
+    set({ isReplaying: false });
+  },
+
   seekToTimestamp: (tUs) => {
+    stopReplayTimer();
     const { packets } = get();
     // Find closest packet
     let closest: PacketRow | null = null;
@@ -408,13 +443,16 @@ export const useWorkstationStore = create<WorkstationState>((set, get) => ({
     set({
       isLive: false,
       isPaused: true,
+      isReplaying: false,
       autoScroll: false,
       selectedPacket: closest,
+      selectedField: closest?.dissectedFields?.[0] ?? null,
       pausedTimestampUs: tUs,
     });
   },
 
   stepFrame: (direction) => {
+    stopReplayTimer();
     const { packets, selectedPacket } = get();
     if (!packets.length) return;
     const currentIndex = selectedPacket
@@ -432,15 +470,21 @@ export const useWorkstationStore = create<WorkstationState>((set, get) => ({
     if (nextPacket) {
       set({
         selectedPacket: nextPacket,
+        selectedField: nextPacket.dissectedFields?.[0] ?? null,
         cursorT1Us: nextPacket.timestampUs,
         isLive: false,
         isPaused: true,
+        isReplaying: false,
         pausedTimestampUs: nextPacket.timestampUs,
       });
     }
   },
 
-  setPlaybackSpeed: (speed) => set({ playbackSpeed: speed }),
+  setPlaybackSpeed: (speed) => {
+    set({ playbackSpeed: speed });
+    // Speed chips are live controls during replay.
+    if (get().isReplaying) restartReplayTimer();
+  },
 
   triggerFlashYield: (seconds = 30) => {
     // Replace any running yield countdown instead of stacking a second
@@ -604,6 +648,55 @@ export const useWorkstationStore = create<WorkstationState>((set, get) => ({
     }
   },
 }));
+
+// DVR replay timer machinery. Declared as hoisted function statements so the
+// store actions above can call them before this point in the module.
+function stopReplayTimer() {
+  if (replayTimerId !== null) {
+    window.clearInterval(replayTimerId);
+    replayTimerId = null;
+  }
+}
+
+function restartReplayTimer() {
+  stopReplayTimer();
+  const speed = Math.max(0.25, useWorkstationStore.getState().playbackSpeed || 1);
+  // 1x replays at the live capture cadence (20 frames/s); speed chips scale it.
+  const intervalMs = Math.max(25, Math.round(50 / speed));
+  replayTimerId = window.setInterval(() => {
+    const s = useWorkstationStore.getState();
+    if (!s.isReplaying) {
+      stopReplayTimer();
+      return;
+    }
+    const { packets } = s;
+    if (!packets.length) {
+      stopReplayTimer();
+      useWorkstationStore.setState({ isReplaying: false });
+      return;
+    }
+    replayIdx += 1;
+    if (replayIdx >= packets.length) {
+      // End of buffer: halt on the last frame rather than looping.
+      replayIdx = packets.length - 1;
+      const last = packets[replayIdx];
+      stopReplayTimer();
+      useWorkstationStore.setState({
+        isReplaying: false,
+        selectedPacket: last,
+        selectedField: last.dissectedFields?.[0] ?? null,
+        pausedTimestampUs: last.timestampUs,
+      });
+      return;
+    }
+    const pkt = packets[replayIdx];
+    useWorkstationStore.setState({
+      selectedPacket: pkt,
+      selectedField: pkt.dissectedFields?.[0] ?? null,
+      pausedTimestampUs: pkt.timestampUs,
+    });
+  }, intervalMs);
+}
 
 // Recompute the footer packet rate once per second from the rolling
 // timestamp window. Replaces the previous hardcoded `packetRate: 20`.

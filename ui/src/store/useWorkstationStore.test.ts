@@ -112,4 +112,84 @@ describe('workstation store', () => {
     expect(after.yieldRemainingSecs).toBe(0);
     expect(after.portState).toBe('open');
   });
+
+  describe('DVR replay', () => {
+    beforeEach(() => {
+      vi.useFakeTimers();
+      // Seed a 5-frame buffer with distinct seqIds.
+      const s = useWorkstationStore.getState();
+      s.clearStream();
+      for (let i = 0; i < 5; i++) {
+        s.addPacket(makePacket({ timestampUs: 1000 + i * 1000 }));
+      }
+    });
+
+    afterEach(() => {
+      useWorkstationStore.getState().setDvrLive();
+    });
+
+    it('walks buffered frames at playbackSpeed and halts at the end', () => {
+      const s = useWorkstationStore.getState();
+      s.setDvrPaused(true);
+      s.setPlaybackSpeed(1);
+      s.startReplay();
+      expect(useWorkstationStore.getState().isReplaying).toBe(true);
+
+      vi.advanceTimersByTime(50 * 3); // 3 ticks at 50 ms (1x = 20 fps)
+      const mid = useWorkstationStore.getState();
+      expect(mid.isReplaying).toBe(true);
+      expect(mid.selectedPacket?.timestampUs).toBe(4000); // idx 3 of 5
+
+      vi.advanceTimersByTime(50 * 2);
+      const end = useWorkstationStore.getState();
+      // Reached the last frame and stopped there (no loop).
+      expect(end.isReplaying).toBe(false);
+      expect(end.selectedPacket?.timestampUs).toBe(5000);
+      expect(end.isPaused).toBe(true);
+    });
+
+    it('speed chips change the replay rate live', () => {
+      const s = useWorkstationStore.getState();
+      s.setDvrPaused(true);
+      s.setPlaybackSpeed(0.5); // 100 ms per frame
+      s.startReplay();
+      vi.advanceTimersByTime(100);
+      expect(useWorkstationStore.getState().selectedPacket?.timestampUs).toBe(2000);
+      s.setPlaybackSpeed(2); // now 25 ms per frame
+      vi.advanceTimersByTime(50); // two frames at 2x
+      expect(useWorkstationStore.getState().selectedPacket?.timestampUs).toBe(4000);
+    });
+
+    it('scrubbing or stepping cancels the replay', () => {
+      const s = useWorkstationStore.getState();
+      s.setDvrPaused(true);
+      s.startReplay();
+      vi.advanceTimersByTime(100);
+      expect(useWorkstationStore.getState().isReplaying).toBe(true);
+      s.stopReplay();
+      expect(useWorkstationStore.getState().isReplaying).toBe(false);
+      vi.advanceTimersByTime(500);
+      // No further advancement after stop.
+      const frozen = useWorkstationStore.getState().selectedPacket?.timestampUs;
+      vi.advanceTimersByTime(500);
+      expect(useWorkstationStore.getState().selectedPacket?.timestampUs).toBe(frozen);
+    });
+
+    it('returning live clears the replay state', () => {
+      const s = useWorkstationStore.getState();
+      s.setDvrPaused(true);
+      s.startReplay();
+      vi.advanceTimersByTime(100);
+      s.setDvrLive();
+      const live = useWorkstationStore.getState();
+      expect(live.isReplaying).toBe(false);
+      expect(live.isLive).toBe(true);
+      expect(live.isPaused).toBe(false);
+      vi.advanceTimersByTime(500);
+      // Selected packet no longer advances — live capture owns selection.
+      const sel = live.selectedPacket?.timestampUs;
+      vi.advanceTimersByTime(500);
+      expect(useWorkstationStore.getState().selectedPacket?.timestampUs).toBe(sel);
+    });
+  });
 });

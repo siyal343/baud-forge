@@ -103,6 +103,48 @@ try {
   );
   check('Space pause shows PAUSED AT T-x.xxxs', paused !== 'no' && liveAgain, paused);
 
+  // T5b: true replay loop — pause, Play walks the buffer, REPLAYING pill
+  await page.evaluate(() => document.activeElement?.blur?.());
+  await page.keyboard.press(' '); // pause live
+  await sleep(350);
+  const playBtn = await page.evaluate(() => {
+    const b = [...document.querySelectorAll('button')].find((x) =>
+      (x.title || '').startsWith('Replay buffered frames')
+    );
+    if (!b) return null;
+    const r = b.getBoundingClientRect();
+    return { x: r.left + r.width / 2, y: r.top + r.height / 2 };
+  });
+  if (playBtn) {
+    await page.mouse.click(playBtn.x, playBtn.y);
+    await sleep(900);
+    const replaying = await page.evaluate(() =>
+      [...document.querySelectorAll('div')].some((d) => /^REPLAYING ×/.test(d.textContent.trim()))
+    );
+    const sliderVal = () =>
+      page.evaluate(() => {
+        const s = document.querySelector('input[type="range"]');
+        return s ? Number(s.value) : -1;
+      });
+    const selDuringReplay = await sliderVal();
+    await sleep(1200); // let it walk further
+    const selAfter = await sliderVal();
+    // Space returns to live (setDvrPaused(false) stops the replay)
+    await page.evaluate(() => document.activeElement?.blur?.());
+    await page.keyboard.press(' ');
+    await sleep(400);
+    const backLive = await page.evaluate(() =>
+      [...document.querySelectorAll('div')].some((d) => d.textContent.trim() === 'STREAMING LIVE')
+    );
+    check(
+      'true replay walks buffer while paused',
+      replaying && backLive && selDuringReplay !== selAfter,
+      `pill=${replaying} live=${backLive} hl '${selDuringReplay}' -> '${selAfter}'`
+    );
+  } else {
+    check('true replay walks buffer while paused', false, 'Replay Play button missing');
+  }
+
   // T6: REC pill honest label
   const rec = await page.evaluate(() => {
     const b = [...document.querySelectorAll('button')].find((x) => x.textContent.includes('STANDBY') || x.textContent.includes('● REC'));
