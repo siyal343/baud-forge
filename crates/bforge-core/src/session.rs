@@ -138,6 +138,9 @@ pub struct Session {
     rx_script: Option<ScriptRuntime>,
     /// One IR per port that can encode a typed frame, built with the decoders.
     encoders: Vec<Option<bforge_dissect::DissectorIr>>,
+    /// The decode configs `enable_decode` saw, so an uploaded schema can
+    /// rebuild a port's stream with the same framing (spec 2.2).
+    port_configs: Vec<crate::PortConfig>,
     frames: std::collections::VecDeque<TailRow>,
     frames_dropped: u64,
     /// Chunks the receive script dropped.
@@ -308,6 +311,7 @@ impl Session {
             script: None,
             rx_script: None,
             encoders: Vec::new(),
+            port_configs: Vec::new(),
             frames: std::collections::VecDeque::new(),
             frames_dropped: 0,
             chunks_received_dropped: 0,
@@ -408,6 +412,7 @@ impl Session {
             script: None,
             rx_script: None,
             encoders: Vec::new(),
+            port_configs: Vec::new(),
             frames: std::collections::VecDeque::new(),
             frames_dropped: 0,
             chunks_received_dropped: 0,
@@ -494,11 +499,53 @@ impl Session {
         Ok(())
     }
 
+    /// Apply a dialect parsed from UPLOADED text to one port's live stream
+    /// (spec 2.2). The framing machine is rebuilt from the port's original
+    /// config; only the dissector is swapped. Takes effect on the next chunk.
+    pub fn apply_schema_text(
+        &mut self,
+        port_id: &str,
+        kind: &str,
+        text: &str,
+        root: Option<&str>,
+    ) -> Result<(), SessionError> {
+        let index = self
+            .ports
+            .iter()
+            .position(|port| port.info.id == port_id)
+            .ok_or_else(|| SessionError::UnknownPort(port_id.to_string()))?;
+        let mut config = self
+            .port_configs
+            .iter()
+            .find(|config| config.id == port_id)
+            .cloned()
+            .ok_or_else(|| {
+                SessionError::Settings(format!(
+                    "port `{port_id}` has no decode config to override"
+                ))
+            })?;
+        config.dissector = Some(crate::DissectorConfig {
+            kind: kind.to_string(),
+            name: None,
+            file: None,
+            root_struct: root.map(|value| value.to_string()),
+        });
+        let machine = crate::tail::framing_machine(&config)
+            .map_err(|error| SessionError::Settings(error.to_string()))?;
+        let decoder = crate::tail::decoder_from_text(kind, text, root)
+            .map_err(|error| SessionError::Settings(error.to_string()))?;
+        self.streams[index] = Some(Stream::new(port_id, crate::tail::TailConfig { machine, dissector: Some(decoder) }));
+        Ok(())
+    }
+
     /// Frame and decode the bytes as they pass, for a UI that shows frames.
     ///
     /// The vault stays raw: this is a second view of the same chunks, not a change
     /// to what is recorded. A port without a config is left undecoded.
     pub fn enable_decode(&mut self, configs: &[PortConfig]) -> Result<(), TailError> {
+        // Stash the configs so a later schema upload can rebuild a stream
+        // with the same framing but a new dissector (spec 2.2).
+        self.port_configs = configs.to_vec();
         let mut streams = Vec::with_capacity(self.ports.len());
         for port in &self.ports {
             match configs.iter().find(|config| config.id == port.info.id) {

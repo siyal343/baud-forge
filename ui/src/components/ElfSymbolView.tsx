@@ -6,7 +6,11 @@ import {
   Cpu,
   CheckCircle2,
   Copy,
+  AlertTriangle,
+  Upload,
 } from 'lucide-react';
+import { engineApi } from '../services/engineApi';
+import { useToastStore } from '../store/useToastStore';
 
 interface ResolvedFrame {
   depth: number;
@@ -81,7 +85,10 @@ const SAMPLE_TOKENS: DecodedToken[] = [
 ];
 
 export const ElfSymbolView: React.FC = () => {
-  const [elfPath, setElfPath] = useState('firmware/target/riscv32imc/release/esp32c3_app.elf');
+  const [elfPath, setElfPath] = useState('');
+  const [elfLoaded, setElfLoaded] = useState(false);
+  const [elfUploading, setElfUploading] = useState(false);
+  const pushToast = useToastStore((s) => s.pushToast);
   const [activeTab, setActiveTab] = useState<'stack' | 'tokens' | 'browser'>('stack');
   const [rawTrace, setRawTrace] = useState(
     `Guru Meditation Error: Core 0 panic'ed (LoadProhibited). Exception was unhandled.\nBacktrace: 0x42001484:0x3fc91cd0 0x42001434:0x3fc91cf0 0x420021b0:0x3fc91d10`
@@ -186,25 +193,66 @@ export const ElfSymbolView: React.FC = () => {
         </div>
       </div>
 
-      {/* ELF Path Bar */}
+      {/* ELF Upload Bar — real firmware image loaded onto the engine */}
       <div className="flex items-center justify-between gap-2 px-3 py-1.5 bg-[#161C28] border-b border-[#222D3D] text-[10px]">
-        <div className="flex items-center gap-2 flex-1">
+        <div className="flex items-center gap-2 flex-1 min-w-0">
           <FileCode className="w-3.5 h-3.5 text-[#94A3B8]" />
-          <span className="text-[#64748B]">Active ELF:</span>
-          <input
-            type="text"
-            value={elfPath}
-            onChange={(e) => setElfPath(e.target.value)}
-            className="flex-1 max-w-md px-2 py-0.5 bg-[#0A0D13] border border-[#222D3D] rounded text-[10px] text-[#00E5FF] focus:border-[#00E5FF] focus:outline-none"
-          />
+          <span className="text-[#64748B] shrink-0">Active ELF:</span>
+          {elfLoaded ? (
+            <span className="text-[#10B981] font-mono truncate" title={elfPath}>
+              {elfPath}
+            </span>
+          ) : (
+            <span className="text-[#64748B] font-mono truncate">
+              none — frames decode with raw addresses until a firmware image is loaded
+            </span>
+          )}
+          <label
+            data-tooltip="Upload a firmware image to the engine — decoded frames get symbol badges"
+            className="flex items-center gap-1 px-2 py-0.5 bg-[#00E5FF]/10 hover:bg-[#00E5FF]/20 text-[#00E5FF] border border-[#00E5FF]/40 rounded cursor-pointer transition-colors shrink-0"
+          >
+            <Upload className="w-3 h-3" />
+            <span>{elfUploading ? 'UPLOADING…' : 'UPLOAD ELF'}</span>
+            <input
+              type="file"
+              accept=".elf,.axf,.bin"
+              className="hidden"
+              onChange={async (e) => {
+                const file = e.target.files?.[0];
+                if (!file) return;
+                setElfUploading(true);
+                try {
+                  const bytes = new Uint8Array(await file.arrayBuffer());
+                  const result = await engineApi.uploadElf(bytes);
+                  if (result.ok) {
+                    setElfLoaded(true);
+                    setElfPath(`${file.name} (${(bytes.length / 1024).toFixed(1)} KB)`);
+                    pushToast('success', 'Firmware image loaded', 'Decoded frames now show symbol badges.');
+                  } else {
+                    pushToast('error', 'ELF upload failed', result.error ?? 'Engine rejected the image.');
+                  }
+                } finally {
+                  setElfUploading(false);
+                }
+              }}
+            />
+          </label>
         </div>
-        <div className="flex items-center gap-2 text-[#94A3B8]">
-          <span className="flex items-center gap-1 text-[#10B981]">
-            <CheckCircle2 className="w-3 h-3" />
-            <span>3,842 DWARF Symbols</span>
-          </span>
-          <span className="text-[#64748B]">·</span>
-          <span>RISC-V 32 (ESP32-C3)</span>
+        <div className="flex items-center gap-2 text-[#94A3B8] shrink-0">
+          {elfLoaded ? (
+            <span className="flex items-center gap-1 text-[#10B981]">
+              <CheckCircle2 className="w-3 h-3" />
+              <span>SYMBOLS ACTIVE</span>
+            </span>
+          ) : (
+            <span
+              data-tooltip="The symbol table and backtrace below use a built-in demonstration dataset until a real firmware image is uploaded."
+              className="flex items-center gap-1 text-[#FBBF24]"
+            >
+              <AlertTriangle className="w-3 h-3" />
+              <span>DEMO SYMBOLS</span>
+            </span>
+          )}
         </div>
       </div>
 

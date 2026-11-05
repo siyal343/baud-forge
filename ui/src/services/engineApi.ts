@@ -3,6 +3,15 @@
 
 import { UiSnapshot, UiEvent, PacketRow, BridgeView as BridgeViewResult } from '../types';
 
+/** One flattened field row, as /api/schema parse|decode returns. */
+interface FieldRowResult {
+  name: string;
+  offset: number;
+  len: number;
+  value_num: number | null;
+  value: string | null;
+}
+
 export class EngineApiClient {
   private eventSource: EventSource | null = null;
   private baseUrl: string;
@@ -53,6 +62,83 @@ export class EngineApiClient {
       return await res.json();
     } catch {
       return null;
+    }
+  }
+
+  /** Parse a schema (dry run): POST /api/schema {action:'parse'}. */
+  async schemaParse(
+    kind: string,
+    text: string,
+    root?: string
+  ): Promise<{ ok: boolean; fields?: FieldRowResult[]; error?: string }> {
+    return this.schemaRequest('parse', kind, text, root);
+  }
+
+  /** Decode sample hex with a schema: POST /api/schema {action:'decode'}. */
+  async schemaDecode(
+    kind: string,
+    text: string,
+    root: string | undefined,
+    hex: string
+  ): Promise<{ ok: boolean; rows?: FieldRowResult[]; error?: string }> {
+    const result = await this.schemaRequest('decode', kind, text, root, hex);
+    return { ok: result.ok, rows: result.fields, error: result.error };
+  }
+
+  /** Apply a schema to a live port's decoder: POST /api/schema {action:'apply'}. */
+  async schemaApply(
+    kind: string,
+    text: string,
+    root: string | undefined,
+    port: string
+  ): Promise<{ ok: boolean; error?: string }> {
+    const result = await this.schemaRequest('apply', kind, text, root, undefined, port);
+    return { ok: result.ok, error: result.error };
+  }
+
+  private async schemaRequest(
+    action: 'parse' | 'decode' | 'apply',
+    kind: string,
+    text: string,
+    root?: string,
+    hex?: string,
+    port?: string
+  ): Promise<{ ok: boolean; fields?: FieldRowResult[]; error?: string }> {
+    try {
+      const res = await this.fetchWithTimeout(
+        '/api/schema',
+        {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ action, kind, text, root, hex, port }),
+        },
+        action === 'apply' ? 5000 : 8000
+      );
+      const data = await res.json().catch(() => ({}));
+      if (!res.ok) return { ok: false, error: data?.error || `HTTP ${res.status}` };
+      return { ok: true, fields: Array.isArray(data) ? data : [] };
+    } catch {
+      return { ok: false, error: 'engine unreachable' };
+    }
+  }
+
+  /** Upload a firmware image for symbolization (POST /api/elf, raw bytes). */
+  async uploadElf(bytes: Uint8Array): Promise<{ ok: boolean; path?: string; error?: string }> {
+    try {
+      const res = await this.fetchWithTimeout(
+        '/api/elf',
+        {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/octet-stream' },
+          body: bytes as unknown as BodyInit,
+        },
+        8000
+      );
+      const data = await res.json().catch(() => ({}));
+      if (!res.ok) return { ok: false, error: data?.error || `HTTP ${res.status}` };
+      return { ok: true, path: data?.path };
+    } catch {
+      return { ok: false, error: 'engine unreachable' };
     }
   }
 

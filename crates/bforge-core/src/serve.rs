@@ -139,6 +139,23 @@ struct BridgeJob {
     reply: std::sync::mpsc::SyncSender<Result<Vec<crate::contract::BridgeView>, String>>,
 }
 
+/// One `POST /api/elf`: load an uploaded firmware image for symbolization.
+#[derive(Debug)]
+struct ElfJob {
+    path: std::path::PathBuf,
+    reply: std::sync::mpsc::SyncSender<Result<String, String>>,
+}
+
+/// One `POST /api/schema` with `action: "apply"`: swap a port's dissector.
+#[derive(Debug)]
+struct SchemaJob {
+    port: String,
+    kind: String,
+    text: String,
+    root: Option<String>,
+    reply: std::sync::mpsc::SyncSender<Result<(), String>>,
+}
+
 /// One `POST /api/fault`: arm a profile, or clear it with `None`.
 #[derive(Debug)]
 struct FaultJob {
@@ -173,6 +190,10 @@ struct Shared {
     record_request: Mutex<Option<std::sync::mpsc::Sender<RecordJob>>>,
     /// Same for replacing the MITM bridge set.
     bridge_request: Mutex<Option<std::sync::mpsc::Sender<BridgeJob>>>,
+    /// Same for loading an uploaded firmware image.
+    elf_request: Mutex<Option<std::sync::mpsc::Sender<ElfJob>>>,
+    /// Same for applying an uploaded schema to a port.
+    schema_request: Mutex<Option<std::sync::mpsc::Sender<SchemaJob>>>,
     /// Set by `with_vault`, before the server runs.
     vault: Mutex<Option<VaultSource>>,
     /// Set by `with_ui`: the built frontend to serve instead of the placeholder.
@@ -301,6 +322,10 @@ impl Server {
         *shared.record_request.lock().unwrap() = Some(record_tx);
         let (bridge_tx, bridge_rx) = std::sync::mpsc::channel::<BridgeJob>();
         *shared.bridge_request.lock().unwrap() = Some(bridge_tx);
+        let (elf_tx, elf_rx) = std::sync::mpsc::channel::<ElfJob>();
+        *shared.elf_request.lock().unwrap() = Some(elf_tx);
+        let (schema_tx, schema_rx) = std::sync::mpsc::channel::<SchemaJob>();
+        *shared.schema_request.lock().unwrap() = Some(schema_tx);
 
         let events = session.subscribe();
         let mut reported_sampled = 0u64;
@@ -369,6 +394,19 @@ impl Server {
                 let result = session
                     .enable_bridges(&job.bridges)
                     .map(|()| session.snapshot().bridges)
+                    .map_err(|error| error.to_string());
+                let _ = job.reply.send(result);
+            }
+            while let Ok(job) = elf_rx.try_recv() {
+                let result = session
+                    .enable_symbols(&job.path)
+                    .map(|()| job.path.display().to_string())
+                    .map_err(|error| error.to_string());
+                let _ = job.reply.send(result);
+            }
+            while let Ok(job) = schema_rx.try_recv() {
+                let result = session
+                    .apply_schema_text(&job.port, &job.kind, &job.text, job.root.as_deref())
                     .map_err(|error| error.to_string());
                 let _ = job.reply.send(result);
             }
@@ -567,6 +605,16 @@ fn handle(mut stream: TcpStream, shared: Arc<Shared>, stop: Arc<AtomicBool>) {
     if method == "POST" && path == "/api/bridge" {
         let body = read_body(&mut reader, content_length);
         bridge(&mut stream, &shared, &body);
+        return;
+    }
+    if method == "POST" && path == "/api/elf" {
+        let body = read_body(&mut reader, content_length);
+        elf_upload(&mut stream, &shared, &body);
+        return;
+    }
+    if method == "POST" && path == "/api/schema" {
+        let body = read_body(&mut reader, content_length);
+        schema(&mut stream, &shared, &body);
         return;
     }
     if method != "GET" && method != "HEAD" {
@@ -1511,6 +1559,198 @@ fn record(stream: &mut TcpStream, shared: &Arc<Shared>, body: &[u8]) {
                 "application/json",
                 body.as_bytes(),
             );
+        }
+    }
+}
+
+/// One `POST /api/elf`: raw firmware-image bytes (application/octet-stream).
+fn elf_upload(stream: &mut TcpStream, shared: &Arc<Shared>, body: &[u8]) {
+    if body.is_empty() {
+        return respond(
+            stream,
+            "400 Bad Request",
+            "application/json",
+            b"{\"error\":\"empty body: attach the raw ELF bytes\"}",
+        );
+    }
+    // Store under the workspace images/ directory; enable_symbols reads paths.
+    let stamp = std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)
+        .map(|elapsed| elapsed.as_secs())
+        .unwrap_or(0);
+    let path = std::path::PathBuf::from(format!("images/uploaded-{stamp}.elf"));
+    if let Some(parent) = path.parent()
+        && let Err(error) = std::fs::create_dir_all(parent)
+    {
+        let body = format!("{{\"error\":{}}}", serde_json::json!(error.to_string()));
+        return respond(stream, "500 Internal Server Error", "application/json", body.as_bytes());
+    }
+    if let Err(error) = std::fs::write(&path, body) {
+        let body = format!("{{\"error\":{}}}", serde_json::json!(error.to_string()));
+        return respond(stream, "500 Internal Server Error", "application/json", body.as_bytes());
+    }
+    let sender = shared.elf_request.lock().unwrap().clone();
+    let Some(sender) = sender else {
+        let body = "{\"error\":\"the pump is not running\"}";
+        return respond(stream, "503 Service Unavailable", "application/json", body.as_bytes());
+    };
+    let (reply, answer) = std::sync::mpsc::sync_channel(1);
+    if sender
+        .send(ElfJob {
+            path: path.clone(),
+            reply,
+        })
+        .is_err()
+    {
+        let body = "{\"error\":\"the pump has stopped\"}";
+        return respond(stream, "503 Service Unavailable", "application/json", body.as_bytes());
+    }
+    match answer.recv_timeout(Duration::from_secs(5)) {
+        Ok(Ok(stored)) => {
+            let body = format!(
+                "{{\"ok\":true,\"path\":{},\"bytes\":{}}}",
+                serde_json::json!(stored),
+                body.len()
+            );
+            respond(stream, "200 OK", "application/json", body.as_bytes());
+        }
+        Ok(Err(error)) => {
+            let body = format!("{{\"error\":{}}}", serde_json::json!(error));
+            respond(stream, "400 Bad Request", "application/json", body.as_bytes());
+        }
+        Err(_) => {
+            let body = "{\"error\":\"no answer from the pump\"}";
+            respond(stream, "504 Gateway Timeout", "application/json", body.as_bytes());
+        }
+    }
+}
+
+/// One `POST /api/schema`: parse (dry run), decode sample bytes, or apply a
+/// dialect parsed from uploaded text to a live port (spec 2.2).
+#[derive(serde::Deserialize)]
+struct SchemaBody {
+    action: String,
+    /// `c_header`, `protobuf` or `mavlink`.
+    #[serde(default)]
+    kind: Option<String>,
+    #[serde(default)]
+    text: Option<String>,
+    #[serde(default)]
+    root: Option<String>,
+    /// Target port for `apply`.
+    #[serde(default)]
+    port: Option<String>,
+    /// Spaced hex sample for `decode`.
+    #[serde(default)]
+    hex: Option<String>,
+}
+
+fn schema(stream: &mut TcpStream, shared: &Arc<Shared>, body: &[u8]) {
+    let request: SchemaBody = match serde_json::from_slice(body) {
+        Ok(request) => request,
+        Err(error) => {
+            let body = format!("{{\"error\":\"bad request: {error}\"}}");
+            return respond(stream, "400 Bad Request", "application/json", body.as_bytes());
+        }
+    };
+    let kind = request.kind.as_deref().unwrap_or("c_header").to_string();
+    let text = request.text.clone().unwrap_or_default();
+
+    // parse + decode are pure: build the decoder right here.
+    let built = crate::tail::decoder_from_text(&kind, &text, request.root.as_deref());
+    match request.action.as_str() {
+        "parse" => match built {
+            Ok(decoder) => {
+                // A zero-filled sample exposes the compiled field layout.
+                let ir = match decoder {
+                    crate::tail::Decoder::Ir { ir, .. } => ir,
+                    crate::tail::Decoder::Pack(_) => {
+                        let body =
+                            "{\"fields\":[],\"note\":\"native pack: no field layout\"}".to_string();
+                        return respond(stream, "200 OK", "application/json", body.as_bytes());
+                    }
+                };
+                let zeros = vec![0u8; 256];
+                let fields = bforge_dissect::exec::execute(&ir, &zeros).unwrap_or_default();
+                let rows = crate::tail::flatten(&fields, "");
+                let body = serde_json::to_string(&rows).unwrap_or_else(|_| "[]".to_string());
+                respond(stream, "200 OK", "application/json", body.as_bytes());
+            }
+            Err(error) => {
+                let body = format!("{{\"error\":{}}}", serde_json::json!(error.to_string()));
+                respond(stream, "400 Bad Request", "application/json", body.as_bytes());
+            }
+        },
+        "decode" => match built {
+            Ok(decoder) => {
+                let hex = request.hex.unwrap_or_default();
+                let bytes = crate::validate::parse_hex(&hex).unwrap_or_default();
+                let reply = match &decoder {
+                    crate::tail::Decoder::Ir { ir, .. } => bforge_dissect::exec::execute(ir, &bytes)
+                        .map(|fields| crate::tail::flatten(&fields, "")),
+                    crate::tail::Decoder::Pack(pack) => pack
+                        .decode(&bytes)
+                        .map(|fields| crate::tail::flatten(&fields, "")),
+                };
+                match reply {
+                    Ok(rows) => {
+                        let body = serde_json::to_string(&rows).unwrap_or_else(|_| "[]".to_string());
+                        respond(stream, "200 OK", "application/json", body.as_bytes());
+                    }
+                    Err(error) => {
+                        let body = format!("{{\"error\":{}}}", serde_json::json!(error.to_string()));
+                        respond(stream, "400 Bad Request", "application/json", body.as_bytes());
+                    }
+                }
+            }
+            Err(error) => {
+                let body = format!("{{\"error\":{}}}", serde_json::json!(error.to_string()));
+                respond(stream, "400 Bad Request", "application/json", body.as_bytes());
+            }
+        },
+        "apply" => {
+            let Some(port) = request.port.clone() else {
+                let body = "{\"error\":\"apply needs a port\"}";
+                return respond(stream, "400 Bad Request", "application/json", body.as_bytes());
+            };
+            if let Err(error) = built {
+                let body = format!("{{\"error\":{}}}", serde_json::json!(error.to_string()));
+                return respond(stream, "400 Bad Request", "application/json", body.as_bytes());
+            }
+            let sender = shared.schema_request.lock().unwrap().clone();
+            let Some(sender) = sender else {
+                let body = "{\"error\":\"the pump is not running\"}";
+                return respond(stream, "503 Service Unavailable", "application/json", body.as_bytes());
+            };
+            let (reply, answer) = std::sync::mpsc::sync_channel(1);
+            let job = SchemaJob {
+                port,
+                kind,
+                text,
+                root: request.root,
+                reply,
+            };
+            if sender.send(job).is_err() {
+                let body = "{\"error\":\"the pump has stopped\"}";
+                return respond(stream, "503 Service Unavailable", "application/json", body.as_bytes());
+            }
+            match answer.recv_timeout(Duration::from_secs(3)) {
+                Ok(Ok(())) => respond(stream, "200 OK", "application/json", b"{\"ok\":true}"),
+                Ok(Err(error)) => {
+                    let body = format!("{{\"error\":{}}}", serde_json::json!(error));
+                    respond(stream, "409 Conflict", "application/json", body.as_bytes());
+                }
+                Err(_) => {
+                    let body = "{\"error\":\"no answer from the pump\"}";
+                    respond(stream, "504 Gateway Timeout", "application/json", body.as_bytes());
+                }
+            }
+        }
+        other => {
+            let body = format!(
+                "{{\"error\":\"unknown action `{other}`; use parse, decode or apply\"}}"
+            );
+            respond(stream, "400 Bad Request", "application/json", body.as_bytes());
         }
     }
 }

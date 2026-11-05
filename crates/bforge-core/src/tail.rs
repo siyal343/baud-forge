@@ -497,6 +497,14 @@ pub fn encoder_ir(port: &PortConfig) -> Option<DissectorIr> {
 
 /// Build the framing machine and dissector a configured port asks for.
 pub fn tail_config(port: &PortConfig) -> Result<TailConfig, TailError> {
+    let machine = framing_machine(port)?;
+    let dissector = decoder_from_config(port)?;
+    Ok(TailConfig { machine, dissector })
+}
+
+/// The framing byte machine for one port's config, independent of the schema.
+/// Lets an uploaded schema rebuild a live stream without touching framing.
+pub fn framing_machine(port: &PortConfig) -> Result<Box<dyn ByteMachine + Send>, TailError> {
     let framing = &port.framing;
     let limit = framing.max_frame.unwrap_or(DEFAULT_MAX_FRAME);
 
@@ -551,7 +559,11 @@ pub fn tail_config(port: &PortConfig) -> Result<TailConfig, TailError> {
             )));
         }
     };
+    Ok(machine)
+}
 
+/// The dissector one port's config asks for.
+fn decoder_from_config(port: &PortConfig) -> Result<Option<Decoder>, TailError> {
     let dissector = match &port.dissector {
         None => None,
         Some(specification) if specification.kind == "native" => {
@@ -616,11 +628,45 @@ pub fn tail_config(port: &PortConfig) -> Result<TailConfig, TailError> {
             )));
         }
     };
-
-    Ok(TailConfig { machine, dissector })
+    Ok(dissector)
 }
 
-fn flatten(fields: &[DecodedField], prefix: &str) -> Vec<FieldRow> {
+/// A decoder built from UPLOADED schema text instead of a file path (spec 2.2).
+pub fn decoder_from_text(
+    kind: &str,
+    text: &str,
+    root: Option<&str>,
+) -> Result<Decoder, TailError> {
+    match kind {
+        "c_header" => {
+            let root = root
+                .ok_or_else(|| TailError::Settings("c_header needs a root_struct".into()))?;
+            let header = bforge_dissect::cheader::parse(text)
+                .map_err(|error| TailError::Settings(format!("header: {error}")))?;
+            let ir = bforge_dissect::cheader::compile(&header, root, "uploaded")
+                .map_err(|error| TailError::Settings(format!("{root}: {error}")))?;
+            Ok(Decoder::Ir {
+                tag: format!("C_STRUCT:{root}"),
+                ir: Box::new(ir),
+            })
+        }
+        "protobuf" => {
+            let schema = bforge_dissect::packs::protobuf::parse_proto(text, root)
+                .map_err(|error| TailError::Settings(format!("proto: {error}")))?;
+            Ok(Decoder::Pack(Pack::ProtobufSchema(schema)))
+        }
+        "mavlink" => {
+            let dialect = bforge_dissect::packs::mavlink::parse_xml(text)
+                .map_err(|error| TailError::Settings(format!("mavlink: {error}")))?;
+            Ok(Decoder::Pack(Pack::MavlinkDialect(dialect)))
+        }
+        other => Err(TailError::Settings(format!(
+            "dialect `{other}` is not c_header, protobuf or mavlink"
+        ))),
+    }
+}
+
+pub(crate) fn flatten(fields: &[DecodedField], prefix: &str) -> Vec<FieldRow> {
     let mut rows = Vec::new();
     for field in fields {
         let name = if prefix.is_empty() {
