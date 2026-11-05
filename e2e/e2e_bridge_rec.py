@@ -23,7 +23,7 @@ import urllib.request
 from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[1]
-ENGINE = ROOT / "target" / "debug" / "bforge.exe"
+ENGINE = Path(sys.argv[1] if len(sys.argv) > 1 else "target/debug/bforge.exe")
 WORKSPACE = Path(__file__).parent / "e2e-workspace.toml"
 VAULT_REL = f"vaults/e2e-rec-{int(time.time())}.bflog"
 BASE = "http://127.0.0.1:7717"
