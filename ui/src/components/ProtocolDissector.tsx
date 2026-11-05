@@ -6,7 +6,7 @@ import { DissectedField } from '../types';
 import { CheckCircle2, AlertTriangle, Layers, LineChart } from 'lucide-react';
 
 export const ProtocolDissector: React.FC = () => {
-  const { selectedPacket, selectedField, hoveredField, selectField, setHoveredField } =
+  const { selectedPacket, selectedField, hoveredField, selectField, setHoveredField, bindScopeTrace } =
     useWorkstationStore(
       useShallow((s) => ({
         selectedPacket: s.selectedPacket,
@@ -14,6 +14,7 @@ export const ProtocolDissector: React.FC = () => {
         hoveredField: s.hoveredField,
         selectField: s.selectField,
         setHoveredField: s.setHoveredField,
+        bindScopeTrace: s.bindScopeTrace,
       }))
     );
 
@@ -127,11 +128,12 @@ export const ProtocolDissector: React.FC = () => {
                     <button
                       title={`Plot ${f.name} in Oscilloscope`}
                       onClick={() => {
-                        // Honest no-op: scope channels are hard-wired to the
-                        // demo sources until per-field signal binding lands.
-                        toast.info(
-                          'Signal binding not yet available',
-                          `${f.name} cannot be plotted yet — scope channels are currently fixed sources.`
+                        // Spec 5.4: bind the field to a scope trace lane; the
+                        // store feeds it from every frame that carries the field.
+                        bindScopeTrace({ name: f.name, unit: f.unit });
+                        toast.success(
+                          'Field bound to scope',
+                          `${f.name} now plots as a trace lane (open the Telemetry Oscilloscope).`
                         );
                       }}
                       className="text-[#64748B] hover:text-[#00E5FF] p-0.5"

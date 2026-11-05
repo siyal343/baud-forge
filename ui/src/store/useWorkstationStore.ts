@@ -36,6 +36,11 @@ interface WorkstationState {
   ch1Visible: boolean;
   ch2Visible: boolean;
   logicRailsVisible: boolean;
+  /** Fields bound to scope trace lanes (spec 5.4 "plot any numeric field"). */
+  traceBindings: Array<{ id: string; name: string; unit?: string }>;
+  /** Per-binding time series, keyed by binding id, bounded like scopeSamples. */
+  traceSeries: Record<string, Array<{ tUs: number; value: number }>>;
+  traceHidden: Record<string, boolean>;
 
   // DVR Timeline
   isLive: boolean;
@@ -104,6 +109,9 @@ interface WorkstationState {
   setCursorT1: (tUs: number | null) => void;
   setCursorT2: (tUs: number | null) => void;
   toggleChannel: (ch: 'ch1' | 'ch2' | 'logic') => void;
+  bindScopeTrace: (field: { name: string; unit?: string }) => string;
+  unbindScopeTrace: (id: string) => void;
+  toggleTraceVisibility: (id: string) => void;
   setDvrLive: () => void;
   setDvrPaused: (val: boolean) => void;
   startReplay: () => void;
@@ -145,6 +153,15 @@ let replayIdx = 0;
 // wrong DVR stepping. Every packet entering the store is renumbered here.
 let nextSeqId = 1;
 const withUniqueSeqId = (pkt: PacketRow): PacketRow => ({ ...pkt, seqId: nextSeqId++ });
+
+/** First numeric value of a named dissected field, or null when absent. */
+const FIELD_NUMBER = /-?\d+(?:\.\d+)?/;
+const findFieldValue = (pkt: PacketRow, name: string): number | null => {
+  const field = (pkt.dissectedFields ?? []).find((f) => f.name === name);
+  if (!field) return null;
+  const match = FIELD_NUMBER.exec(String(field.decodedValue));
+  return match ? parseFloat(match[0]) : null;
+};
 
 /**
  * Derive a scope point from a REAL decoded packet instead of synthesizing a
@@ -233,6 +250,10 @@ export const useWorkstationStore = create<WorkstationState>((set, get) => ({
   ch1Visible: true,
   ch2Visible: true,
   logicRailsVisible: true,
+  // Per-field trace bindings (spec 5.4: plot any numeric dissected field).
+  traceBindings: [],
+  traceSeries: {},
+  traceHidden: {},
 
   // DVR Timeline
   isLive: true,
@@ -389,6 +410,46 @@ export const useWorkstationStore = create<WorkstationState>((set, get) => ({
       ch1Visible: ch === 'ch1' ? !state.ch1Visible : state.ch1Visible,
       ch2Visible: ch === 'ch2' ? !state.ch2Visible : state.ch2Visible,
       logicRailsVisible: ch === 'logic' ? !state.logicRailsVisible : state.logicRailsVisible,
+    })),
+
+  // Trace binding: seed the series with the field's current reading (if the
+  // newest packet carries it) so the lane is never empty until the next frame.
+  bindScopeTrace: (field) => {
+    const existing = get().traceBindings.find((b) => b.name === field.name);
+    if (existing) {
+      set({ traceHidden: { ...get().traceHidden, [existing.id]: false } });
+      return existing.id;
+    }
+    const id = `trace-${Date.now().toString(36)}-${Math.floor(Math.random() * 1e4)}`;
+    const newest = get().packets[get().packets.length - 1];
+    const seedValue = newest
+      ? findFieldValue(newest, field.name)
+      : null;
+    set((state) => ({
+      traceBindings: [...state.traceBindings, { id, name: field.name, unit: field.unit }],
+      traceSeries: {
+        ...state.traceSeries,
+        [id]: seedValue !== null ? [{ tUs: newest.timestampUs, value: seedValue }] : [],
+      },
+      traceHidden: { ...state.traceHidden, [id]: false },
+    }));
+    return id;
+  },
+
+  unbindScopeTrace: (id) =>
+    set((state) => {
+      const { [id]: _removed, ...series } = state.traceSeries;
+      const { [id]: _hidden, ...hidden } = state.traceHidden;
+      return {
+        traceBindings: state.traceBindings.filter((b) => b.id !== id),
+        traceSeries: series,
+        traceHidden: hidden,
+      };
+    }),
+
+  toggleTraceVisibility: (id) =>
+    set((state) => ({
+      traceHidden: { ...state.traceHidden, [id]: !state.traceHidden[id] },
     })),
 
   setDvrLive: () => {
@@ -567,6 +628,20 @@ export const useWorkstationStore = create<WorkstationState>((set, get) => ({
     rateTimestamps.push(Date.now());
     if (rateTimestamps.length > 400) rateTimestamps.splice(0, rateTimestamps.length - 400);
     set((state) => {
+      // Per-field trace lanes (spec 5.4): feed every bound series whose field
+      // this frame carries.
+      let traceSeries = state.traceSeries;
+      if (state.traceBindings.length) {
+        const next: Record<string, Array<{ tUs: number; value: number }>> = { ...traceSeries };
+        for (const binding of state.traceBindings) {
+          const value = findFieldValue(pkt, binding.name);
+          if (value === null) continue;
+          const series = [...(next[binding.id] ?? []), { tUs: pkt.timestampUs, value }];
+          next[binding.id] =
+            series.length > MAX_SCOPE_SAMPLES ? series.slice(series.length - MAX_SCOPE_SAMPLES) : series;
+        }
+        traceSeries = next;
+      }
       const newPackets = state.packets.length >= MAX_PACKETS
         ? [...state.packets.slice(state.packets.length - MAX_PACKETS + 1), pkt]
         : [...state.packets, pkt];
@@ -583,6 +658,7 @@ export const useWorkstationStore = create<WorkstationState>((set, get) => ({
       return {
         packets: newPackets,
         scopeSamples: newScope,
+        traceSeries,
         rxBytes: state.rxBytes + pkt.length,
         // Live-follow: keep the highlighted hex/dissector field in sync with
         // the newest frame, matching selectPacket's first-field behavior.
@@ -614,6 +690,22 @@ export const useWorkstationStore = create<WorkstationState>((set, get) => ({
         prevSample = pt;
         return pt;
       });
+
+      // Per-field trace lanes from engine batches.
+      let traceSeries = state.traceSeries;
+      if (state.traceBindings.length) {
+        const next: Record<string, Array<{ tUs: number; value: number }>> = { ...traceSeries };
+        for (const binding of state.traceBindings) {
+          const points = newestFrames
+            .map((p) => ({ tUs: p.timestampUs, value: findFieldValue(p, binding.name) }))
+            .filter((pt): pt is { tUs: number; value: number } => pt.value !== null);
+          if (!points.length) continue;
+          const series = [...(next[binding.id] ?? []), ...points];
+          next[binding.id] =
+            series.length > MAX_SCOPE_SAMPLES ? series.slice(series.length - MAX_SCOPE_SAMPLES) : series;
+        }
+        traceSeries = next;
+      }
       let combinedScope = state.scopeSamples.concat(newScopeSamples);
       if (combinedScope.length > MAX_SCOPE_SAMPLES) {
         combinedScope = combinedScope.slice(combinedScope.length - MAX_SCOPE_SAMPLES);
@@ -625,6 +717,7 @@ export const useWorkstationStore = create<WorkstationState>((set, get) => ({
       return {
         packets: combined,
         scopeSamples: combinedScope,
+        traceSeries,
         rxBytes: state.rxBytes + addedBytes,
         selectedPacket: state.autoScroll ? lastPkt : state.selectedPacket,
         selectedField: state.autoScroll ? (lastPkt.dissectedFields?.[0] ?? null) : state.selectedField,

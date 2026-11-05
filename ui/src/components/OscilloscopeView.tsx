@@ -23,6 +23,8 @@ const TIME_DIV_PRESETS = [1, 2, 5, 10, 20, 50, 100, 200, 500, 1000, 2000]; // ms
 const CH1_SCALE_PRESETS = [50, 100, 200, 500, 1000, 2000, 5000, 10000]; // mV / division
 const CH2_SCALE_PRESETS = [0.02, 0.05, 0.1, 0.2, 0.5, 1.0, 2.0, 5.0]; // rad/s / division
 const MATH_OPERATIONS = ['CH1 - CH2', 'CH1 + CH2', 'CH1 * CH2', 'FFT', 'INV CH1'] as const;
+/** Lane colors for bound field traces (spec 5.4). */
+const TRACE_COLORS = ['#A855F7', '#F97316', '#38BDF8', '#F472B6', '#84CC16', '#FACC15'];
 type MathOp = typeof MATH_OPERATIONS[number];
 type CursorMode = 'OFF' | 'TIME' | 'VOLT' | 'BOTH';
 type CursorChannel = 'CH1' | 'CH2' | 'MATH';
@@ -42,6 +44,11 @@ export const OscilloscopeView: React.FC = () => {
     ch2Visible,
     logicRailsVisible,
     toggleChannel,
+    traceBindings,
+    traceSeries,
+    traceHidden,
+    unbindScopeTrace,
+    toggleTraceVisibility,
   } = useWorkstationStore(
     useShallow((s) => ({
       scopeSamples: s.scopeSamples,
@@ -49,6 +56,11 @@ export const OscilloscopeView: React.FC = () => {
       ch2Visible: s.ch2Visible,
       logicRailsVisible: s.logicRailsVisible,
       toggleChannel: s.toggleChannel,
+      traceBindings: s.traceBindings,
+      traceSeries: s.traceSeries,
+      traceHidden: s.traceHidden,
+      unbindScopeTrace: s.unbindScopeTrace,
+      toggleTraceVisibility: s.toggleTraceVisibility,
     }))
   );
 
@@ -599,6 +611,50 @@ export const OscilloscopeView: React.FC = () => {
       ctx.fillText(trigLabel, width - 14, trigY - 2);
     }
 
+    // --- Bound Field Traces (spec 5.4): overlay lanes, auto-scaled per trace ---
+    traceBindings.forEach((binding, index) => {
+      if (traceHidden[binding.id]) return;
+      const series = traceSeries[binding.id] ?? [];
+      const windowed = series.filter((pt) => pt.tUs >= tMin && pt.tUs <= tMax);
+      if (windowed.length < 2) return;
+
+      let min = Infinity;
+      let max = -Infinity;
+      for (const pt of windowed) {
+        if (pt.value < min) min = pt.value;
+        if (pt.value > max) max = pt.value;
+      }
+      if (max - min < 1e-9) {
+        min -= 0.5;
+        max += 0.5;
+      }
+      // Occupies the lower half of the analog zone (below CH1/CH2, above rails).
+      const laneTop = analogHeight * 0.55;
+      const laneBottom = analogHeight - 8;
+      const toY = (value: number) =>
+        laneBottom - ((value - min) / (max - min)) * (laneBottom - laneTop);
+      const color = TRACE_COLORS[index % TRACE_COLORS.length];
+
+      ctx.strokeStyle = color;
+      ctx.lineWidth = 1.5;
+      ctx.beginPath();
+      windowed.forEach((pt, idx) => {
+        const x = timeToX(pt.tUs);
+        const y = toY(pt.value);
+        if (idx === 0) ctx.moveTo(x, y);
+        else ctx.lineTo(x, y);
+      });
+      ctx.stroke();
+
+      // Right-edge lane label with the windowed range.
+      const unit = binding.unit ? ` ${binding.unit}` : '';
+      const fmt = (v: number) => (Math.abs(v) >= 1000 ? v.toFixed(0) : v.toPrecision(3));
+      ctx.fillStyle = color;
+      ctx.font = 'bold 8.5px "JetBrains Mono", monospace';
+      ctx.textAlign = 'right';
+      ctx.fillText(`${binding.name} [${fmt(min)}..${fmt(max)}${unit}]`, width - 6, laneTop + 8);
+    });
+
     // --- Digital Logic Rails ---
     if (logicRailsVisible) {
       const logicHeight = height - analogHeight;
@@ -814,6 +870,9 @@ export const OscilloscopeView: React.FC = () => {
     triggerLevelCh2Rad,
     getTransforms,
     stats.fftPeakFreq,
+    traceBindings,
+    traceSeries,
+    traceHidden,
   ]);
 
   // Mirror of isRunning for the render loop (no effect-lag on toggle).
@@ -1460,6 +1519,39 @@ export const OscilloscopeView: React.FC = () => {
                 </>
               )}
             </div>
+
+            {/* Bound Field Trace Stems (spec 5.4: plot any numeric field) */}
+            {traceBindings.map((binding, index) => {
+              const hidden = !!traceHidden[binding.id];
+              const color = TRACE_COLORS[index % TRACE_COLORS.length];
+              return (
+                <div
+                  key={binding.id}
+                  className="flex items-center gap-1 border-l border-[#222D3D] pl-1 ml-0.5"
+                >
+                  <button
+                    onClick={() => toggleTraceVisibility(binding.id)}
+                    data-tooltip={`Toggle trace lane for bound field ${binding.name}`}
+                    className={`flex items-center gap-1 px-1.5 py-0.5 rounded text-[9.5px] transition-colors border ${
+                      hidden
+                        ? 'bg-[#10141D] border-[#222D3D] text-[#64748B] hover:text-[#94A3B8]'
+                        : 'bg-[#10141D] text-[#E2E8F0]'
+                    }`}
+                    style={hidden ? undefined : { borderColor: `${color}80` }}
+                  >
+                    {hidden ? <EyeOff className="w-2.5 h-2.5" /> : <Eye className="w-2.5 h-2.5" />}
+                    <span style={{ color: hidden ? undefined : color }}>{binding.name}</span>
+                  </button>
+                  <button
+                    onClick={() => unbindScopeTrace(binding.id)}
+                    data-tooltip={`Unbind ${binding.name} and remove its trace lane`}
+                    className="text-[#64748B] hover:text-[#EF4444] text-[10px] px-0.5"
+                  >
+                    ×
+                  </button>
+                </div>
+              );
+            })}
 
             {/* LOGIC Stem */}
             <button

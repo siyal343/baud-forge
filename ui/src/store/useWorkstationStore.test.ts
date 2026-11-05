@@ -99,6 +99,47 @@ describe('workstation store', () => {
     expect(useWorkstationStore.getState().directionFilter).toBe('tx');
   });
 
+  it('scope trace bindings capture named fields from later frames only', () => {
+    const s = useWorkstationStore.getState();
+    // Seed frame: bindScopeTrace seeds its lane from the newest packet's value.
+    s.addPacket(
+      makePacket({
+        timestampUs: 1000,
+        dissectedFields: [
+          { name: 'v_batt_mv', type: 'uint32', offset: 4, length: 4, rawHex: '', decodedValue: '7430 mV' },
+        ],
+      })
+    );
+    const id = s.bindScopeTrace({ name: 'v_batt_mv', unit: 'mV' });
+    const afterBind = useWorkstationStore.getState();
+    expect(afterBind.traceBindings).toHaveLength(1);
+    expect(afterBind.traceSeries[id]).toHaveLength(1);
+
+    // Frames carrying the field append points; frames without it do not.
+    s.addPacket(
+      makePacket({
+        timestampUs: 2000,
+        dissectedFields: [
+          { name: 'v_batt_mv', type: 'uint32', offset: 4, length: 4, rawHex: '', decodedValue: '7500 mV' },
+        ],
+      })
+    );
+    s.addPacket(makePacket({ timestampUs: 3000, dissectedFields: [] }));
+    const { traceSeries } = useWorkstationStore.getState();
+    expect(traceSeries[id]).toHaveLength(2);
+    expect(traceSeries[id][1]).toEqual({ tUs: 2000, value: 7500 });
+
+    // Re-binding the same field reuses the slot instead of duplicating lanes.
+    const again = s.bindScopeTrace({ name: 'v_batt_mv' });
+    expect(again).toBe(id);
+    expect(useWorkstationStore.getState().traceBindings).toHaveLength(1);
+
+    // Unbind removes the lane and its series.
+    s.unbindScopeTrace(id);
+    expect(useWorkstationStore.getState().traceBindings).toHaveLength(0);
+    expect(useWorkstationStore.getState().traceSeries[id]).toBeUndefined();
+  });
+
   it('replaces a running flash-yield countdown instead of stacking intervals', () => {
     vi.useFakeTimers();
     const s = useWorkstationStore.getState();

@@ -262,12 +262,33 @@ try {
       })
     : null;
   if (plotBtn) {
+    const boundName = await page.evaluate(() => {
+      const b = [...document.querySelectorAll('button')].find((x) => (x.title || '').startsWith('Plot '));
+      return b ? (b.title.match(/Plot (\S+)/) || [])[1] : '';
+    });
     await page.mouse.click(plotBtn.x, plotBtn.y);
     await sleep(600);
     const toast = await toasts(page);
-    check('plot action explains it is not yet available', toast.includes('Signal binding'), toast.slice(0, 100));
+    // The scope ribbon carries the trace stem — activate the scope tab first,
+    // since dockview unmounts inactive panels.
+    await activateTab('TELEMETRY OSCILLOSCOPE');
+    await sleep(400);
+    const stem = await page.evaluate((name) => {
+      const b = [...document.querySelectorAll('button')].find(
+        (x) =>
+          x.querySelector('span') &&
+          x.querySelector('span').textContent === name &&
+          (x.getAttribute('data-tooltip') || '').includes('trace lane')
+      );
+      return b ? b.textContent.trim() : null;
+    }, boundName);
+    check(
+      'plot binds a scope trace lane',
+      toast.includes('Field bound to scope') && !!stem,
+      `toast=${toast.includes('Field bound to scope')} stem=${stem ?? 'none'} (${boundName})`
+    );
   } else {
-    check('plot action explains it is not yet available', false, disTab ? 'no numeric-field plot button visible' : 'dissector tab not reachable');
+    check('plot binds a scope trace lane', false, disTab ? 'no numeric-field plot button visible' : 'dissector tab not reachable');
   }
 } finally {
   await browser.close();
