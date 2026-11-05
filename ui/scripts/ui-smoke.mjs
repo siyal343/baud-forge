@@ -338,6 +338,46 @@ try {
     );
   }
 
+  // T8d: Workflow B — scope click syncs stream/DVR to that instant
+  const scopeOk2 = await activateTab('TELEMETRY OSCILLOSCOPE');
+  if (scopeOk2) {
+    // Ensure cursors are not armed: click the cursor-mode OFF chip if present.
+    await page.evaluate(() => {
+      const b = [...document.querySelectorAll('button')].find((x) => x.textContent.trim() === 'OFF' && (x.getAttribute('data-tooltip') || '').length >= 0);
+      if (b) b.click();
+    });
+    await sleep(200);
+    const before = await page.evaluate(() => window.__bforgeStore.getState().selectedPacket?.timestampUs ?? 0);
+    // Click the left quarter of the canvas.
+    const clicked = await page.evaluate(() => {
+      const c = document.querySelector('canvas');
+      if (!c) return false;
+      const r = c.getBoundingClientRect();
+      window.__wfB = { x: r.left + r.width * 0.25, y: r.top + r.height / 2 };
+      return true;
+    });
+    if (clicked) {
+      await page.mouse.click((await page.evaluate(() => window.__wfB.x)), (await page.evaluate(() => window.__wfB.y)));
+      await sleep(600);
+      const after = await page.evaluate(() => ({
+        t: window.__bforgeStore.getState().selectedPacket?.timestampUs ?? 0,
+        paused: window.__bforgeStore.getState().isPaused,
+        live: window.__bforgeStore.getState().isLive,
+      }));
+      // Back to live.
+      await page.evaluate(() => window.__bforgeStore.getState().setDvrLive());
+      check(
+        'Workflow B: scope click syncs workstation to that instant',
+        after.t !== before && after.paused && !after.live,
+        `t ${before} -> ${after.t} paused=${after.paused}`
+      );
+    } else {
+      check('Workflow B: scope click syncs workstation to that instant', false, 'no canvas');
+    }
+  } else {
+    check('Workflow B: scope click syncs workstation to that instant', false, 'scope tab not reachable');
+  }
+
   // T9: dissector highlighted-field readout + honest plot action.
   // Both panels live in dockview groups whose inactive tabs are unmounted —
   // activate the tabs first (keyboard path, same as the scope).

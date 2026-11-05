@@ -40,6 +40,8 @@ export const PacketStreamView: React.FC = () => {
     autoScroll,
     filterText,
     directionFilter,
+    portFilter,
+    errorsOnly,
     dataBits,
     parity,
     stopBits,
@@ -49,6 +51,8 @@ export const PacketStreamView: React.FC = () => {
     clearStream,
     setFilterText,
     setDirectionFilter,
+    setPortFilter,
+    setErrorsOnly,
   } = useWorkstationStore(
     useShallow((s) => ({
       packets: s.packets,
@@ -56,6 +60,8 @@ export const PacketStreamView: React.FC = () => {
       autoScroll: s.autoScroll,
       filterText: s.filterText,
       directionFilter: s.directionFilter,
+      portFilter: s.portFilter,
+      errorsOnly: s.errorsOnly,
       dataBits: s.dataBits,
       parity: s.parity,
       stopBits: s.stopBits,
@@ -65,6 +71,8 @@ export const PacketStreamView: React.FC = () => {
       clearStream: s.clearStream,
       setFilterText: s.setFilterText,
       setDirectionFilter: s.setDirectionFilter,
+      setPortFilter: s.setPortFilter,
+      setErrorsOnly: s.setErrorsOnly,
     }))
   );
 
@@ -166,12 +174,27 @@ export const PacketStreamView: React.FC = () => {
     return STREAM_COLUMNS.reduce((acc, c) => acc + (colWidths[c.id] || c.defaultWidth), 0);
   }, [colWidths]);
 
-  const directionFiltered = directionFilter === 'all'
+  // Spec 2.3 filters, applied cheapest first: port chips → direction →
+  // errors-only kind → free text.
+  const ports = useMemo(
+    () => [...new Set(packets.map((p) => p.port))],
+    [packets]
+  );
+
+  const portFiltered = portFilter === 'all'
     ? packets
-    : packets.filter((p) => p.direction.toLowerCase() === directionFilter);
+    : packets.filter((p) => p.port === portFilter);
+
+  const directionFiltered = directionFilter === 'all'
+    ? portFiltered
+    : portFiltered.filter((p) => p.direction.toLowerCase() === directionFilter);
+
+  const kindFiltered = errorsOnly
+    ? directionFiltered.filter((p) => p.hasError)
+    : directionFiltered;
 
   const filteredPackets = filterText.trim()
-    ? directionFiltered.filter((p) => {
+    ? kindFiltered.filter((p) => {
         const query = filterText.toLowerCase();
         return (
           p.protocol.toLowerCase().includes(query) ||
@@ -180,7 +203,7 @@ export const PacketStreamView: React.FC = () => {
           p.direction.toLowerCase().includes(query)
         );
       })
-    : directionFiltered;
+    : kindFiltered;
 
   const totalRows = filteredPackets.length;
 
@@ -338,6 +361,36 @@ export const PacketStreamView: React.FC = () => {
               </button>
             ))}
           </div>
+
+          {/* Port filter (spec 2.3 port_filter) */}
+          {ports.length > 1 && (
+            <select
+              value={portFilter}
+              onChange={(e) => setPortFilter(e.target.value)}
+              title="Show only frames from one port"
+              className="bg-[#10141D] border border-[#222D3D] rounded px-1 py-0.5 text-[9px] font-mono text-[#94A3B8] focus:outline-none focus:border-[#00E5FF] max-w-[90px] shrink-0"
+            >
+              <option value="all">ALL PORTS</option>
+              {ports.map((p) => (
+                <option key={p} value={p}>
+                  {p}
+                </option>
+              ))}
+            </select>
+          )}
+
+          {/* Errors-only kind filter (spec 2.3 packet_kind_filter) */}
+          <button
+            onClick={() => setErrorsOnly(!errorsOnly)}
+            title="Show only frames with CRC/decode errors"
+            className={`px-1.5 py-0.5 rounded text-[9px] font-mono transition-colors border shrink-0 ${
+              errorsOnly
+                ? 'bg-[#EF4444]/20 text-[#EF4444] border-[#EF4444]/50 font-bold'
+                : 'text-[#64748B] border-[#222D3D] hover:text-[#94A3B8]'
+            }`}
+          >
+            ERRORS
+          </button>
 
           {/* Stream Search / Filter Input */}
           <div className="relative flex items-center min-w-[120px] max-w-[220px] flex-1">

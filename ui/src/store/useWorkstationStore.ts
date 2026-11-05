@@ -30,6 +30,10 @@ interface WorkstationState {
   autoScroll: boolean;
   filterText: string;
   directionFilter: 'all' | 'rx' | 'tx' | 'fault';
+  /** 'all' or a port id from the stream (spec 2.3 port_filter chips). */
+  portFilter: string;
+  /** Errors-only toggle (spec 2.3 packet_kind_filter: errors). */
+  errorsOnly: boolean;
   isScanningPorts: boolean;
 
   // Oscilloscope & Telemetry
@@ -96,6 +100,8 @@ interface WorkstationState {
   setBaudRate: (baud: number) => void;
   setFraming: (framing: string) => void;
   setDirectionFilter: (filter: 'all' | 'rx' | 'tx' | 'fault') => void;
+  setPortFilter: (port: string) => void;
+  setErrorsOnly: (val: boolean) => void;
   rescanPorts: () => Promise<void>;
   setUartConfig: (cfg: Partial<{
     dataBits: number;
@@ -246,6 +252,8 @@ export const useWorkstationStore = create<WorkstationState>((set, get) => ({
   autoScroll: true,
   filterText: '',
   directionFilter: 'all',
+  portFilter: 'all',
+  errorsOnly: false,
   isScanningPorts: false,
 
   // Oscilloscope
@@ -350,6 +358,8 @@ export const useWorkstationStore = create<WorkstationState>((set, get) => ({
   setBaudRate: (baudRate) => set({ baudRate }),
   setFraming: (framing) => set({ framing }),
   setDirectionFilter: (directionFilter) => set({ directionFilter }),
+  setPortFilter: (portFilter) => set({ portFilter }),
+  setErrorsOnly: (errorsOnly) => set({ errorsOnly }),
   rescanPorts: async () => {
     set({ isScanningPorts: true });
     try {

@@ -122,6 +122,8 @@ export const GlobalRibbon: React.FC = () => {
 
   const [saveSuccessMsg, setSaveSuccessMsg] = useState(false);
   const [recPending, setRecPending] = useState(false);
+  const [isCustomBaud, setIsCustomBaud] = useState(false);
+  const [customBaudDraft, setCustomBaudDraft] = useState('115200');
   const pushToast = useToastStore((s) => s.pushToast);
 
   const formatVaultBytes = (bytes: number) => {
@@ -229,17 +231,53 @@ export const GlobalRibbon: React.FC = () => {
           className="flex items-center gap-1 bg-[#161C28] border border-[#222D3D] rounded px-1.5 py-0.5 font-mono text-[11px]"
         >
           <span className="text-[#64748B] text-[10px]">BAUD:</span>
-          <select
-            value={baudRate}
-            onChange={(e) => setBaudRate(Number(e.target.value))}
-            className="bg-transparent text-[#00E5FF] font-semibold focus:outline-none cursor-pointer"
-          >
-            {allBaudRates.map((b) => (
-              <option key={b} value={b} className="bg-[#10141D] text-[#E2E8F0]">
-                {formatBaud(b)} ({b.toLocaleString()})
+          {isCustomBaud ? (
+            <input
+              autoFocus
+              type="number"
+              min={110}
+              max={12000000}
+              value={customBaudDraft}
+              onChange={(e) => setCustomBaudDraft(e.target.value)}
+              onBlur={() => {
+                const value = parseInt(customBaudDraft, 10);
+                if (!isNaN(value) && value >= 110 && value <= 12000000) {
+                  setBaudRate(value);
+                } else {
+                  pushToast('error', 'Invalid baud rate', 'Enter a rate between 110 and 12,000,000.');
+                }
+                setIsCustomBaud(false);
+              }}
+              onKeyDown={(e) => {
+                if (e.key === 'Enter') (e.target as HTMLInputElement).blur();
+                if (e.key === 'Escape') setIsCustomBaud(false);
+              }}
+              title="Custom baud rate: 110 to 12,000,000 (Enter to apply, Esc to cancel)"
+              className="w-[70px] bg-[#10141D] border border-[#00E5FF]/60 rounded px-1 text-[#00E5FF] font-semibold focus:outline-none"
+            />
+          ) : (
+            <select
+              value={allBaudRates.includes(baudRate) ? baudRate : 'custom'}
+              onChange={(e) => {
+                if (e.target.value === 'custom') {
+                  setCustomBaudDraft(String(baudRate));
+                  setIsCustomBaud(true);
+                } else {
+                  setBaudRate(Number(e.target.value));
+                }
+              }}
+              className="bg-transparent text-[#00E5FF] font-semibold focus:outline-none cursor-pointer"
+            >
+              {allBaudRates.map((b) => (
+                <option key={b} value={b} className="bg-[#10141D] text-[#E2E8F0]">
+                  {formatBaud(b)} ({b.toLocaleString()})
+                </option>
+              ))}
+              <option value="custom" className="bg-[#10141D] text-[#E2E8F0]">
+                Custom…
               </option>
-            ))}
-          </select>
+            </select>
+          )}
         </div>
 
         {/* UART Framing & Delimiter Trigger */}

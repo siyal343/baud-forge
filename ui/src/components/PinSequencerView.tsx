@@ -82,6 +82,16 @@ export const PinSequencerView: React.FC = () => {
     setSteps(steps.filter((s) => s.id !== id));
   };
 
+  // Spec: add, edit, REORDER, or delete steps.
+  const handleMoveStep = (id: number, direction: 'up' | 'down') => {
+    const index = steps.findIndex((s) => s.id === id);
+    const target = direction === 'up' ? index - 1 : index + 1;
+    if (index < 0 || target < 0 || target >= steps.length) return;
+    const next = [...steps];
+    [next[index], next[target]] = [next[target], next[index]];
+    setSteps(next);
+  };
+
   const handleUpdateStep = (id: number, patch: Partial<Step>) => {
     setSteps(steps.map((s) => (s.id === id ? { ...s, ...patch } : s)));
   };
@@ -270,7 +280,23 @@ export const PinSequencerView: React.FC = () => {
                     ? 'Assert Target Chip Reset'
                     : 'Normal Pin State'}
                 </div>
-                <div className="text-center">
+                <div className="flex items-center justify-center gap-1">
+                  <button
+                    onClick={() => handleMoveStep(s.id, 'up')}
+                    disabled={idx === 0}
+                    data-tooltip={`Move step #${idx + 1} earlier`}
+                    className="text-[#64748B] hover:text-[#00E5FF] disabled:opacity-30 disabled:hover:text-[#64748B] transition-colors p-0.5"
+                  >
+                    ↑
+                  </button>
+                  <button
+                    onClick={() => handleMoveStep(s.id, 'down')}
+                    disabled={idx === steps.length - 1}
+                    data-tooltip={`Move step #${idx + 1} later`}
+                    className="text-[#64748B] hover:text-[#00E5FF] disabled:opacity-30 disabled:hover:text-[#64748B] transition-colors p-0.5"
+                  >
+                    ↓
+                  </button>
                   <button
                     onClick={() => handleRemoveStep(s.id)}
                     data-tooltip={`Delete step #${idx + 1} from sequence`}

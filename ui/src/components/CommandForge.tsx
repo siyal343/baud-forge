@@ -426,7 +426,7 @@ typedef struct {
     const isHex = mode === 'hex' || isHexString(text);
 
     if (!isHex) {
-      const ending = lineEnding === 'lf' ? '\n' : lineEnding === 'crlf' ? '\r\n' : '';
+      const ending = lineEnding === 'lf' ? '\n' : lineEnding === 'crlf' ? '\r\n' : lineEnding === 'null' ? '\x00' : '';
       const fullText = text.endsWith('\n') ? text : text + ending;
       bytes = Array.from(new TextEncoder().encode(fullText));
     } else {
@@ -1145,6 +1145,7 @@ typedef struct {
                 className="w-full bg-[#10141D] border border-[#222D3D] rounded px-2 py-1 text-xs text-[#E2E8F0] focus:outline-none focus:border-[#00E5FF]"
               >
                 <option value="none">None</option>
+                <option value="null">\0 (NULL)</option>
                 <option value="lf">\n (LF)</option>
                 <option value="crlf">\r\n (CRLF)</option>
               </select>

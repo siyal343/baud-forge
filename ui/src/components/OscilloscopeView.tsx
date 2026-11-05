@@ -49,6 +49,7 @@ export const OscilloscopeView: React.FC = () => {
     traceHidden,
     unbindScopeTrace,
     toggleTraceVisibility,
+    seekToTimestamp,
   } = useWorkstationStore(
     useShallow((s) => ({
       scopeSamples: s.scopeSamples,
@@ -61,6 +62,7 @@ export const OscilloscopeView: React.FC = () => {
       traceHidden: s.traceHidden,
       unbindScopeTrace: s.unbindScopeTrace,
       toggleTraceVisibility: s.toggleTraceVisibility,
+      seekToTimestamp: s.seekToTimestamp,
     }))
   );
 
@@ -1071,10 +1073,16 @@ export const OscilloscopeView: React.FC = () => {
     const ch = cursorTargetChannel;
     const current = { ...channelCursors[ch] };
 
+    // Workflow B (spec 3.4): a scope click snaps the cursor AND scrubs the
+    // whole workstation — stream selection, hex inspector, and DVR pause
+    // point — to the nearest captured frame at this instant. Safe alongside
+    // the historic cursor fix: seekToTimestamp no longer mutates cursor state.
+    const clickedTimeUs = tx.xToTime(clickX);
+
     if (activeMarker === 'X1') {
-      current.x1Us = tx.xToTime(clickX);
+      current.x1Us = clickedTimeUs;
     } else if (activeMarker === 'X2') {
-      current.x2Us = tx.xToTime(clickX);
+      current.x2Us = clickedTimeUs;
     } else if (activeMarker === 'Y1') {
       if (ch === 'CH1') current.y1 = tx.yToVolt(clickY);
       else if (ch === 'CH2') current.y1 = tx.yToGyro(clickY);
@@ -1086,6 +1094,9 @@ export const OscilloscopeView: React.FC = () => {
     }
 
     setChannelCursors((prev) => ({ ...prev, [ch]: current }));
+
+    // Workflow B sync: stream/hex/DVR follow the clicked instant.
+    seekToTimestamp(clickedTimeUs);
   };
 
   // Quick Action: Center Cursors for active channel
@@ -1919,6 +1930,16 @@ export const OscilloscopeView: React.FC = () => {
                   <div className="flex items-center justify-between gap-3 text-[9.5px]">
                     <span className="text-[#FBBF24]">CH1 Vmean:</span>
                     <span className="text-[#E2E8F0]">{stats.meanV} mV</span>
+                  </div>
+                  <div className="flex items-center justify-between gap-3 text-[9.5px]">
+                    <span className="text-[#FBBF24]">CH1 Min/Max:</span>
+                    <span className="text-[#E2E8F0]">
+                      {stats.minV} / {stats.maxV} mV
+                    </span>
+                  </div>
+                  <div className="flex items-center justify-between gap-3 text-[9.5px]">
+                    <span className="text-[#FBBF24]">CH1 RMS:</span>
+                    <span className="text-[#E2E8F0]">{stats.rmsV} mV</span>
                   </div>
                   <div className="flex items-center justify-between gap-3 text-[9.5px]">
                     <span className="text-[#00E5FF]">CH2 Gyro Pk-Pk:</span>
