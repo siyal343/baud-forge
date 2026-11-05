@@ -241,6 +241,70 @@ try {
     }
   }
 
+  // T8b: Struct Form composer — parse default header, pack, transmit
+  const cfOk2 = await activateTab('COMMAND FORGE');
+  if (cfOk2) {
+    const structBtn = await page.evaluate(() => {
+      const b = [...document.querySelectorAll('button')].find(
+        (x) => x.textContent.trim() === 'STRUCT' && (x.getAttribute('data-tooltip') || '').includes('Struct form')
+      );
+      if (!b) return null;
+      const r = b.getBoundingClientRect();
+      return { x: r.left + r.width / 2, y: r.top + r.height / 2 };
+    });
+    if (structBtn) {
+      await page.mouse.click(structBtn.x, structBtn.y);
+      await sleep(500);
+      const panel = await page.evaluate(() => {
+        const label = [...document.querySelectorAll('span')].find((x) => /ImuPacket · \d+ fields · \d+ B packed LE/.test(x.textContent || ''));
+        const wire = [...document.querySelectorAll('div')].find((x) => /^WIRE: [0-9A-F ]+$/.test((x.textContent || '').trim()));
+        return { label: label ? label.textContent : null, wire: wire ? wire.textContent.trim().slice(0, 60) : null };
+      });
+      // Fill the first numeric field (seq) and transmit.
+      const filled = await page.evaluate(() => {
+        const input = [...document.querySelectorAll('input')].find((x) => x.placeholder === 'integer');
+        if (!input) return false;
+        const setter = Object.getOwnPropertyDescriptor(window.HTMLInputElement.prototype, 'value').set;
+        setter.call(input, '7');
+        input.dispatchEvent(new Event('input', { bubbles: true }));
+        return true;
+      });
+      await sleep(300);
+      const tx = await page.evaluate(() => {
+        const b = [...document.querySelectorAll('button')].find((x) => x.textContent.includes('TRANSMIT PAYLOAD'));
+        if (!b) return null;
+        const r = b.getBoundingClientRect();
+        return { x: r.left + r.width / 2, y: r.top + r.height / 2 };
+      });
+      if (tx) {
+        await page.mouse.click(tx.x, tx.y);
+        await sleep(900);
+        const dispatched = await page.evaluate(() => {
+          const region = [...document.querySelectorAll('[role="region"]')].find((r2) =>
+            (r2.getAttribute('aria-label') || '').includes('PACKET STREAM')
+          );
+          // The virtualized grid only renders the visible window and truncates
+          // long summaries, so assert the recorded Command row + the dispatch
+          // toast instead of the full summary text.
+          const hasCommandRow = !!region && region.innerText.includes('Command');
+          const toastsNow = [...document.querySelectorAll('[role="status"]')].map((d) => d.textContent).join(' ');
+          return hasCommandRow && toastsNow.includes('TX recorded locally only');
+        });
+        check(
+          'struct form parses, packs, and transmits',
+          !!panel.label && !!panel.wire && filled && dispatched,
+          `label=${panel.label ?? 'none'} wire=${panel.wire ? 'ok' : 'none'} filled=${filled} dispatched=${dispatched}`
+        );
+      } else {
+        check('struct form parses, packs, and transmits', false, 'TRANSMIT button missing');
+      }
+    } else {
+      check('struct form parses, packs, and transmits', false, 'STRUCT format button missing');
+    }
+  } else {
+    check('struct form parses, packs, and transmits', false, 'COMMAND FORGE tab not reachable');
+  }
+
   // T9: dissector highlighted-field readout + honest plot action.
   // Both panels live in dockview groups whose inactive tabs are unmounted —
   // activate the tabs first (keyboard path, same as the scope).

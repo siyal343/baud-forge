@@ -23,6 +23,11 @@ import {
   FileText,
 } from 'lucide-react';
 import { engineApi } from '../services/engineApi';
+import {
+  parseCStructs,
+  serializeStruct,
+  type ParsedStruct,
+} from '../services/cStructParser';
 
 export interface UserCommand {
   id: string;
@@ -226,8 +231,39 @@ export const CommandForge: React.FC = () => {
     }))
   );
 
-  const [mode, setMode] = useState<'hex' | 'ascii'>('hex');
+  const [mode, setMode] = useState<'hex' | 'ascii' | 'struct'>('hex');
   const [payload, setPayload] = useState('AA 55 01 02 00 00 00 00');
+
+  // Struct Form (spec 2.4): C-header-driven typed payload composer.
+  const STRUCT_SAMPLE_HEADER = `// Edit or paste a C header, then PARSE STRUCT.
+typedef struct {
+    uint32_t seq;          // frame counter
+    uint64_t timestamp_ns; // monotonic
+    float gyro_z;          // rad/s
+    uint16_t vbatt_mv;
+    uint8_t mode;
+    uint8_t flags;
+} ImuPacket;`;
+  const [headerSrc, setHeaderSrc] = useState(STRUCT_SAMPLE_HEADER);
+  const [parsedStructs, setParsedStructs] = useState<ParsedStruct[]>(() =>
+    parseCStructs(STRUCT_SAMPLE_HEADER).structs
+  );
+  const [parseErrors, setParseErrors] = useState<string[]>([]);
+  const [selectedStructIdx, setSelectedStructIdx] = useState(0);
+  const [structValues, setStructValues] = useState<Record<string, string>>({});
+
+  const activeStruct: ParsedStruct | null = parsedStructs[selectedStructIdx] ?? null;
+
+  const handleParseHeader = () => {
+    const result = parseCStructs(headerSrc);
+    setParsedStructs(result.structs);
+    setParseErrors(result.errors);
+    setSelectedStructIdx(0);
+  };
+
+  const serializeActiveStruct = () =>
+    activeStruct ? serializeStruct(activeStruct, structValues) : { bytes: [], errors: ['no struct parsed'] };
+  const structWire = mode === 'struct' && activeStruct ? serializeActiveStruct() : null;
   const [autoCrc, setAutoCrc] = useState('crc16');
   const [lineEnding, setLineEnding] = useState('none');
   const [payloadViewMode, setPayloadViewMode] = useState<'boxes' | 'raw'>('boxes');
@@ -368,6 +404,21 @@ export const CommandForge: React.FC = () => {
   };
 
   const handleSend = async (customPayload?: string) => {
+    // Struct Form: serialize the typed fields instead of parsing free text.
+    if (mode === 'struct' && !customPayload) {
+      if (!activeStruct) {
+        toast.error('No struct parsed', 'Parse a C header first (STRUCT tab → PARSE STRUCT).');
+        return;
+      }
+      const { bytes: wire, errors: serErrors } = serializeActiveStruct();
+      if (serErrors.length > 0) {
+        toast.error('Struct values invalid', serErrors.join(' · '));
+        return;
+      }
+      await dispatchBytes(wire, `${activeStruct.name} { ${activeStruct.fields.map((f) => f.name).join(', ')} }`, 'struct');
+      return;
+    }
+
     const text = customPayload ?? payload;
     if (!text.trim()) return;
 
@@ -388,9 +439,26 @@ export const CommandForge: React.FC = () => {
       bytes = tokens.map((t) => parseInt(t.replace(/^0x/i, ''), 16));
     }
 
+    await dispatchBytes(
+      bytes,
+      text.trim(),
+      mode === 'ascii' ? 'ASCII' : 'HEX'
+    );
+  };
+
+  /**
+   * Shared TX pipeline: append the auto-checksum, dispatch through the
+   * engine (result checked, never discarded), record the TX row, and count
+   * the bytes. `modeLabel` only shapes the stream summary.
+   */
+  const dispatchBytes = async (
+    payloadBytes: number[],
+    summaryText: string,
+    modeLabel: string,
+  ) => {
     // Auto-checksum: append the checksum bytes to the wire payload.
-    const checksum = autoCrc === 'none' ? [] : checksumBytes(autoCrc, bytes);
-    const wireBytes = [...bytes, ...checksum];
+    const checksum = autoCrc === 'none' ? [] : checksumBytes(autoCrc, payloadBytes);
+    const wireBytes = [...payloadBytes, ...checksum];
     const hexToSend = wireBytes.map((b) => b.toString(16).padStart(2, '0')).join(' ');
 
     // Dispatch via engineApi — the result is checked, never discarded.
@@ -420,7 +488,7 @@ export const CommandForge: React.FC = () => {
       rawBytes: wireBytes,
       rawHex: hexToSend.toUpperCase(),
       protocol: 'Command',
-      summary: `TX (${mode.toUpperCase()}): ${text.trim()}${
+      summary: `TX (${modeLabel}): ${summaryText}${
         checksum.length ? ` + ${autoCrc.toUpperCase()} (${checksum.length}B)` : ''
       }${ok ? '' : ' [engine offline]'}`,
       dissectedFields: [],
@@ -688,6 +756,17 @@ export const CommandForge: React.FC = () => {
             >
               ASCII
             </button>
+            <button
+              onClick={() => setMode('struct')}
+              data-tooltip="Struct form: define fields from a C header and send packed little-endian wire bytes (spec 2.4)"
+              className={`px-2 py-0.5 rounded transition-colors ${
+                mode === 'struct'
+                  ? 'bg-[#26324A] text-[#00E5FF] font-bold border border-[#00E5FF]/40'
+                  : 'text-[#94A3B8] hover:text-[#E2E8F0]'
+              }`}
+            >
+              STRUCT
+            </button>
           </div>
         </div>
       </div>
@@ -731,7 +810,8 @@ export const CommandForge: React.FC = () => {
               userCommands.map((cmd) => {
                 const IconComponent = ICON_MAP[cmd.iconName] || Zap;
                 const isRunning = !!activePeriodicIds[cmd.id];
-                const hoverConvertedPayload = formatPayloadForHover(cmd.payload, mode);
+                const hoverConvertedPayload =
+                  mode === 'struct' ? cmd.payload : formatPayloadForHover(cmd.payload, mode);
 
                 return (
                   <div
@@ -861,7 +941,93 @@ export const CommandForge: React.FC = () => {
 
           {/* Fancy Box-Styled Bytes Entry or Raw Editor (User Request 2) */}
           <div className="flex-1 flex flex-col gap-1 min-h-[90px] overflow-hidden">
-            {mode === 'hex' && payloadViewMode === 'boxes' ? (
+            {mode === 'struct' ? (
+              /* Struct Form composer (spec 2.4) */
+              <div className="flex-1 bg-[#0A0D13] border border-[#222D3D] rounded p-2 overflow-y-auto flex flex-col gap-2 min-h-0">
+                <textarea
+                  value={headerSrc}
+                  onChange={(e) => setHeaderSrc(e.target.value)}
+                  spellCheck={false}
+                  className="w-full h-[110px] bg-[#10141D] border border-[#222D3D] rounded p-2 text-[10px] text-[#94A3B8] font-mono focus:border-[#00E5FF] focus:outline-none resize-none shrink-0"
+                />
+                <div className="flex items-center gap-2 shrink-0">
+                  <button
+                    onClick={handleParseHeader}
+                    data-tooltip="Parse the header above into typed composer fields"
+                    className="px-2 py-0.5 bg-[#00E5FF]/10 hover:bg-[#00E5FF]/20 text-[#00E5FF] border border-[#00E5FF]/40 rounded text-[9.5px] font-bold"
+                  >
+                    PARSE STRUCT
+                  </button>
+                  {parsedStructs.length > 1 && (
+                    <select
+                      value={selectedStructIdx}
+                      onChange={(e) => setSelectedStructIdx(Number(e.target.value))}
+                      className="bg-[#10141D] border border-[#222D3D] rounded px-1 py-0.5 text-[9.5px] text-[#E2E8F0] focus:outline-none"
+                    >
+                      {parsedStructs.map((s, i) => (
+                        <option key={s.name} value={i}>
+                          {s.name} ({s.size} B)
+                        </option>
+                      ))}
+                    </select>
+                  )}
+                  {activeStruct && (
+                    <span className="text-[9px] text-[#64748B] font-mono">
+                      {activeStruct.name} · {activeStruct.fields.length} fields · {activeStruct.size} B packed LE
+                    </span>
+                  )}
+                </div>
+                {parseErrors.length > 0 && (
+                  <div className="text-[9px] font-mono text-[#FBBF24] bg-[#FBBF24]/10 border border-[#FBBF24]/40 rounded p-1.5 shrink-0">
+                    {parseErrors.map((err, i) => (
+                      <div key={i}>⚠ {err}</div>
+                    ))}
+                  </div>
+                )}
+                {activeStruct && (
+                  <div className="grid grid-cols-[1fr_88px_1fr] gap-x-2 gap-y-1 content-start shrink-0">
+                    {activeStruct.fields.map((field) => (
+                      <React.Fragment key={field.name}>
+                        <div className="flex items-center gap-1 min-w-0">
+                          <span className="text-[10px] text-[#E2E8F0] font-mono truncate">{field.name}</span>
+                          {field.count > 1 && (
+                            <span className="text-[8.5px] text-[#64748B]">[{field.count}]</span>
+                          )}
+                        </div>
+                        <span className="text-[9px] text-[#64748B] font-mono text-right">{field.type}</span>
+                        <input
+                          type="text"
+                          value={structValues[field.name] ?? ''}
+                          onChange={(e) =>
+                            setStructValues((prev) => ({ ...prev, [field.name]: e.target.value }))
+                          }
+                          placeholder={
+                            field.kind === 'chars'
+                              ? 'ASCII text (NUL padded)'
+                              : field.kind === 'float'
+                              ? 'e.g. 0.5'
+                              : 'integer'
+                          }
+                          className="w-full h-[20px] bg-[#121722] border border-[#222D3D] rounded px-1.5 text-[10px] text-[#00E5FF] font-mono focus:border-[#00E5FF] focus:outline-none"
+                        />
+                      </React.Fragment>
+                    ))}
+                  </div>
+                )}
+                {structWire && structWire.errors.length > 0 && (
+                  <div className="text-[9px] font-mono text-[#EF4444] shrink-0">
+                    {structWire.errors.map((err, i) => (
+                      <div key={i}>✗ {err}</div>
+                    ))}
+                  </div>
+                )}
+                {structWire && structWire.errors.length === 0 && (
+                  <div className="text-[9px] font-mono text-[#10B981] shrink-0">
+                    WIRE: {structWire.bytes.map((b) => b.toString(16).padStart(2, '0').toUpperCase()).join(' ')}
+                  </div>
+                )}
+              </div>
+            ) : mode === 'hex' && payloadViewMode === 'boxes' ? (
               <div className="flex-1 bg-[#0A0D13] border border-[#222D3D] rounded p-2 overflow-y-auto flex flex-wrap content-start gap-2">
                 {hexByteList.map((byte, idx) => {
                   const val = parseInt(byte, 16);
@@ -930,9 +1096,20 @@ export const CommandForge: React.FC = () => {
             )}
 
             <div className="flex items-center justify-between text-[10px] text-[#64748B] px-1 shrink-0 pt-0.5">
-              <span className="text-[#00E5FF]">{calculateCrc(payload, mode)}</span>
+              <span className="text-[#00E5FF]">
+                {mode === 'struct'
+                  ? structWire && structWire.errors.length === 0
+                    ? calculateCrc(
+                        structWire.bytes.map((b) => b.toString(16).padStart(2, '0')).join(' '),
+                        'hex'
+                      )
+                    : ''
+                  : calculateCrc(payload, mode)}
+              </span>
               <span className="text-[#64748B]">
-                {mode === 'hex'
+                {mode === 'struct'
+                  ? `${structWire?.bytes.length ?? 0} BYTES (packed)`
+                  : mode === 'hex'
                   ? `${hexByteList.length} BYTES`
                   : `${payload.length} CHARS`}
               </span>
