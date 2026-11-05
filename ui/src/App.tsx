@@ -28,6 +28,7 @@ export const App: React.FC = () => {
     setDvrPaused,
     triggerFlashYield,
     updateSnapshot,
+    updateSession,
     clearStream,
     setFilterText,
   } = useWorkstationStore(
@@ -46,6 +47,7 @@ export const App: React.FC = () => {
       setDvrPaused: s.setDvrPaused,
       triggerFlashYield: s.triggerFlashYield,
       updateSnapshot: s.updateSnapshot,
+      updateSession: s.updateSession,
       clearStream: s.clearStream,
       setFilterText: s.setFilterText,
     }))
@@ -146,6 +148,14 @@ export const App: React.FC = () => {
         unsubscribe = engineApi.subscribeEvents(
           (snapshot) => {
             updateSnapshot(snapshot.ports);
+            if (snapshot.session) {
+              updateSession({
+                mode: snapshot.session.mode,
+                vault: snapshot.session.vault,
+                file_bytes: snapshot.session.file_bytes,
+                chunks: snapshot.session.chunks,
+              });
+            }
           },
           (uiEvent) => {
             console.log('UI Event:', uiEvent);
@@ -172,7 +182,7 @@ export const App: React.FC = () => {
       if (retryTimer !== null) clearTimeout(retryTimer);
       if (unsubscribe) unsubscribe();
     };
-  }, [updateSnapshot, addPacketBatch]);
+  }, [updateSnapshot, updateSession, addPacketBatch]);
 
   // Continuous Telemetry Stream Generator (Simulation Mode)
   useEffect(() => {

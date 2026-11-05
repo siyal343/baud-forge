@@ -56,8 +56,10 @@ interface WorkstationState {
 
   // Simulation & Metrics
   isSimulated: boolean;
-  isRecording: boolean;
   vaultPath: string;
+  vaultBytes: number;
+  vaultChunks: number;
+  engineRecording: boolean;
   rxBytes: number;
   txBytes: number;
   packetRate: number;
@@ -113,7 +115,6 @@ interface WorkstationState {
   reclaimPort: () => void;
   toggleFaultArm: () => void;
   toggleSimulationMode: () => void;
-  toggleRecording: () => void;
   clearStream: () => void;
   loadSampleCapture: () => void;
   recordTx: (bytes: number) => void;
@@ -121,6 +122,7 @@ interface WorkstationState {
   addPacketBatch: (pkts: PacketRow[]) => void;
   updatePins: (pins: Partial<PinsView>) => void;
   updateSnapshot: (ports: PortView[]) => void;
+  updateSession: (session: { mode: string; vault: string; file_bytes: number; chunks: number }) => void;
 }
 
 const MAX_PACKETS = 10000;
@@ -251,8 +253,10 @@ export const useWorkstationStore = create<WorkstationState>((set, get) => ({
 
   // Simulation & Metrics
   isSimulated: true,
-  isRecording: false,
   vaultPath: 'vaults/session_001.bflog',
+  vaultBytes: 0,
+  vaultChunks: 0,
+  engineRecording: false,
   rxBytes: 4210080,
   txBytes: 15420,
   packetRate: 20,
@@ -532,10 +536,6 @@ export const useWorkstationStore = create<WorkstationState>((set, get) => ({
     set((state) => ({ isSimulated: !state.isSimulated }));
   },
 
-  toggleRecording: () => {
-    set((state) => ({ isRecording: !state.isRecording }));
-  },
-
   clearStream: () => {
     set({ packets: [], scopeSamples: [], selectedPacket: null, selectedField: null });
   },
@@ -646,6 +646,17 @@ export const useWorkstationStore = create<WorkstationState>((set, get) => ({
         overruns: active.overruns,
       });
     }
+  },
+
+  // Real engine recording state (contract SessionView), consumed by the REC
+  // pill: mode 'record' with a vault path means the engine is writing a vault.
+  updateSession: (session) => {
+    set({
+      engineRecording: session.mode === 'record' && session.vault !== '',
+      vaultPath: session.vault || get().vaultPath,
+      vaultBytes: session.file_bytes,
+      vaultChunks: session.chunks,
+    });
   },
 }));
 

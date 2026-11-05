@@ -56,6 +56,29 @@ export class EngineApiClient {
     }
   }
 
+  /** Start or stop the session vault (POST /api/record, workbench REC pill). */
+  async recordControl(
+    action: 'start' | 'stop',
+    path?: string
+  ): Promise<{ ok: boolean; vault?: string; error?: string }> {
+    try {
+      const res = await this.fetchWithTimeout(
+        '/api/record',
+        {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ action, path }),
+        },
+        6000
+      );
+      const data = await res.json().catch(() => ({}));
+      if (!res.ok) return { ok: false, error: data?.error || `HTTP ${res.status}` };
+      return { ok: true, vault: data?.vault };
+    } catch {
+      return { ok: false, error: 'engine unreachable' };
+    }
+  }
+
   /** Open a hardware port session (POST /api/quick-connect). */
   async quickConnect(device: string, baudRate: number): Promise<boolean> {
     try {

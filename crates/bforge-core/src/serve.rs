@@ -119,6 +119,19 @@ struct YieldJob {
     reply: std::sync::mpsc::SyncSender<bool>,
 }
 
+/// One `POST /api/record`: start or stop the session vault (workbench REC pill).
+#[derive(Debug)]
+enum RecordAction {
+    Start(std::path::PathBuf),
+    Stop,
+}
+
+#[derive(Debug)]
+struct RecordJob {
+    action: RecordAction,
+    reply: std::sync::mpsc::SyncSender<Result<String, String>>,
+}
+
 /// One `POST /api/fault`: arm a profile, or clear it with `None`.
 #[derive(Debug)]
 struct FaultJob {
@@ -149,6 +162,8 @@ struct Shared {
     /// Same for yielding a port.
     yield_request: Mutex<Option<std::sync::mpsc::Sender<YieldJob>>>,
     pins_request: Mutex<Option<std::sync::mpsc::Sender<PinJob>>>,
+    /// Same for starting or stopping the session vault (REC).
+    record_request: Mutex<Option<std::sync::mpsc::Sender<RecordJob>>>,
     /// Set by `with_vault`, before the server runs.
     vault: Mutex<Option<VaultSource>>,
     /// Set by `with_ui`: the built frontend to serve instead of the placeholder.
@@ -273,6 +288,8 @@ impl Server {
         *shared.yield_request.lock().unwrap() = Some(yield_tx);
         let (pin_tx, pin_rx) = std::sync::mpsc::channel::<PinJob>();
         *shared.pins_request.lock().unwrap() = Some(pin_tx);
+        let (record_tx, record_rx) = std::sync::mpsc::channel::<RecordJob>();
+        *shared.record_request.lock().unwrap() = Some(record_tx);
 
         let events = session.subscribe();
         let mut reported_sampled = 0u64;
@@ -323,6 +340,16 @@ impl Server {
                         session.disarm_fault(&job.port);
                         Ok(())
                     }
+                }
+                .map_err(|error| error.to_string());
+                let _ = job.reply.send(result);
+            }
+            while let Ok(job) = record_rx.try_recv() {
+                let result = match job.action {
+                    RecordAction::Start(path) => session
+                        .start_recording(&path)
+                        .map(|()| path.display().to_string()),
+                    RecordAction::Stop => session.stop_recording(),
                 }
                 .map_err(|error| error.to_string());
                 let _ = job.reply.send(result);
@@ -512,6 +539,11 @@ fn handle(mut stream: TcpStream, shared: Arc<Shared>, stop: Arc<AtomicBool>) {
     if method == "POST" && path == "/api/fault" {
         let body = read_body(&mut reader, content_length);
         fault(&mut stream, &shared, &body);
+        return;
+    }
+    if method == "POST" && path == "/api/record" {
+        let body = read_body(&mut reader, content_length);
+        record(&mut stream, &shared, &body);
         return;
     }
     if method != "GET" && method != "HEAD" {
@@ -1358,6 +1390,95 @@ fn yield_port(stream: &mut TcpStream, shared: &Arc<Shared>, body: &[u8]) {
                 request.port
             );
             respond(stream, "404 Not Found", "application/json", body.as_bytes());
+        }
+        Err(_) => {
+            let body = "{\"error\":\"no answer from the pump\"}";
+            respond(
+                stream,
+                "504 Gateway Timeout",
+                "application/json",
+                body.as_bytes(),
+            );
+        }
+    }
+}
+
+/// One `POST /api/record`: start or stop the session vault segment.
+#[derive(serde::Deserialize)]
+struct RecordBody {
+    action: String,
+    /// Vault path for `action: "start"`; defaults to a timestamped name.
+    #[serde(default)]
+    path: Option<String>,
+}
+
+fn record(stream: &mut TcpStream, shared: &Arc<Shared>, body: &[u8]) {
+    let request: RecordBody = match serde_json::from_slice(body) {
+        Ok(request) => request,
+        Err(error) => {
+            let body = format!("{{\"error\":\"bad request: {error}\"}}");
+            return respond(
+                stream,
+                "400 Bad Request",
+                "application/json",
+                body.as_bytes(),
+            );
+        }
+    };
+    let action = match request.action.as_str() {
+        "start" => {
+            let path = match request.path {
+                Some(path) if !path.trim().is_empty() => std::path::PathBuf::from(path),
+                // Timestamped default, so a quick REC press needs no form.
+                _ => {
+                    let stamp = std::time::SystemTime::now()
+                        .duration_since(std::time::UNIX_EPOCH)
+                        .map(|elapsed| elapsed.as_secs())
+                        .unwrap_or(0);
+                    std::path::PathBuf::from(format!("vaults/rec-{stamp}.bflog"))
+                }
+            };
+            RecordAction::Start(path)
+        }
+        "stop" => RecordAction::Stop,
+        other => {
+            let body = format!("{{\"error\":\"unknown action `{other}`; use start or stop\"}}");
+            return respond(
+                stream,
+                "400 Bad Request",
+                "application/json",
+                body.as_bytes(),
+            );
+        }
+    };
+    let sender = shared.record_request.lock().unwrap().clone();
+    let Some(sender) = sender else {
+        let body = "{\"error\":\"the pump is not running\"}";
+        return respond(
+            stream,
+            "503 Service Unavailable",
+            "application/json",
+            body.as_bytes(),
+        );
+    };
+    let (reply, answer) = std::sync::mpsc::sync_channel(1);
+    if sender.send(RecordJob { action, reply }).is_err() {
+        let body = "{\"error\":\"the pump has stopped\"}";
+        return respond(
+            stream,
+            "503 Service Unavailable",
+            "application/json",
+            body.as_bytes(),
+        );
+    }
+    match answer.recv_timeout(Duration::from_secs(5)) {
+        Ok(Ok(path)) => {
+            let body = format!("{{\"recording\":{},\"vault\":{}}}", request.action == "start", serde_json::json!(path));
+            respond(stream, "200 OK", "application/json", body.as_bytes());
+        }
+        Ok(Err(error)) => {
+            let body = format!("{{\"error\":{}}}", serde_json::json!(error));
+            respond(stream, "409 Conflict", "application/json", body.as_bytes());
         }
         Err(_) => {
             let body = "{\"error\":\"no answer from the pump\"}";

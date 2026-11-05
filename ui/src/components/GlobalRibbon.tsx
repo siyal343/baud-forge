@@ -2,6 +2,8 @@ import React, { useState, useRef, useEffect } from 'react';
 import { createPortal } from 'react-dom';
 import { useShallow } from 'zustand/react/shallow';
 import { useWorkstationStore } from '../store/useWorkstationStore';
+import { useToastStore } from '../store/useToastStore';
+import { engineApi } from '../services/engineApi';
 import {
   Zap,
   ShieldAlert,
@@ -52,7 +54,9 @@ export const GlobalRibbon: React.FC = () => {
     yieldRemainingSecs,
     isFaultArmed,
     isSimulated,
-    isRecording,
+    engineRecording,
+    vaultPath,
+    vaultBytes,
     isScanningPorts,
     rescanPorts,
     uiScale,
@@ -65,7 +69,6 @@ export const GlobalRibbon: React.FC = () => {
     reclaimPort,
     toggleFaultArm,
     toggleSimulationMode,
-    toggleRecording,
     loadSampleCapture,
     setUiScale,
     setExportModalOpen,
@@ -89,7 +92,9 @@ export const GlobalRibbon: React.FC = () => {
       yieldRemainingSecs: s.yieldRemainingSecs,
       isFaultArmed: s.isFaultArmed,
       isSimulated: s.isSimulated,
-      isRecording: s.isRecording,
+      engineRecording: s.engineRecording,
+      vaultPath: s.vaultPath,
+      vaultBytes: s.vaultBytes,
       isScanningPorts: s.isScanningPorts,
       rescanPorts: s.rescanPorts,
       uiScale: s.uiScale,
@@ -102,7 +107,6 @@ export const GlobalRibbon: React.FC = () => {
       reclaimPort: s.reclaimPort,
       toggleFaultArm: s.toggleFaultArm,
       toggleSimulationMode: s.toggleSimulationMode,
-      toggleRecording: s.toggleRecording,
       loadSampleCapture: s.loadSampleCapture,
       setUiScale: s.setUiScale,
       setExportModalOpen: s.setExportModalOpen,
@@ -116,6 +120,14 @@ export const GlobalRibbon: React.FC = () => {
   );
 
   const [saveSuccessMsg, setSaveSuccessMsg] = useState(false);
+  const [recPending, setRecPending] = useState(false);
+  const pushToast = useToastStore((s) => s.pushToast);
+
+  const formatVaultBytes = (bytes: number) => {
+    if (bytes >= 1048576) return `${(bytes / 1048576).toFixed(2)} MB`;
+    if (bytes >= 1024) return `${(bytes / 1024).toFixed(1)} KB`;
+    return `${bytes} B`;
+  };
 
   const [isLayoutMenuOpen, setIsLayoutMenuOpen] = useState(false);
   const [menuPos, setMenuPos] = useState<{ top: number; left: number } | null>(null);
@@ -526,26 +538,52 @@ export const GlobalRibbon: React.FC = () => {
           DEMO
         </button>
 
-        {/* Session Vault Recording Button */}
+        {/* Session Vault Recording Button — engine-driven (POST /api/record) */}
         <button
-          onClick={toggleRecording}
+          onClick={async () => {
+            if (recPending) return;
+            setRecPending(true);
+            try {
+              if (engineRecording) {
+                const result = await engineApi.recordControl('stop');
+                if (result.ok) {
+                  pushToast('success', 'Vault sealed', `${result.vault ?? 'vault'} saved.`);
+                } else {
+                  pushToast('error', 'Stop failed', result.error ?? 'Engine did not confirm.');
+                }
+              } else {
+                const stamp = new Date().toISOString().replace(/[:.]/g, '-').slice(0, 19);
+                const result = await engineApi.recordControl('start', `vaults/rec-${stamp}.bflog`);
+                if (result.ok) {
+                  pushToast('success', 'Recording started', `${result.vault} is capturing the raw link.`);
+                } else {
+                  pushToast('error', 'Record failed', result.error ?? 'Engine did not confirm.');
+                }
+              }
+            } finally {
+              setRecPending(false);
+            }
+          }}
+          disabled={recPending}
           title={
-            isRecording
-              ? 'Recording active: saving every raw serial record to append-only binary .bflog'
-              : 'Record raw session to append-only binary .bflog'
+            engineRecording
+              ? `Recording active: ${vaultPath} (${formatVaultBytes(vaultBytes)}) — click to seal the vault`
+              : 'Record raw session to an append-only binary .bflog on the engine host'
           }
           className={`flex items-center gap-1 px-2 py-0.5 rounded font-mono text-[10px] transition-colors ${
-            isRecording
+            engineRecording
               ? 'bg-[#EF4444] text-white font-bold animate-pulse'
               : 'bg-[#161C28] border border-[#222D3D] text-[#94A3B8] hover:text-[#E2E8F0]'
           }`}
         >
           <div
             className={`w-1.5 h-1.5 rounded-full ${
-              isRecording ? 'bg-white' : 'bg-[#EF4444]'
+              engineRecording ? 'bg-white' : 'bg-[#EF4444]'
             }`}
           />
-          <span className="hidden sm:inline">{isRecording ? '● REC' : 'STANDBY'}</span>
+          <span className="hidden sm:inline">
+            {engineRecording ? `● REC ${formatVaultBytes(vaultBytes)}` : recPending ? '…' : 'STANDBY'}
+          </span>
         </button>
 
         {/* Multi-Format Vault Export Dialog */}

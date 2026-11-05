@@ -45,6 +45,8 @@ pub enum SessionError {
     Write(String),
     /// A vault already exists at that path, and a monitor never overwrites one.
     VaultExists(String),
+    /// A stop-recording request arrived with no active vault segment.
+    NotRecording,
 }
 
 impl std::fmt::Display for SessionError {
@@ -60,6 +62,7 @@ impl std::fmt::Display for SessionError {
                 f,
                 "a vault already exists at `{path}`; remove it, or pick another name"
             ),
+            Self::NotRecording => write!(f, "this session is not recording a vault"),
         }
     }
 }
@@ -316,6 +319,57 @@ impl Session {
             vault,
         });
         Ok(session)
+    }
+
+    /// Begin writing a new vault segment mid-session (workbench REC pill).
+    ///
+    /// A session may hold one writer at a time; the same no-clobber rule as
+    /// [`Session::start`] applies, so a REC press can never truncate a capture.
+    pub fn start_recording(&mut self, path: &Path) -> Result<(), SessionError> {
+        if self.writer.is_some() {
+            return Err(SessionError::VaultExists(self.vault.clone()));
+        }
+        let occupied = std::fs::metadata(path)
+            .map(|metadata| metadata.len() > 0)
+            .unwrap_or(false);
+        if occupied {
+            return Err(SessionError::VaultExists(path.display().to_string()));
+        }
+        let header = LogHeader {
+            session_id: u128::from(self.started_epoch_ns) << 64 | u128::from(std::process::id()),
+            start_epoch_ns: SystemTime::now()
+                .duration_since(UNIX_EPOCH)
+                .map(|elapsed| elapsed.as_nanos() as u64)
+                .unwrap_or(0),
+            config_hash: 0,
+            port_table_offset: 256,
+        };
+        self.writer = Some(LogWriter::create(path, header)?);
+        self.vault = path.display().to_string();
+        self.bus.publish(UiEvent::Started {
+            at_ms: self.started.elapsed().as_millis() as u64,
+            ports: self.ports.len(),
+            vault: self.vault.clone(),
+        });
+        Ok(())
+    }
+
+    /// Flush and seal the current vault segment, returning its path.
+    pub fn stop_recording(&mut self) -> Result<String, SessionError> {
+        match self.writer.take() {
+            Some(writer) => {
+                let summary = writer.seal()?;
+                let path = self.vault.clone();
+                self.vault = String::new();
+        self.bus.publish(UiEvent::Stopped {
+            at_ms: self.started.elapsed().as_millis() as u64,
+            chunks: summary.chunks,
+            payload_bytes: summary.payload_bytes,
+        });
+                Ok(path)
+            }
+            None => Err(SessionError::NotRecording),
+        }
     }
 
     /// A session with no ports and no writer, for reading a finished vault.
