@@ -16,6 +16,7 @@ import { CommandForge } from './CommandForge';
 import { SessionDiffView } from './SessionDiffView';
 import { PinSequencerView } from './PinSequencerView';
 import { FaultRigView } from './FaultRigView';
+import { BridgePanel } from './BridgePanel';
 import { FileTransferView } from './FileTransferView';
 import { ElfSymbolView } from './ElfSymbolView';
 import { SchemaDialectView } from './SchemaDialectView';
@@ -31,6 +32,7 @@ const FaultPanel = (_props: IDockviewPanelProps) => <FaultRigView />;
 const TransferPanel = (_props: IDockviewPanelProps) => <FileTransferView />;
 const ElfPanel = (_props: IDockviewPanelProps) => <ElfSymbolView />;
 const SchemaPanel = (_props: IDockviewPanelProps) => <SchemaDialectView />;
+const BridgeMitmPanel = (_props: IDockviewPanelProps) => <BridgePanel />;
 
 const components = {
   packetStream: StreamPanel,
@@ -44,6 +46,7 @@ const components = {
   fileTransfer: TransferPanel,
   elfSymbols: ElfPanel,
   schemaDialects: SchemaPanel,
+  bridge: BridgeMitmPanel,
 };
 
 // Memory of where detached panels originated so restoration docks back into their original deck and index slot
@@ -72,6 +75,9 @@ const CANONICAL_DECK_ORDERS: Record<string, string[]> = {
   // Bottom-Right Hex & Diff Deck
   hexInspector: ['hexInspector', 'sessionDiff'],
   sessionDiff: ['hexInspector', 'sessionDiff'],
+
+  // MITM bridge tabs alongside the HIL deck
+  bridge: ['faultRig', 'pinSequencer', 'fileTransfer', 'bridge', 'oscilloscope', 'commandForge'],
 };
 
 function calculateInsertionIndex(
@@ -587,6 +593,13 @@ export const WorkstationDock: React.FC = () => {
       title: 'HIL FAULT RIG',
       initialWidth: halfWidth,
       position: { referencePanel: stream, direction: 'right' },
+    });
+
+    api.addPanel({
+      id: 'bridge',
+      component: 'bridge',
+      title: 'MITM BRIDGE',
+      position: { referencePanel: fault, direction: 'within' },
     });
 
     api.addPanel({

@@ -132,6 +132,13 @@ struct RecordJob {
     reply: std::sync::mpsc::SyncSender<Result<String, String>>,
 }
 
+/// One `POST /api/bridge`: replace the session's MITM bridge set.
+#[derive(Debug)]
+struct BridgeJob {
+    bridges: Vec<crate::BridgeConfig>,
+    reply: std::sync::mpsc::SyncSender<Result<Vec<crate::contract::BridgeView>, String>>,
+}
+
 /// One `POST /api/fault`: arm a profile, or clear it with `None`.
 #[derive(Debug)]
 struct FaultJob {
@@ -164,6 +171,8 @@ struct Shared {
     pins_request: Mutex<Option<std::sync::mpsc::Sender<PinJob>>>,
     /// Same for starting or stopping the session vault (REC).
     record_request: Mutex<Option<std::sync::mpsc::Sender<RecordJob>>>,
+    /// Same for replacing the MITM bridge set.
+    bridge_request: Mutex<Option<std::sync::mpsc::Sender<BridgeJob>>>,
     /// Set by `with_vault`, before the server runs.
     vault: Mutex<Option<VaultSource>>,
     /// Set by `with_ui`: the built frontend to serve instead of the placeholder.
@@ -290,6 +299,8 @@ impl Server {
         *shared.pins_request.lock().unwrap() = Some(pin_tx);
         let (record_tx, record_rx) = std::sync::mpsc::channel::<RecordJob>();
         *shared.record_request.lock().unwrap() = Some(record_tx);
+        let (bridge_tx, bridge_rx) = std::sync::mpsc::channel::<BridgeJob>();
+        *shared.bridge_request.lock().unwrap() = Some(bridge_tx);
 
         let events = session.subscribe();
         let mut reported_sampled = 0u64;
@@ -352,6 +363,13 @@ impl Server {
                     RecordAction::Stop => session.stop_recording(),
                 }
                 .map_err(|error| error.to_string());
+                let _ = job.reply.send(result);
+            }
+            while let Ok(job) = bridge_rx.try_recv() {
+                let result = session
+                    .enable_bridges(&job.bridges)
+                    .map(|()| session.snapshot().bridges)
+                    .map_err(|error| error.to_string());
                 let _ = job.reply.send(result);
             }
             session.pump_once()?;
@@ -544,6 +562,11 @@ fn handle(mut stream: TcpStream, shared: Arc<Shared>, stop: Arc<AtomicBool>) {
     if method == "POST" && path == "/api/record" {
         let body = read_body(&mut reader, content_length);
         record(&mut stream, &shared, &body);
+        return;
+    }
+    if method == "POST" && path == "/api/bridge" {
+        let body = read_body(&mut reader, content_length);
+        bridge(&mut stream, &shared, &body);
         return;
     }
     if method != "GET" && method != "HEAD" {
@@ -1499,6 +1522,66 @@ struct DeviceDto<'a> {
     vid_pid: Option<&'a str>,
     #[serde(skip_serializing_if = "Option::is_none")]
     serial: Option<&'a str>,
+}
+
+/// One `POST /api/bridge`: replace the session's MITM bridge set.
+#[derive(serde::Deserialize)]
+struct BridgeBody {
+    bridges: Vec<crate::BridgeConfig>,
+}
+
+fn bridge(stream: &mut TcpStream, shared: &Arc<Shared>, body: &[u8]) {
+    let request: BridgeBody = match serde_json::from_slice(body) {
+        Ok(request) => request,
+        Err(error) => {
+            let body = format!("{{\"error\":\"bad request: {error}\"}}");
+            return respond(
+                stream,
+                "400 Bad Request",
+                "application/json",
+                body.as_bytes(),
+            );
+        }
+    };
+    let sender = shared.bridge_request.lock().unwrap().clone();
+    let Some(sender) = sender else {
+        let body = "{\"error\":\"the pump is not running\"}";
+        return respond(
+            stream,
+            "503 Service Unavailable",
+            "application/json",
+            body.as_bytes(),
+        );
+    };
+    let (reply, answer) = std::sync::mpsc::sync_channel(1);
+    if sender.send(BridgeJob { bridges: request.bridges, reply }).is_err() {
+        let body = "{\"error\":\"the pump has stopped\"}";
+        return respond(
+            stream,
+            "503 Service Unavailable",
+            "application/json",
+            body.as_bytes(),
+        );
+    }
+    match answer.recv_timeout(Duration::from_secs(2)) {
+        Ok(Ok(views)) => {
+            let body = serde_json::to_string(&views).unwrap_or_else(|_| "[]".to_string());
+            respond(stream, "200 OK", "application/json", body.as_bytes());
+        }
+        Ok(Err(error)) => {
+            let body = format!("{{\"error\":{}}}", serde_json::json!(error));
+            respond(stream, "409 Conflict", "application/json", body.as_bytes());
+        }
+        Err(_) => {
+            let body = "{\"error\":\"no answer from the pump\"}";
+            respond(
+                stream,
+                "504 Gateway Timeout",
+                "application/json",
+                body.as_bytes(),
+            );
+        }
+    }
 }
 
 fn devices(stream: &mut TcpStream) {

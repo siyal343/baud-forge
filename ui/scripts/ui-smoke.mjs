@@ -305,6 +305,39 @@ try {
     check('struct form parses, packs, and transmits', false, 'COMMAND FORGE tab not reachable');
   }
 
+  // T8c: MITM bridge panel opens and is honest about missing engine ports.
+  // Opened via the store's panel-open action — the layouts menu is covered by
+  // the interactive audit and is timing-flaky under automation mid-flow.
+  {
+    await page.evaluate(() => window.__bforgeStore.getState().requestOpenPanel('bridge'));
+    await sleep(800);
+    const panelUp = await page.evaluate(() => {
+      // Panel presence via its content — dockview renders the new tab inside
+      // an overflowed strip that may sit outside the probed DOM region.
+      const tab = [...document.querySelectorAll('[role="tab"]')].find((x) => x.textContent.includes('MITM BRIDGE'));
+      const empty = [...document.querySelectorAll('div')].some((d) => d.textContent.includes('No engine session ports yet'));
+      const composer = [...document.querySelectorAll('button')].some((x) => x.textContent.trim() === 'ARM BRIDGE');
+      return { opened: !!tab || (empty && composer), empty: empty && composer };
+    });
+    const armBtn = await page.evaluate(() => {
+      const b = [...document.querySelectorAll('button')].find((x) => x.textContent.trim() === 'ARM BRIDGE');
+      if (!b) return null;
+      const r = b.getBoundingClientRect();
+      return { x: r.left + r.width / 2, y: r.top + r.height / 2 };
+    });
+    let warn = '';
+    if (armBtn) {
+      await page.mouse.click(armBtn.x, armBtn.y);
+      await sleep(600);
+      warn = await toasts(page);
+    }
+    check(
+      'MITM bridge panel opens and is honest offline',
+      panelUp.opened && panelUp.empty && warn.includes('Pick both bridge ends'),
+      `opened=${panelUp.opened} emptyState=${panelUp.empty} warn=${warn.includes('Pick both bridge ends')}`
+    );
+  }
+
   // T9: dissector highlighted-field readout + honest plot action.
   // Both panels live in dockview groups whose inactive tabs are unmounted —
   // activate the tabs first (keyboard path, same as the scope).

@@ -36,6 +36,7 @@ const PANEL_CATALOG = [
   { id: 'pinSequencer', name: 'Pin Sequencer & Modem Lines' },
   { id: 'faultRig', name: 'HIL Fault Injection Rig' },
   { id: 'fileTransfer', name: 'X/YMODEM File Transfer' },
+  { id: 'bridge', name: 'MITM Bridge & Relay' },
   { id: 'elfSymbols', name: 'ELF Symbol & Crash Trace' },
   { id: 'schemaDialects', name: 'Schema Dialects (Proto/MAVLink)' },
 ];

@@ -147,7 +147,7 @@ export const App: React.FC = () => {
         useWorkstationStore.setState({ isSimulated: false, isConnected: true });
         unsubscribe = engineApi.subscribeEvents(
           (snapshot) => {
-            updateSnapshot(snapshot.ports);
+            updateSnapshot(snapshot.ports, snapshot.bridges);
             if (snapshot.session) {
               updateSession({
                 mode: snapshot.session.mode,

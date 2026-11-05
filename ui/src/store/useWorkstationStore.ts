@@ -1,5 +1,5 @@
 import { create } from 'zustand';
-import { PacketRow, DissectedField, ScopeSignalSample, PinsView, PortView } from '../types';
+import { PacketRow, DissectedField, ScopeSignalSample, PinsView, PortView, BridgeView } from '../types';
 import { generateSampleImuPacket, generateScopeSample } from '../services/simulationEngine';
 import { engineApi } from '../services/engineApi';
 import { toast } from './useToastStore';
@@ -17,6 +17,9 @@ interface WorkstationState {
   delimiterMode: 'cobs' | 'lf' | 'crlf' | 'null' | 'slip' | 'raw' | 'custom';
   customDelimiterHex: string;
   availablePorts: Array<{ id: string; device: string; description: string }>;
+  /** Real session ports + live bridge state from the engine snapshot. */
+  enginePorts: Array<{ id: string; device: string }>;
+  bridges: BridgeView[];
   pins: PinsView;
 
   // Stream & Dissector
@@ -129,7 +132,7 @@ interface WorkstationState {
   addPacket: (pkt: PacketRow) => void;
   addPacketBatch: (pkts: PacketRow[]) => void;
   updatePins: (pins: Partial<PinsView>) => void;
-  updateSnapshot: (ports: PortView[]) => void;
+  updateSnapshot: (ports: PortView[], bridges?: BridgeView[]) => void;
   updateSession: (session: { mode: string; vault: string; file_bytes: number; chunks: number }) => void;
 }
 
@@ -221,6 +224,8 @@ export const useWorkstationStore = create<WorkstationState>((set, get) => ({
     { id: 'loopback-a', device: 'OBC Simulator', description: '127.0.0.1:9100 (TCP)' },
     { id: 'loopback-b', device: 'EPS Simulator', description: '127.0.0.1:9101 (TCP)' },
   ],
+  enginePorts: [],
+  bridges: [],
   pins: {
     cts: true,
     dsr: true,
@@ -729,7 +734,12 @@ export const useWorkstationStore = create<WorkstationState>((set, get) => ({
     set((state) => ({ pins: { ...state.pins, ...pins } }));
   },
 
-  updateSnapshot: (ports) => {
+  updateSnapshot: (ports, bridges) => {
+    set((state) => ({
+      // Real session ports feed the bridge composer's port pickers.
+      enginePorts: ports.map((p) => ({ id: p.id, device: p.device })),
+      bridges: bridges ?? state.bridges,
+    }));
     const active = ports.find((p) => p.id === get().selectedPort) || ports[0];
     if (active) {
       set({
@@ -805,6 +815,9 @@ function restartReplayTimer() {
 // Recompute the footer packet rate once per second from the rolling
 // timestamp window. Replaces the previous hardcoded `packetRate: 20`.
 if (typeof window !== 'undefined') {
+  // Test-harness handle (headless smoke): lets the UI smoke drive panel
+  // opens when the layouts menu is timing-flaky under automation.
+  (window as any).__bforgeStore = useWorkstationStore;
   setInterval(() => {
     const cutoff = Date.now() - 2000;
     while (rateTimestamps.length > 0 && rateTimestamps[0] < cutoff) rateTimestamps.shift();

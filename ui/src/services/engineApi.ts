@@ -1,7 +1,7 @@
 // BaudForge Rust Engine API & EventSource Client
 // Connects to crates/bforge-core/src/serve.rs over loopback HTTP & SSE
 
-import { UiSnapshot, UiEvent, PacketRow } from '../types';
+import { UiSnapshot, UiEvent, PacketRow, BridgeView as BridgeViewResult } from '../types';
 
 export class EngineApiClient {
   private eventSource: EventSource | null = null;
@@ -53,6 +53,24 @@ export class EngineApiClient {
       return await res.json();
     } catch {
       return null;
+    }
+  }
+
+  /** Replace the session's MITM bridge set (POST /api/bridge). */
+  async setBridges(
+    bridges: Array<{ id: string; a: string; b: string; forward: boolean }>
+  ): Promise<{ ok: boolean; views?: BridgeViewResult[]; error?: string }> {
+    try {
+      const res = await this.fetchWithTimeout('/api/bridge', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ bridges }),
+      });
+      const data = await res.json().catch(() => null);
+      if (!res.ok) return { ok: false, error: data?.error || `HTTP ${res.status}` };
+      return { ok: true, views: Array.isArray(data) ? data : [] };
+    } catch {
+      return { ok: false, error: 'engine unreachable' };
     }
   }
 
