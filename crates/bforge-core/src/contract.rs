@@ -22,6 +22,7 @@ pub struct UiSnapshot {
     pub ports: Vec<PortView>,
     /// Port pairs joined by the engine (spec 0025).
     pub bridges: Vec<BridgeView>,
+    pub transfers: Vec<TransferView>,
 }
 
 /// One bridge, as the ribbon draws it.
@@ -36,6 +37,22 @@ pub struct BridgeView {
     pub forwarded: u64,
     /// Bytes the bridge refused because the destination was too far behind.
     pub dropped: u64,
+}
+
+/// One live X/YMODEM transfer, as the transfer panel polls it.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct TransferView {
+    pub port: String,
+    pub name: String,
+    /// `send` or `recv`.
+    pub direction: String,
+    /// `handshake`, `transferring`, `finishing`, `done` or `failed:reason`.
+    pub phase: String,
+    pub block: u32,
+    pub total_blocks: u32,
+    pub bytes_done: u64,
+    pub total_bytes: u64,
+    pub retries: u32,
 }
 
 /// Session-level state: the mode strip, the vault line and the footer.
@@ -127,6 +144,17 @@ pub enum UiEvent {
         at_ms: u64,
         chunks: u64,
         payload_bytes: u64,
+    },
+    /// X/YMODEM transfer progress (spec 2.7).
+    Transfer {
+        at_ms: u64,
+        port: String,
+        name: String,
+        /// `handshake`, `transferring`, `finishing`, `done` or `failed:reason`.
+        phase: String,
+        block: u32,
+        total_blocks: u32,
+        bytes_done: u64,
     },
 }
 

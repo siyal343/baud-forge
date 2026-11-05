@@ -146,6 +146,32 @@ struct ElfJob {
     reply: std::sync::mpsc::SyncSender<Result<String, String>>,
 }
 
+/// One `POST /api/transfer`: arm, cancel or drain an X/YMODEM transfer.
+#[derive(Debug)]
+enum TransferAction {
+    Arm {
+        port: String,
+        direction: crate::xmodem::XferDirection,
+        mode: crate::xmodem::XferMode,
+        name: String,
+        data: Vec<u8>,
+        expected_len: Option<usize>,
+    },
+    Cancel {
+        port: String,
+    },
+    /// Take the bytes a finished receive collected.
+    Drain {
+        port: String,
+    },
+}
+
+#[derive(Debug)]
+struct TransferJob {
+    action: TransferAction,
+    reply: std::sync::mpsc::SyncSender<Result<Vec<u8>, String>>,
+}
+
 /// One `POST /api/schema` with `action: "apply"`: swap a port's dissector.
 #[derive(Debug)]
 struct SchemaJob {
@@ -194,6 +220,11 @@ struct Shared {
     elf_request: Mutex<Option<std::sync::mpsc::Sender<ElfJob>>>,
     /// Same for applying an uploaded schema to a port.
     schema_request: Mutex<Option<std::sync::mpsc::Sender<SchemaJob>>>,
+    /// Same for arming, cancelling or draining an X/YMODEM transfer.
+    transfer_request: Mutex<Option<std::sync::mpsc::Sender<TransferJob>>>,
+    /// Staged upload bytes for the next Send transfer (single slot: the UI
+    /// uploads, then arms immediately).
+    upload_staging: Mutex<Vec<u8>>,
     /// Set by `with_vault`, before the server runs.
     vault: Mutex<Option<VaultSource>>,
     /// Set by `with_ui`: the built frontend to serve instead of the placeholder.
@@ -326,6 +357,8 @@ impl Server {
         *shared.elf_request.lock().unwrap() = Some(elf_tx);
         let (schema_tx, schema_rx) = std::sync::mpsc::channel::<SchemaJob>();
         *shared.schema_request.lock().unwrap() = Some(schema_tx);
+        let (transfer_tx, transfer_rx) = std::sync::mpsc::channel::<TransferJob>();
+        *shared.transfer_request.lock().unwrap() = Some(transfer_tx);
 
         let events = session.subscribe();
         let mut reported_sampled = 0u64;
@@ -408,6 +441,26 @@ impl Server {
                 let result = session
                     .apply_schema_text(&job.port, &job.kind, &job.text, job.root.as_deref())
                     .map_err(|error| error.to_string());
+                let _ = job.reply.send(result);
+            }
+            while let Ok(job) = transfer_rx.try_recv() {
+                let result = match job.action {
+                    TransferAction::Arm {
+                        port,
+                        direction,
+                        mode,
+                        name,
+                        data,
+                        expected_len,
+                    } => session
+                        .start_transfer(&port, direction, mode, name, data, expected_len)
+                        .map(|()| Vec::new()),
+                    TransferAction::Cancel { port } => session
+                        .cancel_transfer(&port)
+                        .map(|()| Vec::new()),
+                    TransferAction::Drain { port } => session.take_transfer_data(&port),
+                }
+                .map_err(|error| error.to_string());
                 let _ = job.reply.send(result);
             }
             session.pump_once()?;
@@ -615,6 +668,24 @@ fn handle(mut stream: TcpStream, shared: Arc<Shared>, stop: Arc<AtomicBool>) {
     if method == "POST" && path == "/api/schema" {
         let body = read_body(&mut reader, content_length);
         schema(&mut stream, &shared, &body);
+        return;
+    }
+    if method == "POST" && path == "/api/transfer" {
+        let body = read_body(&mut reader, content_length);
+        transfer_control(&mut stream, &shared, &body);
+        return;
+    }
+    if method == "POST" && path == "/api/transfer/upload" {
+        let body = read_body(&mut reader, content_length);
+        transfer_upload(&mut stream, &shared, &body);
+        return;
+    }
+    if method == "GET" && path == "/api/transfer" {
+        transfer_status(&mut stream, &shared, target);
+        return;
+    }
+    if method == "GET" && path == "/api/transfer/data" {
+        transfer_data(&mut stream, &shared, target);
         return;
     }
     if method != "GET" && method != "HEAD" {
@@ -1751,6 +1822,218 @@ fn schema(stream: &mut TcpStream, shared: &Arc<Shared>, body: &[u8]) {
                 "{{\"error\":\"unknown action `{other}`; use parse, decode or apply\"}}"
             );
             respond(stream, "400 Bad Request", "application/json", body.as_bytes());
+        }
+    }
+}
+
+/// One `POST /api/transfer/upload`: stage the raw file for a Send transfer.
+fn transfer_upload(stream: &mut TcpStream, shared: &Arc<Shared>, body: &[u8]) {
+    if body.is_empty() {
+        return respond(
+            stream,
+            "400 Bad Request",
+            "application/json",
+            b"{\"error\":\"empty body: attach the file bytes\"}",
+        );
+    }
+    *shared.upload_staging.lock().unwrap() = body.to_vec();
+    let body = format!("{{\"ok\":true,\"bytes\":{}}}", body.len());
+    respond(stream, "200 OK", "application/json", body.as_bytes());
+}
+
+/// One `POST /api/transfer`: arm or cancel an X/YMODEM transfer.
+#[derive(serde::Deserialize)]
+struct TransferBody {
+    action: String,
+    port: String,
+    /// `send` or `recv`.
+    #[serde(default)]
+    direction: Option<String>,
+    /// `crc128` (default) or `crc1k`.
+    #[serde(default)]
+    mode: Option<String>,
+    #[serde(default)]
+    name: Option<String>,
+    /// True file size for a Recv (the protocol has no length on the wire).
+    #[serde(default)]
+    size: Option<usize>,
+}
+
+fn transfer_control(stream: &mut TcpStream, shared: &Arc<Shared>, body: &[u8]) {
+    let request: TransferBody = match serde_json::from_slice(body) {
+        Ok(request) => request,
+        Err(error) => {
+            let body = format!("{{\"error\":\"bad request: {error}\"}}");
+            return respond(stream, "400 Bad Request", "application/json", body.as_bytes());
+        }
+    };
+    let action = match request.action.as_str() {
+        "arm" => {
+            let direction = match request.direction.as_deref() {
+                Some("send") => crate::xmodem::XferDirection::Send,
+                Some("recv") | None => crate::xmodem::XferDirection::Recv,
+                Some(other) => {
+                    let body = format!(
+                        "{{\"error\":\"unknown direction `{other}`; use send or recv\"}}"
+                    );
+                    return respond(
+                        stream,
+                        "400 Bad Request",
+                        "application/json",
+                        body.as_bytes(),
+                    );
+                }
+            };
+            let mode = match request.mode.as_deref() {
+                Some("crc1k") => crate::xmodem::XferMode::Crc1K,
+                _ => crate::xmodem::XferMode::Crc128,
+            };
+            let name = request
+                .name
+                .clone()
+                .unwrap_or_else(|| "transfer.bin".to_string());
+            let (data, expected_len) = match direction {
+                crate::xmodem::XferDirection::Send => {
+                    let staged = shared.upload_staging.lock().unwrap().clone();
+                    if staged.is_empty() {
+                        let body =
+                            "{\"error\":\"no file staged; POST /api/transfer/upload first\"}";
+                        return respond(
+                            stream,
+                            "409 Conflict",
+                            "application/json",
+                            body.as_bytes(),
+                        );
+                    }
+                    let len = request.size.unwrap_or(staged.len());
+                    (staged, Some(len))
+                }
+                crate::xmodem::XferDirection::Recv => {
+                    (Vec::new(), request.size.map(|size| size.max(1)))
+                }
+            };
+            TransferAction::Arm {
+                port: request.port.clone(),
+                direction,
+                mode,
+                name,
+                data,
+                expected_len,
+            }
+        }
+        "cancel" => TransferAction::Cancel {
+            port: request.port.clone(),
+        },
+        other => {
+            let body = format!(
+                "{{\"error\":\"unknown action `{other}`; use arm or cancel\"}}"
+            );
+            return respond(stream, "400 Bad Request", "application/json", body.as_bytes());
+        }
+    };
+    let sender = shared.transfer_request.lock().unwrap().clone();
+    let Some(sender) = sender else {
+        let body = "{\"error\":\"the pump is not running\"}";
+        return respond(stream, "503 Service Unavailable", "application/json", body.as_bytes());
+    };
+    let (reply, answer) = std::sync::mpsc::sync_channel(1);
+    if sender
+        .send(TransferJob {
+            action,
+            reply,
+        })
+        .is_err()
+    {
+        let body = "{\"error\":\"the pump has stopped\"}";
+        return respond(stream, "503 Service Unavailable", "application/json", body.as_bytes());
+    }
+    match answer.recv_timeout(Duration::from_secs(5)) {
+        Ok(Ok(bytes)) => {
+            let body = format!("{{\"ok\":true,\"port\":{}}}", serde_json::json!(request.port));
+            respond(stream, "200 OK", "application/json", body.as_bytes());
+        }
+        Ok(Err(error)) => {
+            let body = format!("{{\"error\":{}}}", serde_json::json!(error));
+            respond(stream, "409 Conflict", "application/json", body.as_bytes());
+        }
+        Err(_) => {
+            let body = "{\"error\":\"no answer from the pump\"}";
+            respond(stream, "504 Gateway Timeout", "application/json", body.as_bytes());
+        }
+    }
+}
+
+/// One `GET /api/transfer?port=X`: the armed transfer's live status, answered
+/// from the pump's latest published snapshot (it refreshes each interval).
+fn transfer_status(stream: &mut TcpStream, shared: &Arc<Shared>, target: &str) {
+    let query = query(target);
+    let Some(port) = query.get("port").cloned() else {
+        return respond(
+            stream,
+            "400 Bad Request",
+            "application/json",
+            b"{\"error\":\"transfer status needs ?port=\"}",
+        );
+    };
+    let snap = {
+        let text = shared.snapshot.lock().unwrap().clone();
+        serde_json::from_str::<serde_json::Value>(&text).ok()
+    };
+    let view = snap
+        .and_then(|value| {
+            value
+                .get("transfers")
+                .and_then(|list| list.as_array())
+                .map(|list| {
+                    list.iter()
+                        .find(|view| view.get("port").and_then(|p| p.as_str()) == Some(&port))
+                        .cloned()
+                })
+                .unwrap_or(None)
+        })
+        .unwrap_or_else(|| serde_json::json!({"phase": "none", "port": port}));
+    let body = serde_json::to_string(&view).unwrap_or_else(|_| "{}".to_string());
+    respond(stream, "200 OK", "application/json", body.as_bytes());
+}
+
+/// One `GET /api/transfer/data?port=X`: drain a finished receive.
+fn transfer_data(stream: &mut TcpStream, shared: &Arc<Shared>, target: &str) {
+    let query = query(target);
+    let Some(port) = query.get("port").cloned() else {
+        return respond(
+            stream,
+            "400 Bad Request",
+            "application/json",
+            b"{\"error\":\"transfer data needs ?port=\"}",
+        );
+    };
+    let sender = shared.transfer_request.lock().unwrap().clone();
+    let Some(sender) = sender else {
+        let body = "{\"error\":\"the pump is not running\"}";
+        return respond(stream, "503 Service Unavailable", "application/json", body.as_bytes());
+    };
+    let (reply, answer) = std::sync::mpsc::sync_channel(1);
+    if sender
+        .send(TransferJob {
+            action: TransferAction::Drain { port },
+            reply,
+        })
+        .is_err()
+    {
+        let body = "{\"error\":\"the pump has stopped\"}";
+        return respond(stream, "503 Service Unavailable", "application/json", body.as_bytes());
+    }
+    match answer.recv_timeout(Duration::from_secs(5)) {
+        Ok(Ok(bytes)) => {
+            respond(stream, "200 OK", "application/octet-stream", &bytes);
+        }
+        Ok(Err(error)) => {
+            let body = format!("{{\"error\":{}}}", serde_json::json!(error));
+            respond(stream, "409 Conflict", "application/json", body.as_bytes());
+        }
+        Err(_) => {
+            let body = "{\"error\":\"no answer from the pump\"}";
+            respond(stream, "504 Gateway Timeout", "application/json", body.as_bytes());
         }
     }
 }

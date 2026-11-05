@@ -4,6 +4,17 @@
 import { UiSnapshot, UiEvent, PacketRow, BridgeView as BridgeViewResult } from '../types';
 
 /** One flattened field row, as /api/schema parse|decode returns. */
+interface TransferStatusView {
+  phase?: string;
+  name?: string;
+  direction?: string;
+  block?: number;
+  total_blocks?: number;
+  bytes_done?: number;
+  total_bytes?: number;
+  retries?: number;
+}
+
 interface FieldRowResult {
   name: string;
   offset: number;
@@ -117,6 +128,105 @@ export class EngineApiClient {
       const data = await res.json().catch(() => ({}));
       if (!res.ok) return { ok: false, error: data?.error || `HTTP ${res.status}` };
       return { ok: true, fields: Array.isArray(data) ? data : [] };
+    } catch {
+      return { ok: false, error: 'engine unreachable' };
+    }
+  }
+
+  /** Stage bytes for a Send transfer (POST /api/transfer/upload). */
+  async transferUpload(bytes: Uint8Array): Promise<{ ok: boolean; error?: string }> {
+    try {
+      const res = await this.fetchWithTimeout(
+        '/api/transfer/upload',
+        {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/octet-stream' },
+          body: bytes as unknown as BodyInit,
+        },
+        15000
+      );
+      if (!res.ok) {
+        const data = await res.json().catch(() => ({}));
+        return { ok: false, error: data?.error || `HTTP ${res.status}` };
+      }
+      return { ok: true };
+    } catch {
+      return { ok: false, error: 'engine unreachable' };
+    }
+  }
+
+  /** Arm an X/YMODEM transfer (POST /api/transfer {action:'arm'}). */
+  async transferArm(body: {
+    port: string;
+    direction: 'send' | 'recv';
+    mode: 'crc128' | 'crc1k';
+    name: string;
+    size?: number;
+  }): Promise<{ ok: boolean; error?: string }> {
+    try {
+      const res = await this.fetchWithTimeout(
+        '/api/transfer',
+        {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ action: 'arm', ...body }),
+        },
+        8000
+      );
+      const data = await res.json().catch(() => ({}));
+      if (!res.ok) return { ok: false, error: data?.error || `HTTP ${res.status}` };
+      return { ok: true };
+    } catch {
+      return { ok: false, error: 'engine unreachable' };
+    }
+  }
+
+  /** Cancel an armed transfer (POST /api/transfer {action:'cancel'}). */
+  async transferCancel(port: string): Promise<{ ok: boolean; error?: string }> {
+    try {
+      const res = await this.fetchWithTimeout(
+        '/api/transfer',
+        {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ action: 'cancel', port }),
+        },
+        5000
+      );
+      const data = await res.json().catch(() => ({}));
+      if (!res.ok) return { ok: false, error: data?.error || `HTTP ${res.status}` };
+      return { ok: true };
+    } catch {
+      return { ok: false, error: 'engine unreachable' };
+    }
+  }
+
+  /** Live transfer status (GET /api/transfer?port=). */
+  async transferStatus(port: string): Promise<{ ok: boolean; view?: TransferStatusView; error?: string }> {
+    try {
+      const res = await this.fetchWithTimeout(`/api/transfer?port=${encodeURIComponent(port)}`, {
+        method: 'GET',
+      });
+      const data = await res.json().catch(() => ({}));
+      if (!res.ok) return { ok: false, error: data?.error || `HTTP ${res.status}` };
+      return { ok: true, view: data as TransferStatusView };
+    } catch {
+      return { ok: false, error: 'engine unreachable' };
+    }
+  }
+
+  /** Drain a finished receive (GET /api/transfer/data?port=). */
+  async transferData(port: string): Promise<{ ok: boolean; bytes?: Uint8Array; error?: string }> {
+    try {
+      const res = await this.fetchWithTimeout(`/api/transfer/data?port=${encodeURIComponent(port)}`, {
+        method: 'GET',
+      });
+      if (!res.ok) {
+        const data = await res.json().catch(() => ({}));
+        return { ok: false, error: data?.error || `HTTP ${res.status}` };
+      }
+      const bytes = new Uint8Array(await res.arrayBuffer());
+      return { ok: true, bytes };
     } catch {
       return { ok: false, error: 'engine unreachable' };
     }

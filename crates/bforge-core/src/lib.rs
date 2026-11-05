@@ -7,6 +7,7 @@
 //! Setup only: the schema parses, nothing acts on it yet.
 
 pub mod assert;
+pub mod xmodem;
 pub mod control;
 pub mod diff;
 pub mod fault;
