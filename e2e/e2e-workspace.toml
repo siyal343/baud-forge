@@ -1,0 +1,26 @@
+# E2E workspace: two fake serial devices over loopback TCP (no hardware).
+# Device A pushes PING lines into the engine; the bridge forwards them to B.
+
+[workspace]
+name = "e2e-bridge-rec"
+version = "1.0"
+
+[[ports]]
+id = "devA"
+transport = "tcp-server"
+address = "127.0.0.1:9100"
+baud_rate = 115200
+framing = { mode = "delimiter", delimiter = 10 }
+
+[[ports]]
+id = "devB"
+transport = "tcp-server"
+address = "127.0.0.1:9101"
+baud_rate = 115200
+framing = { mode = "delimiter", delimiter = 10 }
+
+[[bridges]]
+id = "e2e-bridge"
+a = "devA"
+b = "devB"
+forward = true

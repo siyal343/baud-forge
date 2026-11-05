@@ -344,6 +344,13 @@ impl Session {
             config_hash: 0,
             port_table_offset: 256,
         };
+        // A bare REC press uses a default `vaults/…` path; create the parent
+        // directory instead of failing because the folder does not exist yet.
+        if let Some(parent) = path.parent()
+            && !parent.as_os_str().is_empty()
+        {
+            std::fs::create_dir_all(parent)?;
+        }
         self.writer = Some(LogWriter::create(path, header)?);
         self.vault = path.display().to_string();
         self.bus.publish(UiEvent::Started {
