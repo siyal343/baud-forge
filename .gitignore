@@ -13,3 +13,8 @@ ui/dist/
 .zcode/
 __pycache__/
 *.pyc
+
+# Runtime artifacts
+images/
+vaults/
+e2e/engine*.log
