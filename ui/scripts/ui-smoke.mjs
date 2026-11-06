@@ -9,6 +9,10 @@ const BASE = process.argv[2] || 'http://localhost:5173/';
 const EDGE_PATHS = [
   'C:/Program Files (x86)/Microsoft/Edge/Application/msedge.exe',
   'C:/Program Files/Google/Chrome/Application/chrome.exe',
+  '/usr/bin/google-chrome',
+  '/usr/bin/google-chrome-stable',
+  '/usr/bin/chromium',
+  '/snap/bin/chromium',
 ];
 import { existsSync } from 'node:fs';
 const executablePath = EDGE_PATHS.find((p) => existsSync(p));
@@ -45,7 +49,8 @@ const toasts = (page) =>
 const browser = await puppeteer.launch({
   executablePath,
   headless: true,
-  args: ['--window-size=1920,1080'],
+  // --no-sandbox: CI runners may lack user namespaces; harmless locally.
+  args: ['--window-size=1920,1080', '--no-sandbox', '--disable-dev-shm-usage'],
   defaultViewport: { width: 1920, height: 1080 },
 });
 try {

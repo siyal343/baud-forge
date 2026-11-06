@@ -104,3 +104,54 @@ jobs:
           name: bforge-macos-x86_64
           path: dist/*
           retention-days: 7
+
+  ui:
+    name: ui unit, build and headless smoke
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: pnpm/action-setup@v4
+        with:
+          version: 11
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: pnpm
+          cache-dependency-path: ui/pnpm-lock.yaml
+      - name: Install UI dependencies
+        working-directory: ui
+        run: pnpm install --frozen-lockfile
+      - name: Unit tests (vitest)
+        working-directory: ui
+        run: pnpm test
+      - name: Production build (tsc + vite)
+        working-directory: ui
+        run: pnpm run build
+      - name: Start the dev server
+        working-directory: ui
+        run: |
+          pnpm run dev --port 5173 --strictPort &
+          for i in $(seq 1 60); do
+            curl -sf http://localhost:5173/ > /dev/null && break
+            sleep 1
+          done
+          curl -sf http://localhost:5173/ > /dev/null || { echo "dev server did not come up"; exit 1; }
+      - name: Headless UI smoke (15 checks)
+        working-directory: ui
+        run: pnpm smoke
+
+  e2e:
+    name: e2e bridge, REC and X/YMODEM
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+      - name: Install Linux serial headers
+        run: sudo apt-get update && sudo apt-get install -y libudev-dev pkg-config
+      - uses: Swatinem/rust-cache@v2
+      - name: Build the engine
+        run: cargo build -p bforge-cli --locked
+      - name: Bridge / REC e2e (9 checks)
+        run: python e2e/e2e_bridge_rec.py target/debug/bforge.exe
+      - name: X/YMODEM e2e (14 checks)
+        run: python e2e/e2e_xmodem.py target/debug/bforge.exe
