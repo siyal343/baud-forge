@@ -157,3 +157,5 @@ jobs:
         run: sleep 3
       - name: X/YMODEM e2e (14 checks)
         run: python e2e/e2e_xmodem.py target/debug/bforge.exe
+      - name: Duration exit + device reconnect e2e (4 checks)
+        run: python e2e/e2e_duration_exit.py target/debug/bforge.exe

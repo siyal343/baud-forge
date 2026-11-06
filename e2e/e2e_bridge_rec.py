@@ -38,12 +38,20 @@ def check(name, ok, detail=""):
 
 
 def get(path):
-    try:
-        with urllib.request.urlopen(BASE + path, timeout=5) as res:
-            return json.loads(res.read().decode())
-    except Exception as error:
-        print(f"  (GET {path} failed: {error})")
-        raise
+    # The host aborts loopback connections transiently (WinError 10053/10054);
+    # a retry absorbs it without masking real failures, which still raise.
+    last = None
+    for _ in range(4):
+        try:
+            with urllib.request.urlopen(BASE + path, timeout=5) as res:
+                return json.loads(res.read().decode())
+        except urllib.error.HTTPError:
+            raise
+        except Exception as error:
+            last = error
+            time.sleep(0.3)
+    print(f"  (GET {path} failed after retries: {last})")
+    raise last
 
 
 def post(path, payload):
@@ -51,16 +59,20 @@ def post(path, payload):
     req = urllib.request.Request(
         BASE + path, data=data, headers={"Content-Type": "application/json"}, method="POST"
     )
-    try:
-        with urllib.request.urlopen(req, timeout=10) as res:
-            return json.loads(res.read().decode())
-    except urllib.error.HTTPError as e:
-        body = e.read().decode()
-        print(f"  (POST {path} -> HTTP {e.code}: {body})")
-        return {"error": body, "http_error": True}
-    except Exception as error:
-        print(f"  (POST {path} failed: {error})")
-        raise
+    last = None
+    for _ in range(4):
+        try:
+            with urllib.request.urlopen(req, timeout=10) as res:
+                return json.loads(res.read().decode())
+        except urllib.error.HTTPError as e:
+            body = e.read().decode()
+            print(f"  (POST {path} -> HTTP {e.code}: {body})")
+            return {"error": body, "http_error": True}
+        except Exception as error:
+            last = error
+            time.sleep(0.3)
+    print(f"  (POST {path} failed after retries: {last})")
+    raise last
 
 
 def fake_device_a(stop, sent):

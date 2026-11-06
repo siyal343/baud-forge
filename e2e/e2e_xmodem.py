@@ -34,8 +34,20 @@ def crc_xmodem(data: bytes) -> int:
 
 
 def get(path):
-    with urllib.request.urlopen(BASE + path, timeout=5) as res:
-        return json.loads(res.read().decode())
+    # The host aborts loopback connections transiently (WinError 10053/10054);
+    # a retry absorbs it without masking real failures, which still raise.
+    last = None
+    for _ in range(4):
+        try:
+            with urllib.request.urlopen(BASE + path, timeout=5) as res:
+                return json.loads(res.read().decode())
+        except urllib.error.HTTPError:
+            raise
+        except Exception as error:
+            last = error
+            time.sleep(0.3)
+    print(f"  (GET {path} failed after retries: {last})")
+    raise last
 
 
 def post(path, payload):
@@ -45,11 +57,17 @@ def post(path, payload):
         headers={"Content-Type": "application/json"},
         method="POST",
     )
-    try:
-        with urllib.request.urlopen(req, timeout=15) as res:
-            return json.loads(res.read().decode())
-    except urllib.error.HTTPError as e:
-        return {"error": e.read().decode(), "http": e.code}
+    last = None
+    for _ in range(4):
+        try:
+            with urllib.request.urlopen(req, timeout=15) as res:
+                return json.loads(res.read().decode())
+        except urllib.error.HTTPError as e:
+            return {"error": e.read().decode(), "http": e.code}
+        except Exception as error:
+            last = error
+            time.sleep(0.3)
+    return {"error": f"unreachable after retries: {last}", "http_error": True}
 
 
 def post_raw(path, body: bytes):
@@ -153,8 +171,8 @@ def main():
         check("drained bytes match (padding trimmed)", data == file, f"{len(data)} bytes")
 
         # ---------- SEND: engine -> device (same wire link; the HAL's
-        # tcp-server transport accepts one connection per session, which is
-        # also how a real single serial link behaves) ----------
+        # tcp-server transport serves one client at a time, which is also how
+        # a real single serial link behaves) ----------
         staged = post_raw("/api/transfer/upload", file)
         check("file staged", staged.get("ok") is True, json.dumps(staged))
 

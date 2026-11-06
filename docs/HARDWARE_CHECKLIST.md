@@ -123,12 +123,13 @@ first place to look when something misbehaves.
 
 ## Regression gates (no hardware needed)
 
-- `cargo test --workspace --locked` — 76+ tests (incl. the activity-ring and
-  shutdown-persistence tests)
+- `cargo test --workspace --locked` — 76+ tests (incl. the activity-ring,
+  shutdown-persistence, and tcp re-accept tests)
 - `cd ui && pnpm test` — 25 tests
 - `cd ui && pnpm smoke` — 16 checks (headless Chrome/Edge)
 - `python e2e/e2e_bridge_rec.py target/release/bforge.exe` — 9 checks
 - `python e2e/e2e_xmodem.py target/release/bforge.exe` — 14 checks
+- `python e2e/e2e_duration_exit.py target/release/bforge.exe` — 4 checks
 - `node ui/scripts/activity-live-check.mjs` — manual: engine on :7717 +
   dev server on :5173, then verifies the panel against live entries
 
