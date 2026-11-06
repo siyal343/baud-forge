@@ -1240,7 +1240,15 @@ fn vault_export(stream: &mut TcpStream, shared: &Arc<Shared>, target: &str) {
 }
 
 fn vault_frames(stream: &mut TcpStream, shared: &Arc<Shared>, target: &str) {
-    let source = shared.vault.lock().unwrap().clone();
+    let query = query(target);
+    let registered = shared.vault.lock().unwrap().clone();
+    let source = query
+        .get("path")
+        .map(|path| crate::serve::VaultSource {
+            path: std::path::PathBuf::from(path),
+            ports: Vec::new(),
+        })
+        .or(registered);
     let Some(source) = source else {
         return respond(
             stream,
@@ -1249,7 +1257,6 @@ fn vault_frames(stream: &mut TcpStream, shared: &Arc<Shared>, target: &str) {
             b"{\"error\":\"no vault\"}",
         );
     };
-    let query = query(target);
     let mut at: u64 = query
         .get("at")
         .and_then(|value| value.parse().ok())

@@ -115,3 +115,30 @@ loopback plug bridged against the ESP32 link. Add a second `[[ports]]` +
 - `python e2e/e2e_xmodem.py target/release/bforge.exe` — 14 checks
 
 All green as of 2026-11-07 (commit `9012efd`).
+
+---
+
+## Validated: 2026-11-07, ESP32-C3 on COM8 (release build `de68183`+)
+
+All seven checklist items executed against the physical device
+(`303a:1001`, COM8 @ 115200, COBS + CRC32C). Results:
+
+| # | Check | Result |
+|---|---|---|
+| 0 | Real link | `port esp open`, 0 overruns / 0 stalls / 0 read errors |
+| 1 | REC vault | `● REC 5.0 KB` growing on real frames → sealed 112 records, `damaged_tail: false`, frames replay via `/api/vault/frames?path=` |
+| 3 | ELF upload | Real ELF staged → parsed → honestly rejected as wrong-architecture (AVR32 vs RISC-V). Device ELF (`esp32c3_app.elf`) not on this machine — symbol badges pending that file |
+| 4 | Schema apply | Renamed schema applied to `esp` mid-session → device frames re-dissected live (`frame_no`, `gyro_z`, `vbatt_mv`); full 12-field `imu_packet.h` restored and verified (nested `samples` flattened) |
+| 5 | X/YMODEM | RECV armed on the real link; engine polled 'C'; **the device answered CAN** — state machine transitioned to `failed:cancelled by device` honestly (this firmware does not speak XMODEM). Real bidirectional protocol exchange, no hang |
+| 6 | Workflow B | Scope canvas click paused the capture at the clicked instant and selected the real 12-field frame |
+| 7 | Trace lanes | `gyro_z` bound from the real dissector; 26 live points from physical sensor data |
+
+Bidirectional dispatch baseline: `mode imu\n` (9 B) → device streamed
+2,670 chunks / 32 KB at 0 overruns.
+
+Fix made during this pass: `/api/vault/frames` now honors `?path=` like
+`/api/vault` and `/api/vault/export` (a sealed vault could not be
+replayed unless the server was started with `--vault`).
+
+**Pending on the user:** build/point at the ESP32-C3 `.elf`
+(`esp32c3_app.elf`) for symbol badges — the upload endpoint is live.
