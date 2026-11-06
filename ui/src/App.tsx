@@ -1,4 +1,4 @@
-import React, { useEffect } from 'react';
+import React, { useEffect, useState } from 'react';
 import { useShallow } from 'zustand/react/shallow';
 import { useWorkstationStore } from './store/useWorkstationStore';
 import { GlobalRibbon } from './components/GlobalRibbon';
@@ -8,11 +8,39 @@ import { StatusFooter } from './components/StatusFooter';
 import { VaultExportModal } from './components/VaultExportModal';
 import { TooltipOverlay } from './components/TooltipOverlay';
 import { ToastHost } from './components/ToastHost';
+import { Launcher, isDesktopShell, hasEngineParam } from './components/Launcher';
 import { generateSampleImuPacket } from './services/simulationEngine';
 import { engineApi } from './services/engineApi';
 import { PacketDirection } from './types';
 
 export const App: React.FC = () => {
+  // Desktop shell: before an engine session starts, the workbench has no
+  // /api to talk to — show the launcher instead (spec 0036 workspace picker).
+  const [launcherState, setLauncherState] = useState<'checking' | 'show' | 'hide'>(
+    isDesktopShell() && !hasEngineParam() ? 'checking' : 'hide'
+  );
+  useEffect(() => {
+    if (launcherState !== 'checking') return;
+    const core = (window as any).__TAURI__?.core;
+    if (!core) {
+      setLauncherState('show');
+      return;
+    }
+    core
+      .invoke('engine_state')
+      .then((state: string | null) => {
+        if (state) {
+          // A session is already running (workspace passed on the command
+          // line) — follow it.
+          window.location.replace(state.split(' ')[0] + '/?v=' + Date.now());
+        } else {
+          setLauncherState('show');
+        }
+      })
+      .catch(() => setLauncherState('show'));
+  }, [launcherState]);
+  if (launcherState === 'checking') return null;
+  if (launcherState === 'show') return <Launcher />;
   const {
     isConnected,
     isSimulated,
