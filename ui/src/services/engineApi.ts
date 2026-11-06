@@ -2,6 +2,17 @@
 // Connects to crates/bforge-core/src/serve.rs over loopback HTTP & SSE
 
 import { UiSnapshot, UiEvent, PacketRow, BridgeView as BridgeViewResult } from '../types';
+import { logEngineFailure } from './activityLog';
+
+/** One activity-log row, as GET /api/logs returns (spec: activity log). */
+export interface LogEntryView {
+  seq: number;
+  at_ms: number;
+  level: 'debug' | 'info' | 'warn' | 'error';
+  source: 'engine' | 'ui';
+  event: string;
+  detail: string;
+}
 
 /** One flattened field row, as /api/schema parse|decode returns. */
 interface TransferStatusView {
@@ -26,6 +37,12 @@ interface FieldRowResult {
 export class EngineApiClient {
   private eventSource: EventSource | null = null;
   private baseUrl: string;
+
+  /** A failed engine call, recorded in the activity ring with its operation. */
+  private failure(op: string, error: string): { ok: false; error: string } {
+    logEngineFailure(op, error);
+    return { ok: false, error };
+  }
 
   constructor(baseUrl = '') {
     if (typeof window !== 'undefined') {
@@ -126,10 +143,10 @@ export class EngineApiClient {
         action === 'apply' ? 5000 : 8000
       );
       const data = await res.json().catch(() => ({}));
-      if (!res.ok) return { ok: false, error: data?.error || `HTTP ${res.status}` };
+      if (!res.ok) return this.failure('schema', data?.error || `HTTP ${res.status}`);
       return { ok: true, fields: Array.isArray(data) ? data : [] };
     } catch {
-      return { ok: false, error: 'engine unreachable' };
+      return this.failure('schema', 'engine unreachable');
     }
   }
 
@@ -147,11 +164,11 @@ export class EngineApiClient {
       );
       if (!res.ok) {
         const data = await res.json().catch(() => ({}));
-        return { ok: false, error: data?.error || `HTTP ${res.status}` };
+        return this.failure('transferUpload', data?.error || `HTTP ${res.status}`);
       }
       return { ok: true };
     } catch {
-      return { ok: false, error: 'engine unreachable' };
+      return this.failure('transferUpload', 'engine unreachable');
     }
   }
 
@@ -174,10 +191,10 @@ export class EngineApiClient {
         8000
       );
       const data = await res.json().catch(() => ({}));
-      if (!res.ok) return { ok: false, error: data?.error || `HTTP ${res.status}` };
+      if (!res.ok) return this.failure('transferArm', data?.error || `HTTP ${res.status}`);
       return { ok: true };
     } catch {
-      return { ok: false, error: 'engine unreachable' };
+      return this.failure('transferArm', 'engine unreachable');
     }
   }
 
@@ -194,10 +211,10 @@ export class EngineApiClient {
         5000
       );
       const data = await res.json().catch(() => ({}));
-      if (!res.ok) return { ok: false, error: data?.error || `HTTP ${res.status}` };
+      if (!res.ok) return this.failure('transferCancel', data?.error || `HTTP ${res.status}`);
       return { ok: true };
     } catch {
-      return { ok: false, error: 'engine unreachable' };
+      return this.failure('transferCancel', 'engine unreachable');
     }
   }
 
@@ -208,10 +225,10 @@ export class EngineApiClient {
         method: 'GET',
       });
       const data = await res.json().catch(() => ({}));
-      if (!res.ok) return { ok: false, error: data?.error || `HTTP ${res.status}` };
+      if (!res.ok) return this.failure('transferStatus', data?.error || `HTTP ${res.status}`);
       return { ok: true, view: data as TransferStatusView };
     } catch {
-      return { ok: false, error: 'engine unreachable' };
+      return this.failure('transferStatus', 'engine unreachable');
     }
   }
 
@@ -223,12 +240,12 @@ export class EngineApiClient {
       });
       if (!res.ok) {
         const data = await res.json().catch(() => ({}));
-        return { ok: false, error: data?.error || `HTTP ${res.status}` };
+        return this.failure('transferData', data?.error || `HTTP ${res.status}`);
       }
       const bytes = new Uint8Array(await res.arrayBuffer());
       return { ok: true, bytes };
     } catch {
-      return { ok: false, error: 'engine unreachable' };
+      return this.failure('transferData', 'engine unreachable');
     }
   }
 
@@ -245,10 +262,10 @@ export class EngineApiClient {
         8000
       );
       const data = await res.json().catch(() => ({}));
-      if (!res.ok) return { ok: false, error: data?.error || `HTTP ${res.status}` };
+      if (!res.ok) return this.failure('uploadElf', data?.error || `HTTP ${res.status}`);
       return { ok: true, path: data?.path };
     } catch {
-      return { ok: false, error: 'engine unreachable' };
+      return this.failure('uploadElf', 'engine unreachable');
     }
   }
 
@@ -263,10 +280,10 @@ export class EngineApiClient {
         body: JSON.stringify({ bridges }),
       });
       const data = await res.json().catch(() => null);
-      if (!res.ok) return { ok: false, error: data?.error || `HTTP ${res.status}` };
+      if (!res.ok) return this.failure('setBridges', data?.error || `HTTP ${res.status}`);
       return { ok: true, views: Array.isArray(data) ? data : [] };
     } catch {
-      return { ok: false, error: 'engine unreachable' };
+      return this.failure('setBridges', 'engine unreachable');
     }
   }
 
@@ -286,10 +303,10 @@ export class EngineApiClient {
         6000
       );
       const data = await res.json().catch(() => ({}));
-      if (!res.ok) return { ok: false, error: data?.error || `HTTP ${res.status}` };
+      if (!res.ok) return this.failure('recordControl', data?.error || `HTTP ${res.status}`);
       return { ok: true, vault: data?.vault };
     } catch {
-      return { ok: false, error: 'engine unreachable' };
+      return this.failure('recordControl', 'engine unreachable');
     }
   }
 
@@ -316,6 +333,20 @@ export class EngineApiClient {
       if (!res.ok) return [];
       const data = await res.json();
       return Array.isArray(data) ? data : [];
+    } catch {
+      return [];
+    }
+  }
+
+  /** Activity ring rows after `since`, at or above `minLevel` (GET /api/logs). */
+  async fetchLogs(since = 0, minLevel?: string): Promise<LogEntryView[]> {
+    try {
+      const params = new URLSearchParams({ since: String(since) });
+      if (minLevel) params.set('level', minLevel);
+      const res = await this.fetchWithTimeout(`/api/logs?${params.toString()}`);
+      if (!res.ok) return [];
+      const data = await res.json();
+      return Array.isArray(data) ? (data as LogEntryView[]) : [];
     } catch {
       return [];
     }

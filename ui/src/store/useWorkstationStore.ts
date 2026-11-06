@@ -2,6 +2,7 @@ import { create } from 'zustand';
 import { PacketRow, DissectedField, ScopeSignalSample, PinsView, PortView, BridgeView } from '../types';
 import { generateSampleImuPacket, generateScopeSample } from '../services/simulationEngine';
 import { engineApi } from '../services/engineApi';
+import { logAction } from '../services/activityLog';
 import { toast } from './useToastStore';
 
 interface WorkstationState {
@@ -433,6 +434,7 @@ export const useWorkstationStore = create<WorkstationState>((set, get) => ({
     const existing = get().traceBindings.find((b) => b.name === field.name);
     if (existing) {
       set({ traceHidden: { ...get().traceHidden, [existing.id]: false } });
+      logAction('trace_bind', `${field.name} (already bound, lane unhidden)`);
       return existing.id;
     }
     const id = `trace-${Date.now().toString(36)}-${Math.floor(Math.random() * 1e4)}`;
@@ -448,10 +450,12 @@ export const useWorkstationStore = create<WorkstationState>((set, get) => ({
       },
       traceHidden: { ...state.traceHidden, [id]: false },
     }));
+    logAction('trace_bind', `${field.name} bound to a scope lane`);
     return id;
   },
 
-  unbindScopeTrace: (id) =>
+  unbindScopeTrace: (id) => {
+    const binding = get().traceBindings.find((b) => b.id === id);
     set((state) => {
       const { [id]: _removed, ...series } = state.traceSeries;
       const { [id]: _hidden, ...hidden } = state.traceHidden;
@@ -460,7 +464,9 @@ export const useWorkstationStore = create<WorkstationState>((set, get) => ({
         traceSeries: series,
         traceHidden: hidden,
       };
-    }),
+    });
+    if (binding) logAction('trace_unbind', `${binding.name} unbound`);
+  },
 
   toggleTraceVisibility: (id) =>
     set((state) => ({
@@ -499,12 +505,15 @@ export const useWorkstationStore = create<WorkstationState>((set, get) => ({
     // left mid-buffer (after scrubbing) resumes from that position.
     replayIdx = currentIdx >= 0 && currentIdx < packets.length - 1 ? currentIdx : 0;
     set({ isPaused: true, isLive: false, isReplaying: true, autoScroll: false });
+    logAction('replay_start', `from frame ${replayIdx + 1}/${packets.length}`);
     restartReplayTimer();
   },
 
   stopReplay: () => {
     stopReplayTimer();
+    const wasReplaying = get().isReplaying;
     set({ isReplaying: false });
+    if (wasReplaying) logAction('replay_stop');
   },
 
   seekToTimestamp: (tUs) => {
@@ -529,6 +538,11 @@ export const useWorkstationStore = create<WorkstationState>((set, get) => ({
       selectedField: closest?.dissectedFields?.[0] ?? null,
       pausedTimestampUs: tUs,
     });
+    // Workflow B: a scope click is an investigation act — record which frame
+    // it landed on, so the activity log explains the selection that follows.
+    if (closest) {
+      logAction('scope_seek', `frame ${closest.seqId} @ ${closest.timestampUs} µs (Δ${minDelta.toFixed(0)} µs)`);
+    }
   },
 
   stepFrame: (direction) => {

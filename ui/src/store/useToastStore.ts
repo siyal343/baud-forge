@@ -1,6 +1,14 @@
 import { create } from 'zustand';
+import { logAction, type LogLevel } from '../services/activityLog';
 
 export type ToastKind = 'info' | 'success' | 'warn' | 'error';
+
+const TOAST_LEVEL: Record<ToastKind, LogLevel> = {
+  info: 'info',
+  success: 'info',
+  warn: 'warn',
+  error: 'error',
+};
 
 export interface Toast {
   id: number;
@@ -36,6 +44,9 @@ export const useToastStore = create<ToastState>((set, get) => ({
 
     const toast: Toast = { id: nextId++, kind, title, detail };
     set({ toasts: [...get().toasts, toast].slice(-5) });
+    // Every toast is a fact about the session; it lands in the same activity
+    // timeline the engine writes, so a bug report needs only that one file.
+    logAction('toast', detail ? `${title} — ${detail}` : title, TOAST_LEVEL[kind]);
   },
   dismissToast: (id) => set({ toasts: get().toasts.filter((t) => t.id !== id) }),
 }));

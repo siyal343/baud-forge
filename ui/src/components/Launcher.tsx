@@ -3,6 +3,7 @@
 // workbench replaces this view once a workspace starts (the shell navigates
 // to the engine's own address, where the same UI runs same-origin).
 import React, { useEffect, useState } from 'react';
+import { logAction } from '../services/activityLog';
 
 type TauriCore = {
   invoke: (cmd: string, args?: Record<string, unknown>) => Promise<unknown>;
@@ -59,6 +60,7 @@ export const Launcher: React.FC = () => {
     if (!core) return;
     setBusy(path);
     setError(null);
+    logAction('workspace_open', path);
     try {
       const url = (await core.invoke('start_workspace', { path })) as string;
       navigate(url);
@@ -115,6 +117,7 @@ export const Launcher: React.FC = () => {
     if (!core) return;
     setBusy(`qc-${pickedPort}`);
     setError(null);
+    logAction('quick_connect', `${pickedPort} @ 115200`);
     try {
       const url = (await core.invoke('quick_connect', {
         device: pickedPort,

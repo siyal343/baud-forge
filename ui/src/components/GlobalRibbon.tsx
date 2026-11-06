@@ -37,6 +37,7 @@ const PANEL_CATALOG = [
   { id: 'faultRig', name: 'HIL Fault Injection Rig' },
   { id: 'fileTransfer', name: 'X/YMODEM File Transfer' },
   { id: 'bridge', name: 'MITM Bridge & Relay' },
+  { id: 'activityLog', name: 'Activity Log' },
   { id: 'elfSymbols', name: 'ELF Symbol & Crash Trace' },
   { id: 'schemaDialects', name: 'Schema Dialects (Proto/MAVLink)' },
 ];

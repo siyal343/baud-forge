@@ -234,9 +234,26 @@ struct Shared {
     sampled: AtomicU64,
     /// Active session configuration for quick-connect or export.
     config: Mutex<Option<crate::ProjectConfig>>,
+    /// One interleaved timeline of engine and UI events (spec: activity log).
+    /// Read by `GET /api/logs`, written by the pump thread and `POST /api/logs/client`.
+    logs: crate::logs::LogRing,
+    /// The vault the next activity file follows: set when a REC press starts
+    /// one, consulted again at shutdown before `<vault>.activity.jsonl` lands.
+    activity_path: Mutex<Option<std::path::PathBuf>>,
 }
 
 impl Shared {
+    /// Append an engine-side entry to the activity ring.
+    fn log(
+        &self,
+        level: crate::logs::LogLevel,
+        event: &str,
+        detail: impl std::fmt::Display,
+    ) {
+        self.logs
+            .log(level, crate::logs::LogSource::Engine, event, detail.to_string());
+    }
+
     fn set_snapshot(&self, json: String) {
         *self.snapshot.lock().unwrap() = json.clone();
         self.broadcast(&sse("snapshot", &json));
@@ -331,6 +348,7 @@ impl Server {
     ) -> Result<ServeStats, ServeError> {
         let shared = Arc::clone(&self.shared);
         let stop = Arc::clone(&self.stop);
+        let addr = self.listener.local_addr().map(|addr| addr.to_string());
         let initial = serde_json::to_string(&session.snapshot()).unwrap_or_default();
         *shared.snapshot.lock().unwrap() = initial;
 
@@ -365,8 +383,23 @@ impl Server {
         let mut frames_sent = Instant::now();
         let started = Instant::now();
         let mut published = Instant::now();
+        shared.log(
+            crate::logs::LogLevel::Info,
+            "engine_start",
+            format!(
+                "serving {} port(s) on {} for {}",
+                session.port_count(),
+                addr.as_deref().unwrap_or("unknown"),
+                match duration {
+                    Some(duration) => format!("{}", duration.as_secs()),
+                    None => "no limit".to_string(),
+                }
+            ),
+        );
         loop {
             while let Ok(job) = send_rx.try_recv() {
+                let size = job.bytes.len();
+                let paced = job.chunk_size.is_some() || job.pace_ms.is_some();
                 let result = match &job.values {
                     Some(values) => session.send_values(&job.port, values, Duration::from_secs(2)),
                     None => match job.chunk_size.filter(|size| *size > 0) {
@@ -380,6 +413,18 @@ impl Server {
                     },
                 }
                 .map_err(|error| error.to_string());
+                match &result {
+                    Ok(_) => shared.log(
+                        crate::logs::LogLevel::Info,
+                        "tx",
+                        format!("{}: {size} B{}", job.port, if paced { " (paced)" } else { "" }),
+                    ),
+                    Err(error) => shared.log(
+                        crate::logs::LogLevel::Error,
+                        "tx_failed",
+                        format!("{}: {error}", job.port),
+                    ),
+                }
                 let _ = job.reply.send(result);
             }
             while let Ok(job) = pin_rx.try_recv() {
@@ -396,10 +441,35 @@ impl Server {
                         })
                         .map_err(|error| error.to_string()),
                 };
+                match &result {
+                    Ok(_) => shared.log(
+                        crate::logs::LogLevel::Info,
+                        "pins",
+                        format!("{}: dtr={} rts={}", job.port, job.dtr, job.rts),
+                    ),
+                    Err(error) => shared.log(
+                        crate::logs::LogLevel::Error,
+                        "pins_failed",
+                        format!("{}: {error}", job.port),
+                    ),
+                }
                 let _ = job.reply.send(result);
             }
             while let Ok(job) = yield_rx.try_recv() {
                 let released = session.yield_port(&job.port, Duration::from_secs(job.seconds));
+                if released {
+                    shared.log(
+                        crate::logs::LogLevel::Info,
+                        "yield",
+                        format!("{}: released for {} s", job.port, job.seconds),
+                    );
+                } else {
+                    shared.log(
+                        crate::logs::LogLevel::Warn,
+                        "yield_unknown_port",
+                        &job.port,
+                    );
+                }
                 let _ = job.reply.send(released);
             }
             while let Ok(job) = fault_rx.try_recv() {
@@ -411,9 +481,22 @@ impl Server {
                     }
                 }
                 .map_err(|error| error.to_string());
+                match &result {
+                    Ok(()) => shared.log(
+                        crate::logs::LogLevel::Info,
+                        "fault",
+                        format!("{}: {}", job.port, if job.profile.is_some() { "profile armed" } else { "profile cleared" }),
+                    ),
+                    Err(error) => shared.log(
+                        crate::logs::LogLevel::Error,
+                        "fault_failed",
+                        format!("{}: {error}", job.port),
+                    ),
+                }
                 let _ = job.reply.send(result);
             }
             while let Ok(job) = record_rx.try_recv() {
+                let starting = matches!(job.action, RecordAction::Start(_));
                 let result = match job.action {
                     RecordAction::Start(path) => session
                         .start_recording(&path)
@@ -421,6 +504,22 @@ impl Server {
                     RecordAction::Stop => session.stop_recording(),
                 }
                 .map_err(|error| error.to_string());
+                match &result {
+                    Ok(vault) => {
+                        if starting {
+                            *shared.activity_path.lock().unwrap() =
+                                Some(std::path::PathBuf::from(vault));
+                            shared.log(crate::logs::LogLevel::Info, "rec_start", vault);
+                        } else {
+                            shared.log(crate::logs::LogLevel::Info, "rec_stop", vault);
+                        }
+                    }
+                    Err(error) => shared.log(
+                        crate::logs::LogLevel::Error,
+                        if starting { "rec_start_failed" } else { "rec_stop_failed" },
+                        error,
+                    ),
+                }
                 let _ = job.reply.send(result);
             }
             while let Ok(job) = bridge_rx.try_recv() {
@@ -428,6 +527,30 @@ impl Server {
                     .enable_bridges(&job.bridges)
                     .map(|()| session.snapshot().bridges)
                     .map_err(|error| error.to_string());
+                match &result {
+                    Ok(views) => shared.log(
+                        crate::logs::LogLevel::Info,
+                        "bridge_set",
+                        format!(
+                            "{} bridge(s): {}",
+                            views.len(),
+                            views
+                                .iter()
+                                .map(|bridge| format!(
+                                    "{} {}{}{}",
+                                    bridge.id,
+                                    bridge.a,
+                                    if bridge.forward { " <-> " } else { " --- " },
+                                    bridge.b
+                                ))
+                                .collect::<Vec<_>>()
+                                .join(", ")
+                        ),
+                    ),
+                    Err(error) => {
+                        shared.log(crate::logs::LogLevel::Error, "bridge_failed", error)
+                    }
+                }
                 let _ = job.reply.send(result);
             }
             while let Ok(job) = elf_rx.try_recv() {
@@ -435,15 +558,48 @@ impl Server {
                     .enable_symbols(&job.path)
                     .map(|()| job.path.display().to_string())
                     .map_err(|error| error.to_string());
+                match &result {
+                    Ok(path) => shared.log(crate::logs::LogLevel::Info, "elf_load", path),
+                    Err(error) => {
+                        shared.log(crate::logs::LogLevel::Error, "elf_load_failed", error)
+                    }
+                }
                 let _ = job.reply.send(result);
             }
             while let Ok(job) = schema_rx.try_recv() {
                 let result = session
                     .apply_schema_text(&job.port, &job.kind, &job.text, job.root.as_deref())
                     .map_err(|error| error.to_string());
+                match &result {
+                    Ok(()) => shared.log(
+                        crate::logs::LogLevel::Info,
+                        "schema_apply",
+                        format!("{}: {} ({} B of source)", job.port, job.kind, job.text.len()),
+                    ),
+                    Err(error) => shared.log(
+                        crate::logs::LogLevel::Error,
+                        "schema_apply_failed",
+                        format!("{}: {error}", job.port),
+                    ),
+                }
                 let _ = job.reply.send(result);
             }
             while let Ok(job) = transfer_rx.try_recv() {
+                let (event, detail) = match &job.action {
+                    TransferAction::Arm { port, direction, mode, name, data, expected_len } => (
+                        "transfer_arm",
+                        format!(
+                            "{port}: {} {name} ({mode:?}), {} B{}",
+                            if matches!(direction, crate::xmodem::XferDirection::Send) { "send" } else { "recv" },
+                            data.len(),
+                            expected_len
+                                .map(|expected| format!(", expecting {expected} B"))
+                                .unwrap_or_default()
+                        ),
+                    ),
+                    TransferAction::Cancel { port } => ("transfer_cancel", port.clone()),
+                    TransferAction::Drain { port } => ("transfer_drain", port.clone()),
+                };
                 let result = match job.action {
                     TransferAction::Arm {
                         port,
@@ -461,6 +617,17 @@ impl Server {
                     TransferAction::Drain { port } => session.take_transfer_data(&port),
                 }
                 .map_err(|error| error.to_string());
+                match &result {
+                    Ok(bytes) => {
+                        let detail = if event == "transfer_drain" {
+                            format!("{detail}: {} B handed out", bytes.len())
+                        } else {
+                            detail
+                        };
+                        shared.log(crate::logs::LogLevel::Info, event, detail);
+                    }
+                    Err(error) => shared.log(crate::logs::LogLevel::Error, "transfer_failed", error),
+                }
                 let _ = job.reply.send(result);
             }
             session.pump_once()?;
@@ -480,6 +647,7 @@ impl Server {
                 }
             }
             while let Ok(event) = events.try_recv() {
+                log_ui_event(&shared, &event);
                 shared.broadcast(&sse("ui", &event_json(&event)));
             }
             if published.elapsed() >= SNAPSHOT_INTERVAL {
@@ -508,6 +676,7 @@ impl Server {
         shared.clients.lock().unwrap().clear();
         // A served session is a recorded session: seal it, so the vault gets its
         // index and a reader does not have to repair it.
+        let auto_vault = session.snapshot().session.vault;
         let chunks = match session.seal() {
             Ok(summary) => summary.chunks,
             Err(error) => {
@@ -515,6 +684,37 @@ impl Server {
                 return Err(ServeError::Session(error));
             }
         };
+        shared.log(
+            crate::logs::LogLevel::Info,
+            "engine_stop",
+            format!("{chunks} chunk(s) sealed"),
+        );
+        // The activity file sits next to the vault it describes: a REC press
+        // chose it during the session, otherwise the session's own vault.
+        let vault = shared
+            .activity_path
+            .lock()
+            .unwrap()
+            .clone()
+            .or_else(|| {
+                if auto_vault.is_empty() {
+                    None
+                } else {
+                    Some(std::path::PathBuf::from(&auto_vault))
+                }
+            });
+        if let Some(vault) = vault {
+            let activity = std::path::PathBuf::from(format!("{}.activity.jsonl", vault.display()));
+            match shared.logs.write_jsonl(&activity) {
+                Ok(count) => {
+                    eprintln!("bforge-serve: activity log: {count} entries -> {}", activity.display())
+                }
+                Err(error) => eprintln!(
+                    "bforge-serve: the activity log could not be written to {}: {error}",
+                    activity.display()
+                ),
+            }
+        }
         Ok(ServeStats {
             requests: shared.requests.load(Ordering::Relaxed),
             chunks,
@@ -541,6 +741,40 @@ fn accept_loop(listener: TcpListener, shared: Arc<Shared>, stop: Arc<AtomicBool>
 
 fn event_json(event: &UiEvent) -> String {
     serde_json::to_string(event).unwrap_or_default()
+}
+
+/// Mirror a session event into the activity ring. Per-second `Stats` frames are
+/// skipped: they are already on every dashboard and would churn the ring out
+/// from under the entries that matter.
+fn log_ui_event(shared: &Arc<Shared>, event: &UiEvent) {
+    use crate::logs::LogLevel as Level;
+    match event {
+        UiEvent::Started { ports, vault, .. } => {
+            shared.log(Level::Info, "session_started", format!("{ports} port(s), vault {vault}"))
+        }
+        UiEvent::PortStateChanged { port, state, .. } => {
+            shared.log(Level::Info, "port_state", format!("{port}: {state}"))
+        }
+        UiEvent::Overrun { port, total, .. } => {
+            shared.log(Level::Warn, "overrun", format!("{port}: {total} slab(s) dropped"))
+        }
+        UiEvent::DamagedTail { port, .. } => {
+            shared.log(Level::Warn, "damaged_tail", format!("{port}: tail repaired from raw slab"))
+        }
+        UiEvent::Stopped { chunks, payload_bytes, .. } => shared.log(
+            Level::Info,
+            "session_stopped",
+            format!("{chunks} chunk(s), {payload_bytes} B payload"),
+        ),
+        UiEvent::Transfer { port, name, phase, block, total_blocks, bytes_done, .. } => {
+            shared.log(
+                Level::Info,
+                "transfer_progress",
+                format!("{port} {name}: {phase}, block {block}/{total_blocks}, {bytes_done} B"),
+            )
+        }
+        UiEvent::Stats { .. } => {}
+    }
 }
 
 /// Frames travel as a JSON array, so one event carries one pump's worth.
@@ -686,6 +920,15 @@ fn handle(mut stream: TcpStream, shared: Arc<Shared>, stop: Arc<AtomicBool>) {
     }
     if method == "GET" && path == "/api/transfer/data" {
         transfer_data(&mut stream, &shared, target);
+        return;
+    }
+    if method == "GET" && path == "/api/logs" {
+        logs_view(&mut stream, &shared, target);
+        return;
+    }
+    if method == "POST" && path == "/api/logs/client" {
+        let body = read_body(&mut reader, content_length);
+        client_log(&mut stream, &shared, &body);
         return;
     }
     if method != "GET" && method != "HEAD" {
@@ -1955,7 +2198,7 @@ fn transfer_control(stream: &mut TcpStream, shared: &Arc<Shared>, body: &[u8]) {
         return respond(stream, "503 Service Unavailable", "application/json", body.as_bytes());
     }
     match answer.recv_timeout(Duration::from_secs(5)) {
-        Ok(Ok(bytes)) => {
+        Ok(Ok(_bytes)) => {
             let body = format!("{{\"ok\":true,\"port\":{}}}", serde_json::json!(request.port));
             respond(stream, "200 OK", "application/json", body.as_bytes());
         }
@@ -2043,6 +2286,56 @@ fn transfer_data(stream: &mut TcpStream, shared: &Arc<Shared>, target: &str) {
             respond(stream, "504 Gateway Timeout", "application/json", body.as_bytes());
         }
     }
+}
+
+/// `GET /api/logs?since=<seq>&level=<debug|info|warn|error>`: the activity ring,
+/// oldest first. `since` paginates so a polling client asks only for new entries;
+/// `level` hides everything below it (`info` also hides `debug`).
+fn logs_view(stream: &mut TcpStream, shared: &Arc<Shared>, target: &str) {
+    let params = query(target);
+    let since = params
+        .get("since")
+        .and_then(|value| value.parse::<u64>().ok())
+        .unwrap_or(0);
+    let min_level = params
+        .get("level")
+        .and_then(|value| value.parse::<crate::logs::LogLevel>().ok())
+        .unwrap_or(crate::logs::LogLevel::Debug);
+    let entries = shared.logs.since(since, min_level);
+    let body = serde_json::to_string(&entries).unwrap_or_else(|_| "[]".to_string());
+    respond(stream, "200 OK", "application/json", body.as_bytes());
+}
+
+/// `POST /api/logs/client`: a UI-originated entry lands in the same ring, so
+/// one timeline shows what the engine did and what the human pressed.
+fn client_log(stream: &mut TcpStream, shared: &Arc<Shared>, body: &[u8]) {
+    #[derive(serde::Deserialize)]
+    struct ClientLogBody {
+        level: crate::logs::LogLevel,
+        event: String,
+        #[serde(default)]
+        detail: String,
+    }
+    let request: ClientLogBody = match serde_json::from_slice(body) {
+        Ok(request) => request,
+        Err(error) => {
+            let body = format!("{{\"error\":\"bad request: {error}\"}}");
+            return respond(
+                stream,
+                "400 Bad Request",
+                "application/json",
+                body.as_bytes(),
+            );
+        }
+    };
+    let seq = shared.logs.log(
+        request.level,
+        crate::logs::LogSource::Ui,
+        request.event,
+        request.detail,
+    );
+    let body = format!("{{\"ok\":true,\"seq\":{seq}}}");
+    respond(stream, "200 OK", "application/json", body.as_bytes());
 }
 
 #[derive(serde::Serialize)]
@@ -2416,5 +2709,87 @@ mod tests {
         let _ = client.frames.lock().unwrap().take();
         shared.broadcast_frames("four");
         assert_eq!(shared.sampled(), 2);
+    }
+
+    /// Shutdown writes the activity ring to `<vault>.activity.jsonl`: a REC
+    /// press chooses the file during the session, and both engine and UI
+    /// entries survive into it.
+    #[test]
+    fn the_activity_file_follows_the_vault_on_shutdown() {
+        let dir = std::env::temp_dir().join(format!(
+            "bforge-serve-activity-{}-{}",
+            std::process::id(),
+            std::time::SystemTime::now()
+                .duration_since(std::time::UNIX_EPOCH)
+                .unwrap()
+                .as_millis()
+        ));
+        std::fs::create_dir_all(&dir).unwrap();
+        let vault = dir.join("capture.bflog");
+
+        let server = Server::bind("127.0.0.1:0".parse().unwrap()).unwrap();
+        let addr = server.local_addr().unwrap();
+
+        // A client thread drives the session while the pump runs: start REC,
+        // then add a UI-originated entry, so the file holds both sources.
+        let moved_vault = vault.clone();
+        let recorder = std::thread::spawn(move || {
+            let value = moved_vault;
+            let post = |path: &str, body: &str| {
+                let mut stream = std::net::TcpStream::connect(addr).unwrap();
+                let request = format!(
+                    "POST {path} HTTP/1.1\r\nHost: test\r\nContent-Length: {}\r\nConnection: close\r\n\r\n{body}",
+                    body.len()
+                );
+                stream.write_all(request.as_bytes()).unwrap();
+                let mut reply = String::new();
+                let _ = std::io::BufReader::new(stream).read_to_string(&mut reply);
+                reply
+            };
+            // The pump needs a moment to publish its job-channel senders.
+            std::thread::sleep(Duration::from_millis(150));
+            let record = post(
+                "/api/record",
+                &format!(
+                    "{{\"action\":\"start\",\"path\":\"{}\"}}",
+                    value.display().to_string().replace('\\', "\\\\")
+                ),
+            );
+            assert!(record.contains("200 OK"), "REC start failed: {record}");
+            let client = post(
+                "/api/logs/client",
+                "{\"level\":\"info\",\"event\":\"ui_probe\",\"detail\":\"from the test\"}",
+            );
+            assert!(client.contains("200 OK"), "client log failed: {client}");
+        });
+
+        // A review session has no ports, so the pump cannot block on hardware
+        // and the short duration is the only way out.
+        let stats = server
+            .run(Session::review(), Some(Duration::from_millis(900)))
+            .expect("the run must end cleanly");
+        recorder.join().unwrap();
+        assert!(stats.chunks >= 0);
+
+        let activity_path =
+            std::path::PathBuf::from(format!("{}.activity.jsonl", vault.display()));
+        let text = std::fs::read_to_string(&activity_path)
+            .expect("the activity file must exist next to the vault");
+        let entries: Vec<crate::logs::LogEntry> = text
+            .lines()
+            .map(|line| serde_json::from_str(line).unwrap())
+            .collect();
+        let events: Vec<&str> = entries.iter().map(|entry| entry.event.as_str()).collect();
+        assert!(events.contains(&"engine_start"), "events were {events:?}");
+        assert!(events.contains(&"rec_start"), "events were {events:?}");
+        assert!(events.contains(&"engine_stop"), "events were {events:?}");
+        // A session that ends while recording has no REC-stop press: the seal
+        // itself is the stop, so the last vault line is the engine stopping.
+        let ui_entry = entries
+            .iter()
+            .find(|entry| entry.event == "ui_probe")
+            .expect("the UI entry must survive into the file");
+        assert_eq!(ui_entry.source, crate::logs::LogSource::Ui);
+        std::fs::remove_dir_all(&dir).ok();
     }
 }

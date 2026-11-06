@@ -20,6 +20,7 @@ import { BridgePanel } from './BridgePanel';
 import { FileTransferView } from './FileTransferView';
 import { ElfSymbolView } from './ElfSymbolView';
 import { SchemaDialectView } from './SchemaDialectView';
+import { ActivityLogView } from './ActivityLogView';
 
 const StreamPanel = (_props: IDockviewPanelProps) => <PacketStreamView />;
 const DissectorPanel = (_props: IDockviewPanelProps) => <ProtocolDissector />;
@@ -33,6 +34,7 @@ const TransferPanel = (_props: IDockviewPanelProps) => <FileTransferView />;
 const ElfPanel = (_props: IDockviewPanelProps) => <ElfSymbolView />;
 const SchemaPanel = (_props: IDockviewPanelProps) => <SchemaDialectView />;
 const BridgeMitmPanel = (_props: IDockviewPanelProps) => <BridgePanel />;
+const ActivityPanel = (_props: IDockviewPanelProps) => <ActivityLogView />;
 
 const components = {
   packetStream: StreamPanel,
@@ -47,6 +49,7 @@ const components = {
   elfSymbols: ElfPanel,
   schemaDialects: SchemaPanel,
   bridge: BridgeMitmPanel,
+  activityLog: ActivityPanel,
 };
 
 // Memory of where detached panels originated so restoration docks back into their original deck and index slot
@@ -61,11 +64,12 @@ const detachedOrigins = new Map<string, DetachedOrigin>();
 
 const CANONICAL_DECK_ORDERS: Record<string, string[]> = {
   // Bottom Subdeck
-  oscilloscope: ['oscilloscope', 'commandForge', 'pinSequencer', 'faultRig', 'fileTransfer'],
-  commandForge: ['oscilloscope', 'commandForge', 'pinSequencer', 'faultRig', 'fileTransfer'],
-  pinSequencer: ['oscilloscope', 'commandForge', 'pinSequencer', 'faultRig', 'fileTransfer'],
-  faultRig: ['oscilloscope', 'commandForge', 'pinSequencer', 'faultRig', 'fileTransfer'],
-  fileTransfer: ['oscilloscope', 'commandForge', 'pinSequencer', 'faultRig', 'fileTransfer'],
+  oscilloscope: ['oscilloscope', 'commandForge', 'pinSequencer', 'faultRig', 'fileTransfer', 'activityLog'],
+  commandForge: ['oscilloscope', 'commandForge', 'pinSequencer', 'faultRig', 'fileTransfer', 'activityLog'],
+  pinSequencer: ['oscilloscope', 'commandForge', 'pinSequencer', 'faultRig', 'fileTransfer', 'activityLog'],
+  faultRig: ['oscilloscope', 'commandForge', 'pinSequencer', 'faultRig', 'fileTransfer', 'activityLog'],
+  fileTransfer: ['oscilloscope', 'commandForge', 'pinSequencer', 'faultRig', 'fileTransfer', 'activityLog'],
+  activityLog: ['oscilloscope', 'commandForge', 'pinSequencer', 'faultRig', 'fileTransfer', 'activityLog'],
 
   // Top-Right Dissector Deck
   protocolDissector: ['protocolDissector', 'elfSymbols', 'schemaDialects'],
@@ -133,6 +137,7 @@ const PANEL_ORIGIN_HOMES: Record<
   pinSequencer: { refPanel: 'oscilloscope', position: 'center' },
   faultRig: { refPanel: 'oscilloscope', position: 'center' },
   fileTransfer: { refPanel: 'oscilloscope', position: 'center' },
+  activityLog: { refPanel: 'fileTransfer', position: 'center' },
 
   // Top-Right (Dissector & Schemas)
   protocolDissector: { refPanel: 'packetStream', position: 'right' },
@@ -179,6 +184,7 @@ function findPreferredTarget(
     pinSequencer: { refPanel: 'packetStream', position: 'bottom' },
     faultRig: { refPanel: 'packetStream', position: 'bottom' },
     fileTransfer: { refPanel: 'packetStream', position: 'bottom' },
+    activityLog: { refPanel: 'packetStream', position: 'bottom' },
     elfSymbols: { refPanel: 'packetStream', position: 'right' },
     schemaDialects: { refPanel: 'packetStream', position: 'right' },
     sessionDiff: { refPanel: 'protocolDissector', position: 'bottom' },
@@ -745,6 +751,7 @@ export const WorkstationDock: React.FC = () => {
         fileTransfer: 'X/YMODEM FILE TRANSFER',
         elfSymbols: 'ELF SYMBOLS & CRASH TRACE',
         schemaDialects: 'SCHEMA DIALECTS (PROTO/MAVLINK)',
+        activityLog: 'ACTIVITY LOG',
       };
 
       api.addPanel({

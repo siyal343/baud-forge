@@ -432,6 +432,29 @@ try {
   } else {
     check('plot binds a scope trace lane', false, disTab ? 'no numeric-field plot button visible' : 'dissector tab not reachable');
   }
+
+  // T10: activity log panel mounts, renders its chrome and its empty state.
+  // The smoke runs without an engine, so the ring is unreachable — the empty
+  // state IS the honest rendering here (live endpoints are covered by cargo
+  // tests and the curl pass).
+  {
+    await page.evaluate(() => window.__bforgeStore.getState().requestOpenPanel('activityLog'));
+    await sleep(800);
+    const state = await page.evaluate(() => {
+      const tab = [...document.querySelectorAll('[role="tab"]')].find((x) => x.textContent.includes('ACTIVITY LOG'));
+      const header = [...document.querySelectorAll('span')].some((s) => s.textContent.trim() === 'ACTIVITY LOG');
+      const empty = [...document.querySelectorAll('p')].some((p) => p.textContent.includes('No entries yet'));
+      const filters = ['debug', 'info', 'warn', 'error'].every((level) =>
+        [...document.querySelectorAll('button')].some((b) => b.textContent.trim().toLowerCase() === level)
+      );
+      return { tab: !!tab, header, empty, filters };
+    });
+    check(
+      'activity log panel opens with filters and honest empty state',
+      state.header && state.empty && state.filters,
+      `header=${state.header} empty=${state.empty} filters=${state.filters}`
+    );
+  }
 } finally {
   await browser.close();
 }

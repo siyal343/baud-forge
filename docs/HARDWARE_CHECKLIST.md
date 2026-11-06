@@ -104,17 +104,36 @@ loopback plug bridged against the ESP32 link. Add a second `[[ports]]` +
    - Expect: toast `Field bound to scope`; a colored lane appears in the
      oscilloscope ribbon and plots the field live.
 
+## 8. Activity log (1 min)
+
+One interleaved timeline of what the engine did and what you pressed — the
+first place to look when something misbehaves.
+
+1. Open **LAYOUTS & PANELS → Activity Log**.
+   - Expect: live rows (`session_started`, `port_state`, …) tagged
+     `ENGINE`, and every toast, trace bind, and scope seek you perform
+     tagged `UI`.
+2. Press **REC**, stream ~10 s, press it again.
+   - Expect: `rec_start` / `rec_stop` rows; the level chips filter the view;
+     ⬇ downloads the visible rows as `.jsonl`.
+3. Close the engine.
+   - Expect: `<vault>.activity.jsonl` appears next to the sealed capture.
+
 ---
 
 ## Regression gates (no hardware needed)
 
-- `cargo test --workspace --locked` — 76+ tests
+- `cargo test --workspace --locked` — 76+ tests (incl. the activity-ring and
+  shutdown-persistence tests)
 - `cd ui && pnpm test` — 25 tests
-- `cd ui && pnpm smoke` — 15 checks (headless Chrome/Edge)
+- `cd ui && pnpm smoke` — 16 checks (headless Chrome/Edge)
 - `python e2e/e2e_bridge_rec.py target/release/bforge.exe` — 9 checks
 - `python e2e/e2e_xmodem.py target/release/bforge.exe` — 14 checks
+- `node ui/scripts/activity-live-check.mjs` — manual: engine on :7717 +
+  dev server on :5173, then verifies the panel against live entries
 
-All green as of 2026-11-07 (commit `9012efd`).
+All green as of 2026-11-07 (commit `9012efd`); log-system gates re-verified
+on the activity-log commit.
 
 ---
 

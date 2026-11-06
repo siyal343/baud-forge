@@ -11,6 +11,7 @@ pub mod xmodem;
 pub mod control;
 pub mod diff;
 pub mod fault;
+pub mod logs;
 pub mod mem;
 pub mod pipeline;
 pub mod series;
