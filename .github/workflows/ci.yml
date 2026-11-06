@@ -153,5 +153,7 @@ jobs:
         run: cargo build -p bforge-cli --locked
       - name: Bridge / REC e2e (9 checks)
         run: python e2e/e2e_bridge_rec.py target/debug/bforge.exe
+      - name: Let the previous engine's sockets tear down
+        run: sleep 3
       - name: X/YMODEM e2e (14 checks)
         run: python e2e/e2e_xmodem.py target/debug/bforge.exe
