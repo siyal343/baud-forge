@@ -2,6 +2,7 @@ import React, { useState, useRef, useEffect } from 'react';
 import { createPortal } from 'react-dom';
 import { useShallow } from 'zustand/react/shallow';
 import { useWorkstationStore } from '../store/useWorkstationStore';
+import { useSettingsStore, buildVaultPath } from '../store/useSettingsStore';
 import { useToastStore } from '../store/useToastStore';
 import { engineApi } from '../services/engineApi';
 import {
@@ -13,14 +14,13 @@ import {
   Cpu,
   Radio,
   Clock,
-  ZoomIn,
-  ZoomOut,
   RotateCcw,
   Download,
   LayoutGrid,
   ChevronDown,
   Check,
   Settings2,
+  Settings,
   Save,
   Bookmark,
 } from 'lucide-react';
@@ -61,7 +61,6 @@ export const GlobalRibbon: React.FC = () => {
     vaultBytes,
     isScanningPorts,
     rescanPorts,
-    uiScale,
     activePreset,
     connect,
     disconnect,
@@ -72,7 +71,6 @@ export const GlobalRibbon: React.FC = () => {
     toggleFaultArm,
     toggleSimulationMode,
     loadSampleCapture,
-    setUiScale,
     setExportModalOpen,
     setActivePreset,
     requestOpenPanel,
@@ -99,7 +97,6 @@ export const GlobalRibbon: React.FC = () => {
       vaultBytes: s.vaultBytes,
       isScanningPorts: s.isScanningPorts,
       rescanPorts: s.rescanPorts,
-      uiScale: s.uiScale,
       activePreset: s.activePreset,
       connect: s.connect,
       disconnect: s.disconnect,
@@ -110,7 +107,6 @@ export const GlobalRibbon: React.FC = () => {
       toggleFaultArm: s.toggleFaultArm,
       toggleSimulationMode: s.toggleSimulationMode,
       loadSampleCapture: s.loadSampleCapture,
-      setUiScale: s.setUiScale,
       setExportModalOpen: s.setExportModalOpen,
       setActivePreset: s.setActivePreset,
       requestOpenPanel: s.requestOpenPanel,
@@ -468,45 +464,8 @@ export const GlobalRibbon: React.FC = () => {
           )}
       </div>
 
-      {/* Right: Signature Workflows, Zoom & Export */}
+      {/* Right: Signature Workflows & Export */}
       <div className="flex items-center gap-1.5 shrink-0">
-        {/* UI Zoom Controls */}
-        <div
-          title="Adjust display scaling ratio for different monitor sizes (Ctrl + / Ctrl - / Ctrl 0)"
-          className="flex items-center bg-[#161C28] border border-[#222D3D] rounded px-1 py-0.5 text-[10px] font-mono text-[#94A3B8]"
-        >
-          <button
-            onClick={() => setUiScale(uiScale - 0.05)}
-            title="Zoom Out (Ctrl -)"
-            className="p-0.5 hover:text-[#00E5FF] transition-colors"
-          >
-            <ZoomOut className="w-3 h-3" />
-          </button>
-          <button
-            onClick={() => setUiScale(1.0)}
-            title="Reset Zoom to 100% (Ctrl 0)"
-            className="px-1 text-[10px] hover:text-[#00E5FF] transition-colors"
-          >
-            {Math.round(uiScale * 100)}%
-          </button>
-          <button
-            onClick={() => setUiScale(uiScale + 0.05)}
-            title="Zoom In (Ctrl +)"
-            className="p-0.5 hover:text-[#00E5FF] transition-colors"
-          >
-            <ZoomIn className="w-3 h-3" />
-          </button>
-          {uiScale !== 1.0 && (
-            <button
-              onClick={() => setUiScale(1.0)}
-              title="Reset Zoom"
-              className="ml-0.5 text-[#64748B] hover:text-[#00E5FF]"
-            >
-              <RotateCcw className="w-2.5 h-2.5" />
-            </button>
-          )}
-        </div>
-
         {/* Flash-Yield Button / Countdown Banner */}
         {isYielded ? (
           <div className="flex items-center gap-1.5 bg-[#F59E0B]/20 border border-[#F59E0B] text-[#F59E0B] px-2 py-0.5 rounded animate-pulse">
@@ -592,8 +551,12 @@ export const GlobalRibbon: React.FC = () => {
                   pushToast('error', 'Stop failed', result.error ?? 'Engine did not confirm.');
                 }
               } else {
-                const stamp = new Date().toISOString().replace(/[:.]/g, '-').slice(0, 19);
-                const result = await engineApi.recordControl('start', `vaults/rec-${stamp}.bflog`);
+                // Vault path from the Settings dialog's name pattern
+                // (defaults to `vaults/rec-<stamp>.bflog`).
+                const result = await engineApi.recordControl(
+                  'start',
+                  buildVaultPath(useSettingsStore.getState().settings.vaultNamePattern)
+                );
                 if (result.ok) {
                   pushToast('success', 'Recording started', `${result.vault} is capturing the raw link.`);
                 } else {
@@ -634,6 +597,15 @@ export const GlobalRibbon: React.FC = () => {
         >
           <Download className="w-3 h-3" />
           <span className="hidden sm:inline font-bold">EXPORT</span>
+        </button>
+
+        {/* Global Settings Dialog (gear · Ctrl+,) */}
+        <button
+          onClick={() => useSettingsStore.getState().setSettingsOpen(true)}
+          title="Application settings: appearance, performance & export defaults (Ctrl+,)"
+          className="flex items-center px-1.5 py-0.5 bg-[#161C28] hover:bg-[#1E2638] text-[#94A3B8] hover:text-[#00E5FF] border border-[#222D3D] hover:border-[#00E5FF]/40 rounded transition-colors"
+        >
+          <Settings className="w-3 h-3" />
         </button>
       </div>
 

@@ -512,6 +512,115 @@ try {
     );
     await page.evaluate(() => window.__bforgeStore.getState().setExportModalOpen(false));
   }
+
+  // T12: Settings dialog — entry points, draft semantics, persistence, and
+  // the hex/tooltip preferences it drives. Runs entirely against the real UI
+  // (gear clicks, Ctrl+,) plus the persisted blob for the durability claims.
+  {
+    const clickInSettings = (text) =>
+      page.evaluate((t) => {
+        const overlay = [...document.querySelectorAll('div')].find((d) =>
+          d.className?.includes?.('z-[999998]')
+        );
+        const btn = [...overlay.querySelectorAll('button')].find(
+          (b) => b.textContent.trim() === t && b.getBoundingClientRect().width > 0
+        );
+        if (btn) btn.click();
+        return !!btn;
+      }, text);
+
+    const settingsOpen = () =>
+      page.evaluate(() =>
+        [...document.querySelectorAll('span')].some((s) => s.textContent.trim() === 'SETTINGS')
+      );
+
+    const openViaGear = async () => {
+      await page.evaluate(() => {
+        const gear = [...document.querySelectorAll('button')].find((b) =>
+          (b.getAttribute('title') || '').startsWith('Application settings')
+        );
+        gear?.click();
+      });
+      await sleep(400);
+    };
+
+    // Gear opens the dialog
+    await openViaGear();
+    check('gear opens settings dialog', await settingsOpen());
+
+    // Escape closes and DISCARDS the draft (no blob must be written)
+    await clickInSettings('SESSION'); // stage timestampBase=relative
+    await page.keyboard.press('Escape');
+    await sleep(300);
+    const afterDiscard = await page.evaluate(() => localStorage.getItem('bforge_settings_v1'));
+    check(
+      'Escape discards settings draft',
+      !(await settingsOpen()) && afterDiscard === null,
+      `blob=${afterDiscard === null ? 'absent' : 'written!'}`
+    );
+
+    // Ctrl+, opens
+    await page.keyboard.down('Control');
+    await page.keyboard.press(',');
+    await page.keyboard.up('Control');
+    await sleep(400);
+    check('Ctrl+, opens settings dialog', await settingsOpen());
+
+    // Apply persists (timestamp base SESSION) and survives a reload
+    await clickInSettings('SESSION');
+    await clickInSettings('Apply');
+    await sleep(300);
+    let blob = JSON.parse(await page.evaluate(() => localStorage.getItem('bforge_settings_v1') || '{}'));
+    check('Apply writes settings blob', blob.timestampBase === 'relative', JSON.stringify(blob.timestampBase));
+    await page.reload({ waitUntil: 'domcontentloaded' });
+    await sleep(2500);
+    blob = JSON.parse(await page.evaluate(() => localStorage.getItem('bforge_settings_v1') || '{}'));
+    check('settings survive reload', blob.timestampBase === 'relative', JSON.stringify(blob.timestampBase));
+
+    // Hex bytes/row setting reflows the Hex Inspector ruler (16 -> 32 cells)
+    await openViaGear();
+    await clickInSettings('32');
+    await clickInSettings('Apply');
+    await sleep(300);
+    await page.evaluate(() => window.__bforgeStore.getState().requestOpenPanel('hexInspector'));
+    await sleep(800);
+    const rulerCells = await page.evaluate(() => {
+      const head = [...document.querySelectorAll('div')].find(
+        (d) => d.className?.includes?.('h-[22px]') && d.textContent.includes('Offset')
+      );
+      return head ? head.children[1].querySelectorAll('span').length : -1;
+    });
+    check('hex bytes/row setting reflows inspector', rulerCells === 32, `cells=${rulerCells}`);
+
+    // Tooltip kill switch: hover with tooltips OFF shows nothing, ON shows the surface
+    await openViaGear();
+    await clickInSettings('OFF'); // first OFF row is "Tooltips:"
+    await clickInSettings('Apply');
+    await sleep(300);
+    await page.hover('button[title*="Application settings"]');
+    await sleep(500);
+    const tooltipOff = await page.evaluate(
+      () => ![...document.querySelectorAll('div')].some((d) => d.className?.includes?.('pointer-events-none') && d.textContent.trim())
+    );
+    check('tooltip OFF silences overlay', tooltipOff);
+
+    // Restore factory defaults and verify the blob matches them
+    await openViaGear();
+    await clickInSettings('Reset to defaults');
+    await clickInSettings('Apply');
+    await sleep(300);
+    blob = JSON.parse(await page.evaluate(() => localStorage.getItem('bforge_settings_v1') || '{}'));
+    check(
+      'reset restores factory defaults',
+      blob.timestampBase === 'wall' &&
+        blob.hexBytesPerRow === 16 &&
+        blob.tooltipsEnabled === true &&
+        blob.uiScale === 1.0 &&
+        blob.maxPackets === 10000 &&
+        blob.defaultExportFormat === 'pcapng',
+      JSON.stringify(blob)
+    );
+  }
 } finally {
   await browser.close();
 }

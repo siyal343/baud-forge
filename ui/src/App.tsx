@@ -1,16 +1,19 @@
 import React, { useEffect, useState } from 'react';
 import { useShallow } from 'zustand/react/shallow';
 import { useWorkstationStore } from './store/useWorkstationStore';
+import { useSettingsStore } from './store/useSettingsStore';
 import { GlobalRibbon } from './components/GlobalRibbon';
 import { WorkstationDock } from './components/WorkstationDock';
 import { DvrTimelineBar } from './components/DvrTimelineBar';
 import { StatusFooter } from './components/StatusFooter';
 import { VaultExportModal } from './components/VaultExportModal';
+import { SettingsModal } from './components/SettingsModal';
 import { TooltipOverlay } from './components/TooltipOverlay';
 import { ToastHost } from './components/ToastHost';
 import { Launcher, isDesktopShell, hasEngineParam } from './components/Launcher';
 import { generateSampleImuPacket } from './services/simulationEngine';
 import { engineApi } from './services/engineApi';
+import { formatPacketTime } from './utils/format';
 import { PacketDirection } from './types';
 
 export const App: React.FC = () => {
@@ -48,8 +51,6 @@ export const App: React.FC = () => {
     isPaused,
     isFaultArmed,
     selectedPort,
-    uiScale,
-    setUiScale,
     addPacket,
     addPacketBatch,
     loadSampleCapture,
@@ -66,8 +67,6 @@ export const App: React.FC = () => {
       isPaused: s.isPaused,
       isFaultArmed: s.isFaultArmed,
       selectedPort: s.selectedPort,
-      uiScale: s.uiScale,
-      setUiScale: s.setUiScale,
       addPacket: s.addPacket,
       addPacketBatch: s.addPacketBatch,
       loadSampleCapture: s.loadSampleCapture,
@@ -80,6 +79,9 @@ export const App: React.FC = () => {
       setFilterText: s.setFilterText,
     }))
   );
+  // UI scale is a global preference now (Settings dialog) — live in the
+  // settings store so the Launcher screen can apply the same zoom.
+  const uiScale = useSettingsStore((s) => s.settings.uiScale);
 
   // The demo capture seeds only when there is no engine to connect to —
   // tryConnect's failure path seeds it after the first failed health check.
@@ -99,10 +101,9 @@ export const App: React.FC = () => {
     const handleFrameBatch = (rawFrames: any[]) => {
       if (Array.isArray(rawFrames) && rawFrames.length > 0) {
         const now = new Date();
-        const timeStr =
-          now.toTimeString().split(' ')[0] +
-          '.' +
-          String(now.getMilliseconds()).padStart(3, '0');
+        // Wall clock or session-relative per the Settings dialog; the shared
+        // formatter reads the base at format time so the next frame complies.
+        const timeStr = formatPacketTime(now);
 
         const batch = rawFrames.map((f: any, idx: number) => {
           const bytes = f.hex
@@ -280,13 +281,19 @@ export const App: React.FC = () => {
 
       if (e.ctrlKey && (e.key === '=' || e.key === '+')) {
         e.preventDefault();
-        setUiScale(uiScale + 0.05);
+        const cur = useSettingsStore.getState().settings.uiScale;
+        useSettingsStore.getState().updateSettings({ uiScale: cur + 0.05 });
       } else if (e.ctrlKey && e.key === '-') {
         e.preventDefault();
-        setUiScale(uiScale - 0.05);
+        const cur = useSettingsStore.getState().settings.uiScale;
+        useSettingsStore.getState().updateSettings({ uiScale: cur - 0.05 });
       } else if (e.ctrlKey && e.key === '0') {
         e.preventDefault();
-        setUiScale(1.0);
+        useSettingsStore.getState().updateSettings({ uiScale: 1.0 });
+      } else if (e.ctrlKey && e.key === ',') {
+        // Standard settings shortcut — opens the global Settings dialog.
+        e.preventDefault();
+        useSettingsStore.getState().setSettingsOpen(true);
       } else if (e.code === 'Space') {
         e.preventDefault();
         setDvrPaused(!useWorkstationStore.getState().isPaused);
@@ -314,7 +321,7 @@ export const App: React.FC = () => {
 
     window.addEventListener('keydown', handleKeyDown);
     return () => window.removeEventListener('keydown', handleKeyDown);
-  }, [setDvrPaused, stepFrame, triggerFlashYield, setFilterText, clearStream, uiScale, setUiScale]);
+  }, [setDvrPaused, stepFrame, triggerFlashYield, setFilterText, clearStream]);
 
   // Synchronize native webview zoom to document element for perfect responsive scaling
   useEffect(() => {
@@ -338,6 +345,9 @@ export const App: React.FC = () => {
 
       {/* 5. Session Vault Export Modal (specs/0044) */}
       <VaultExportModal />
+
+      {/* 5b. Global Settings Dialog (ribbon gear / Launcher gear / Ctrl+,) */}
+      <SettingsModal />
 
       {/* 6. Global Dark Engineering Tooltip Surface */}
       <TooltipOverlay />

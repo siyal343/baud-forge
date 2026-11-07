@@ -2,6 +2,7 @@
 // Implements simulated ImuPacket streaming per crates/bforge-dissect/tests/fixtures/imu_packet.h
 
 import { PacketRow, DissectedField, ScopeSignalSample } from '../types';
+import { formatPacketTime } from '../utils/format';
 
 let globalSeq = 1;
 let bootEpochUs = 100000;
@@ -86,7 +87,8 @@ export function generateSampleImuPacket(
     .join(' ');
 
   const now = new Date();
-  const timeStr = now.toTimeString().split(' ')[0] + '.' + String(now.getMilliseconds()).padStart(3, '0');
+  // Wall clock or session-relative per the Settings dialog (shared formatter).
+  const timeStr = formatPacketTime(now);
 
   const isValidCrc = !injectFault;
 

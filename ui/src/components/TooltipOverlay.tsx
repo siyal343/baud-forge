@@ -1,5 +1,6 @@
 import React, { useState, useEffect, useRef, useLayoutEffect } from 'react';
 import { createPortal } from 'react-dom';
+import { useSettingsStore } from '../store/useSettingsStore';
 
 interface TooltipState {
   visible: boolean;
@@ -9,6 +10,7 @@ interface TooltipState {
 }
 
 export const TooltipOverlay: React.FC = () => {
+  const tooltipsEnabled = useSettingsStore((s) => s.settings.tooltipsEnabled);
   const [tooltip, setTooltip] = useState<TooltipState>({
     visible: false,
     text: '',
@@ -21,6 +23,14 @@ export const TooltipOverlay: React.FC = () => {
   const [coords, setCoords] = useState<{ left: number; top: number }>({ left: -9999, top: -9999 });
 
   useEffect(() => {
+    // Disabled in Settings: stand down entirely. Native `title` attributes
+    // keep working because the migration below no longer strips them.
+    if (!tooltipsEnabled) {
+      activeTargetRef.current = null;
+      setTooltip((prev) => (prev.visible ? { ...prev, visible: false } : prev));
+      return;
+    }
+
     const handleMouseOver = (e: MouseEvent) => {
       const target = (e.target as HTMLElement | null)?.closest?.(
         '[data-tooltip], [title]'
@@ -87,7 +97,7 @@ export const TooltipOverlay: React.FC = () => {
       document.removeEventListener('mouseout', handleMouseOut, true);
       if (hideTimerRef.current) window.clearTimeout(hideTimerRef.current);
     };
-  }, [tooltip.visible]);
+  }, [tooltipsEnabled, tooltip.visible]);
 
   // Compute exact position with guaranteed screen clamping
   useLayoutEffect(() => {

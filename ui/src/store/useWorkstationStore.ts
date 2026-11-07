@@ -5,6 +5,7 @@ import { engineApi } from '../services/engineApi';
 import { logAction } from '../services/activityLog';
 import { isDesktopShell } from '../components/Launcher';
 import { toast } from './useToastStore';
+import { useSettingsStore } from './useSettingsStore';
 
 interface WorkstationState {
   // Connection & Port
@@ -78,7 +79,6 @@ interface WorkstationState {
   txBytes: number;
   packetRate: number;
   overruns: number;
-  uiScale: number;
   isExportModalOpen: boolean;
   activePreset: 'default' | 'dissector' | 'scope' | 'hil';
   openPanelId: string | null;
@@ -95,7 +95,6 @@ interface WorkstationState {
   requestSaveLayout: () => void;
   requestRestoreSavedLayout: () => void;
   setHasSavedLayout: (saved: boolean) => void;
-  setUiScale: (scale: number) => void;
   connect: () => Promise<void>;
   disconnect: () => void;
   setSelectedPort: (port: string) => void;
@@ -144,8 +143,10 @@ interface WorkstationState {
   updateSession: (session: { mode: string; vault: string; file_bytes: number; chunks: number }) => void;
 }
 
-const MAX_PACKETS = 10000;
-const MAX_SCOPE_SAMPLES = 600;
+// Ring depths are live Settings (Settings dialog → Performance), read at
+// mutation time so a change applies to newly captured data without a reload.
+const maxPackets = () => useSettingsStore.getState().settings.maxPackets;
+const maxScopeSamples = () => useSettingsStore.getState().settings.maxScopeSamples;
 
 // Live packet-rate metering: timestamps of recently added packets, sampled
 // once per second. Kept outside the reactive state — only the computed rate
@@ -297,14 +298,6 @@ export const useWorkstationStore = create<WorkstationState>((set, get) => ({
   txBytes: 0,
   packetRate: 0,
   overruns: 0,
-  uiScale: (() => {
-    try {
-      const saved = localStorage.getItem('bforge_ui_scale');
-      if (saved) return parseFloat(saved);
-      if (typeof window !== 'undefined' && window.innerWidth < 1440) return 0.9;
-    } catch (_) {}
-    return 1.0;
-  })(),
   isExportModalOpen: false,
   activePreset: (localStorage.getItem('bforge_active_preset') as any) || 'default',
   openPanelId: null,
@@ -326,13 +319,6 @@ export const useWorkstationStore = create<WorkstationState>((set, get) => ({
   requestSaveLayout: () => set((state) => ({ saveLayoutTrigger: state.saveLayoutTrigger + 1 })),
   requestRestoreSavedLayout: () => set((state) => ({ restoreSavedLayoutTrigger: state.restoreSavedLayoutTrigger + 1 })),
   setHasSavedLayout: (saved) => set({ hasSavedLayout: saved }),
-  setUiScale: (scale: number) => {
-    const clamped = Math.min(1.5, Math.max(0.7, Math.round(scale * 100) / 100));
-    try {
-      localStorage.setItem('bforge_ui_scale', clamped.toString());
-    } catch (_) {}
-    set({ uiScale: clamped });
-  },
   connect: async () => {
     // The desktop launcher owns real session starts (Tauri). Against a CLI
     // engine, a running session's ports are fixed — /api/quick-connect says
@@ -692,12 +678,12 @@ export const useWorkstationStore = create<WorkstationState>((set, get) => ({
           if (value === null) continue;
           const series = [...(next[binding.id] ?? []), { tUs: pkt.timestampUs, value }];
           next[binding.id] =
-            series.length > MAX_SCOPE_SAMPLES ? series.slice(series.length - MAX_SCOPE_SAMPLES) : series;
+            series.length > maxScopeSamples() ? series.slice(series.length - maxScopeSamples()) : series;
         }
         traceSeries = next;
       }
-      const newPackets = state.packets.length >= MAX_PACKETS
-        ? [...state.packets.slice(state.packets.length - MAX_PACKETS + 1), pkt]
+      const newPackets = state.packets.length >= maxPackets()
+        ? [...state.packets.slice(state.packets.length - maxPackets() + 1), pkt]
         : [...state.packets, pkt];
 
       // Scope data source: synthetic generator in simulation mode, decoded
@@ -705,8 +691,8 @@ export const useWorkstationStore = create<WorkstationState>((set, get) => ({
       const scopePt = state.isSimulated
         ? generateScopeSample(pkt.timestampUs)
         : scopeSampleFromPacket(pkt, state.scopeSamples[state.scopeSamples.length - 1] ?? null);
-      const newScope = state.scopeSamples.length >= MAX_SCOPE_SAMPLES
-        ? [...state.scopeSamples.slice(state.scopeSamples.length - MAX_SCOPE_SAMPLES + 1), scopePt]
+      const newScope = state.scopeSamples.length >= maxScopeSamples()
+        ? [...state.scopeSamples.slice(state.scopeSamples.length - maxScopeSamples() + 1), scopePt]
         : [...state.scopeSamples, scopePt];
 
       return {
@@ -730,8 +716,8 @@ export const useWorkstationStore = create<WorkstationState>((set, get) => ({
     if (rateTimestamps.length > 400) rateTimestamps.splice(0, rateTimestamps.length - 400);
     set((state) => {
       let combined = state.packets.concat(batch);
-      if (combined.length > MAX_PACKETS) {
-        combined = combined.slice(combined.length - MAX_PACKETS);
+      if (combined.length > maxPackets()) {
+        combined = combined.slice(combined.length - maxPackets());
       }
 
       // Sample scope points from the newest frames (decoded payloads in HW mode)
@@ -756,13 +742,13 @@ export const useWorkstationStore = create<WorkstationState>((set, get) => ({
           if (!points.length) continue;
           const series = [...(next[binding.id] ?? []), ...points];
           next[binding.id] =
-            series.length > MAX_SCOPE_SAMPLES ? series.slice(series.length - MAX_SCOPE_SAMPLES) : series;
+            series.length > maxScopeSamples() ? series.slice(series.length - maxScopeSamples()) : series;
         }
         traceSeries = next;
       }
       let combinedScope = state.scopeSamples.concat(newScopeSamples);
-      if (combinedScope.length > MAX_SCOPE_SAMPLES) {
-        combinedScope = combinedScope.slice(combinedScope.length - MAX_SCOPE_SAMPLES);
+      if (combinedScope.length > maxScopeSamples()) {
+        combinedScope = combinedScope.slice(combinedScope.length - maxScopeSamples());
       }
 
       const addedBytes = batch.reduce((sum, p) => sum + p.length, 0);

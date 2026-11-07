@@ -11,7 +11,10 @@
 // session of the same kind is one click. Recents can be pruned (× per entry)
 // or wiped (CLEAR ALL) without touching the workspace files themselves.
 import React, { useEffect, useState } from 'react';
+import { Settings } from 'lucide-react';
 import { logAction } from '../services/activityLog';
+import { useSettingsStore } from '../store/useSettingsStore';
+import { SettingsModal } from './SettingsModal';
 
 type TauriCore = {
   invoke: (cmd: string, args?: Record<string, unknown>) => Promise<unknown>;
@@ -682,6 +685,25 @@ export const Launcher: React.FC = () => {
   // than one of the named actions below.
   const startingPath = busy !== null && busy !== 'demo' && busy !== 'review' && !busy.startsWith('qc-');
 
+  // Same document zoom as the workbench — UI scale is a global preference
+  // (Settings dialog), and the launcher previously never applied it.
+  const uiScale = useSettingsStore((s) => s.settings.uiScale);
+  useEffect(() => {
+    (document.documentElement.style as any).zoom = String(uiScale || 1.0);
+  }, [uiScale]);
+
+  // Ctrl+, opens Settings here too.
+  useEffect(() => {
+    const onKey = (e: KeyboardEvent) => {
+      if (e.ctrlKey && e.key === ',') {
+        e.preventDefault();
+        useSettingsStore.getState().setSettingsOpen(true);
+      }
+    };
+    window.addEventListener('keydown', onKey);
+    return () => window.removeEventListener('keydown', onKey);
+  }, []);
+
   return (
     <div className="w-full h-screen bg-[#0A0D13] flex flex-col select-none overflow-hidden">
       <header className="shrink-0 flex items-baseline gap-2 px-5 pt-4 pb-3 bg-[#10141D] border-b border-[#222D3D]">
@@ -690,6 +712,13 @@ export const Launcher: React.FC = () => {
         <span className="ml-auto text-[10px] text-[#64748B] font-mono truncate">
           Hardware engineering workstation — configure a session on the left, or open one from the right.
         </span>
+        <button
+          onClick={() => useSettingsStore.getState().setSettingsOpen(true)}
+          title="Application settings: appearance, performance & export defaults (Ctrl+,)"
+          className="shrink-0 self-center flex items-center px-1.5 py-0.5 bg-[#0A0D13] hover:bg-[#1E2638] text-[#94A3B8] hover:text-[#00E5FF] border border-[#222D3D] hover:border-[#00E5FF]/40 rounded transition-colors"
+        >
+          <Settings className="w-3 h-3" />
+        </button>
       </header>
 
       <div className="flex-1 min-h-0 flex gap-3 p-3">
@@ -774,6 +803,9 @@ export const Launcher: React.FC = () => {
           {error && errorBox(error)}
         </section>
       </div>
+
+      {/* Global Settings dialog — shared with the workbench screen */}
+      <SettingsModal />
     </div>
   );
 };

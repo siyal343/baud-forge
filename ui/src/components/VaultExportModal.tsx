@@ -14,10 +14,9 @@ import {
   AlertCircle
 } from 'lucide-react';
 import { useWorkstationStore } from '../store/useWorkstationStore';
+import { useSettingsStore, ExportFormat } from '../store/useSettingsStore';
 import { engineApi, exportPacketsClientSide } from '../services/engineApi';
 import { isDesktopShell } from './Launcher';
-
-type ExportFormat = 'pcapng' | 'csv' | 'saleae' | 'jsonl' | 'parquet';
 
 interface FormatOption {
   id: ExportFormat;
@@ -89,7 +88,7 @@ export const VaultExportModal: React.FC = () => {
       baudRate: s.baudRate,
     }))
   );
-  const [selectedFormat, setSelectedFormat] = useState<ExportFormat>('pcapng');
+  const [selectedFormat, setSelectedFormat] = useState<ExportFormat>(useSettingsStore.getState().settings.defaultExportFormat);
   const [sourceMode, setSourceMode] = useState<'vault' | 'memory'>('vault');
   // Empty means the active session vault — a hardcoded example path here used
   // to export a vault that does not exist and report success anyway.
@@ -111,6 +110,13 @@ export const VaultExportModal: React.FC = () => {
       });
     }
   }, [isExportModalOpen, sourceMode, customVaultPath]);
+
+  // The Settings dialog's "Default Export Format" preselects each open.
+  useEffect(() => {
+    if (isExportModalOpen) {
+      setSelectedFormat(useSettingsStore.getState().settings.defaultExportFormat);
+    }
+  }, [isExportModalOpen]);
 
   if (!isExportModalOpen) return null;
 
