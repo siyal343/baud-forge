@@ -8,6 +8,7 @@
 
 pub mod assert;
 pub mod xmodem;
+pub mod crash;
 pub mod control;
 pub mod diff;
 pub mod fault;

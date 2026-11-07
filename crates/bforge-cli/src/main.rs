@@ -48,6 +48,9 @@ duration is given.
 ";
 
 fn main() -> ExitCode {
+    // Long unattended captures (`record --duration 1h`) deserve a post-mortem
+    // when something panics; the hook also keeps the default stderr print.
+    bforge_core::crash::install_panic_hook();
     let args: Vec<String> = std::env::args().skip(1).collect();
     let command = args.first().map(String::as_str);
 

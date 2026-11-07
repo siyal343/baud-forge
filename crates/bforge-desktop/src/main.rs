@@ -742,6 +742,10 @@ fn quick_connect(
 }
 
 fn main() {
+    // A window-launched binary has no stderr: without this, a panic anywhere
+    // in the process dies silently. The hook writes a crash report to the
+    // temp directory carrying the activity ring's last entries.
+    bforge_core::crash::install_panic_hook();
     tauri::Builder::default()
         .manage(Engine::default())
         .invoke_handler(tauri::generate_handler![

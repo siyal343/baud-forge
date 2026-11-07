@@ -37,6 +37,13 @@ const EVENT_TICK: Duration = Duration::from_millis(20);
 /// batches it never had a chance to read.
 const FRAME_TICK: Duration = Duration::from_millis(50);
 
+/// How often the activity ring is re-written beside the vault while the
+/// session runs. The shutdown write is the authoritative one; this exists so
+/// a process that never reaches shutdown — a kill, a crash, a power cut —
+/// still leaves a recent trail on disk, and a panic hook carries the
+/// in-memory remainder into its report.
+const ACTIVITY_FLUSH_INTERVAL: Duration = Duration::from_secs(30);
+
 /// What one serve session did.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct ServeStats {
@@ -236,10 +243,16 @@ struct Shared {
     config: Mutex<Option<crate::ProjectConfig>>,
     /// One interleaved timeline of engine and UI events (spec: activity log).
     /// Read by `GET /api/logs`, written by the pump thread and `POST /api/logs/client`.
-    logs: crate::logs::LogRing,
-    /// The vault the next activity file follows: set when a REC press starts
-    /// one, consulted again at shutdown before `<vault>.activity.jsonl` lands.
+    /// Held as an `Arc` so the crash hook (`crate::crash`) can reach the ring
+    /// after any thread panics.
+    logs: Arc<crate::logs::LogRing>,
+    /// The vault the next activity file follows: the session's own vault from
+    /// the start, replaced when a REC press starts one, consulted again at
+    /// shutdown before `<vault>.activity.jsonl` lands.
     activity_path: Mutex<Option<std::path::PathBuf>>,
+    /// Serializes the flush thread's periodic activity writes against the
+    /// shutdown write, so the final snapshot always lands last.
+    activity_lock: Mutex<()>,
 }
 
 impl Shared {
@@ -252,6 +265,25 @@ impl Shared {
     ) {
         self.logs
             .log(level, crate::logs::LogSource::Engine, event, detail.to_string());
+    }
+
+    /// Write the ring to the session's `<vault>.activity.jsonl`, if a session
+    /// vault is known and the ring holds anything. Callers must hold
+    /// [`Shared::activity_lock`] so a periodic flush and the shutdown write
+    /// never interleave.
+    fn write_activity_file_locked(
+        &self,
+    ) -> Option<std::io::Result<(std::path::PathBuf, usize)>> {
+        let vault = self.activity_path.lock().unwrap().clone()?;
+        if self.logs.is_empty() {
+            return None;
+        }
+        let activity = std::path::PathBuf::from(format!("{}.activity.jsonl", vault.display()));
+        Some(
+            self.logs
+                .write_jsonl(&activity)
+                .map(|count| (activity, count)),
+        )
     }
 
     fn set_snapshot(&self, json: String) {
@@ -292,6 +324,24 @@ impl Shared {
     }
 }
 
+/// Re-write the activity file every [`ACTIVITY_FLUSH_INTERVAL`]. Runs on its
+/// own thread for the length of the session; the shutdown write is the
+/// authoritative last one, so once the stop flag is up this thread leaves the
+/// file alone.
+fn flush_activity_loop(shared: Arc<Shared>, stop: Arc<AtomicBool>) {
+    while !stop.load(Ordering::Relaxed) {
+        std::thread::sleep(ACTIVITY_FLUSH_INTERVAL);
+        let guard = shared.activity_lock.lock().unwrap();
+        // Checked under the lock: the shutdown write raises the flag before
+        // it takes the lock, so a wake-up that finds it set must not write.
+        if stop.load(Ordering::Relaxed) {
+            break;
+        }
+        let _ = shared.write_activity_file_locked();
+        drop(guard);
+    }
+}
+
 /// A bound listener waiting to be served.
 #[derive(Debug)]
 pub struct Server {
@@ -305,11 +355,15 @@ impl Server {
     pub fn bind(address: SocketAddr) -> std::io::Result<Self> {
         let listener = TcpListener::bind(address)?;
         listener.set_nonblocking(true)?;
-        Ok(Self {
+        let server = Self {
             listener,
             shared: Arc::new(Shared::default()),
             stop: Arc::new(AtomicBool::new(false)),
-        })
+        };
+        // A crash report must be able to name the active session's ring; the
+        // newest server wins, one process serves one session at a time.
+        crate::crash::register_ring(&server.shared.logs);
+        Ok(server)
     }
 
     pub fn local_addr(&self) -> std::io::Result<SocketAddr> {
@@ -379,6 +433,24 @@ impl Server {
         *shared.transfer_request.lock().unwrap() = Some(transfer_tx);
 
         let events = session.subscribe();
+        // The activity file follows the session's own vault until a REC press
+        // picks another one; both the flush thread and the shutdown write read
+        // this, and the crash hook cites it if the process dies mid-session.
+        let auto_vault = session.snapshot().session.vault;
+        let activity_path = if auto_vault.is_empty() {
+            None
+        } else {
+            Some(std::path::PathBuf::from(&auto_vault))
+        };
+        *shared.activity_path.lock().unwrap() = activity_path.clone();
+        crate::crash::set_activity_path(activity_path);
+        // Re-write the activity file while the session runs, so a crash loses
+        // at most one interval of trail (the panic hook saves the rest).
+        let _flusher = {
+            let shared = Arc::clone(&shared);
+            let stop = Arc::clone(&stop);
+            std::thread::spawn(move || flush_activity_loop(shared, stop))
+        };
         let mut reported_sampled = 0u64;
         let mut frames_sent = Instant::now();
         let started = Instant::now();
@@ -507,8 +579,9 @@ impl Server {
                 match &result {
                     Ok(vault) => {
                         if starting {
-                            *shared.activity_path.lock().unwrap() =
-                                Some(std::path::PathBuf::from(vault));
+                            let path = std::path::PathBuf::from(&vault);
+                            crate::crash::set_activity_path(Some(path.clone()));
+                            *shared.activity_path.lock().unwrap() = Some(path);
                             shared.log(crate::logs::LogLevel::Info, "rec_start", vault);
                         } else {
                             shared.log(crate::logs::LogLevel::Info, "rec_stop", vault);
@@ -676,7 +749,10 @@ impl Server {
         shared.clients.lock().unwrap().clear();
         // A served session is a recorded session: seal it, so the vault gets its
         // index and a reader does not have to repair it.
-        let auto_vault = session.snapshot().session.vault;
+        // The stop flag is already up, so the flush thread will not start a
+        // write; the lock still guards the window where a flush that woke up
+        // just before it is mid-write. Taking it here means the final
+        // snapshot — the engine_stop entry included — always lands last.
         let chunks = match session.seal() {
             Ok(summary) => summary.chunks,
             Err(error) => {
@@ -689,32 +765,17 @@ impl Server {
             "engine_stop",
             format!("{chunks} chunk(s) sealed"),
         );
-        // The activity file sits next to the vault it describes: a REC press
-        // chose it during the session, otherwise the session's own vault.
-        let vault = shared
-            .activity_path
-            .lock()
-            .unwrap()
-            .clone()
-            .or_else(|| {
-                if auto_vault.is_empty() {
-                    None
-                } else {
-                    Some(std::path::PathBuf::from(&auto_vault))
-                }
-            });
-        if let Some(vault) = vault {
-            let activity = std::path::PathBuf::from(format!("{}.activity.jsonl", vault.display()));
-            match shared.logs.write_jsonl(&activity) {
-                Ok(count) => {
-                    eprintln!("bforge-serve: activity log: {count} entries -> {}", activity.display())
-                }
-                Err(error) => eprintln!(
-                    "bforge-serve: the activity log could not be written to {}: {error}",
-                    activity.display()
-                ),
+        let activity_guard = shared.activity_lock.lock().unwrap();
+        match shared.write_activity_file_locked() {
+            Some(Ok((path, count))) => {
+                eprintln!("bforge-serve: activity log: {count} entries -> {}", path.display())
             }
+            Some(Err(error)) => eprintln!(
+                "bforge-serve: the activity log could not be written: {error}"
+            ),
+            None => {}
         }
+        drop(activity_guard);
         Ok(ServeStats {
             requests: shared.requests.load(Ordering::Relaxed),
             chunks,
@@ -2842,6 +2903,47 @@ mod tests {
             .find(|entry| entry.event == "ui_probe")
             .expect("the UI entry must survive into the file");
         assert_eq!(ui_entry.source, crate::logs::LogSource::Ui);
+        std::fs::remove_dir_all(&dir).ok();
+    }
+
+    /// The periodic flush writes the ring beside the vault while the session
+    /// still runs: a hard kill then leaves at most one flush interval of
+    /// trail missing, instead of the whole session. Nothing must be written
+    /// before a vault exists or while the ring is empty.
+    #[test]
+    fn the_activity_flush_writes_while_the_session_runs() {
+        let shared = Shared::default();
+        let dir = std::env::temp_dir().join(format!(
+            "bforge-serve-flush-{}-{}",
+            std::process::id(),
+            std::time::SystemTime::now()
+                .duration_since(std::time::UNIX_EPOCH)
+                .unwrap()
+                .as_millis()
+        ));
+        std::fs::create_dir_all(&dir).unwrap();
+        let vault = dir.join("capture.bflog");
+
+        // No vault chosen yet: nothing to write, and no error either.
+        assert!(shared.write_activity_file_locked().is_none());
+
+        *shared.activity_path.lock().unwrap() = Some(vault.clone());
+        // A session that has done nothing must not leave a file that looks
+        // like a trail.
+        assert!(shared.write_activity_file_locked().is_none());
+
+        shared.log(crate::logs::LogLevel::Error, "flush_probe", "before the crash");
+        let (path, count) = shared
+            .write_activity_file_locked()
+            .expect("a non-empty ring with a vault must write")
+            .expect("the write must succeed");
+        assert_eq!(count, 1);
+        assert_eq!(
+            path,
+            std::path::PathBuf::from(format!("{}.activity.jsonl", vault.display()))
+        );
+        let text = std::fs::read_to_string(&path).unwrap();
+        assert!(text.contains("\"event\":\"flush_probe\""));
         std::fs::remove_dir_all(&dir).ok();
     }
 }
