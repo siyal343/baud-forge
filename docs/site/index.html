@@ -141,10 +141,13 @@ footer{border-top:1px solid var(--line);color:var(--faint);font-size:12px;paddin
 <h2>Three ways to run</h2>
 <h3>1. The desktop application</h3>
 <p>Launch <code>bforge-desktop.exe</code> (Windows; <code>bforge-desktop</code> on Linux/macOS). The <strong>launcher</strong> is the first screen:</p>
-<p><img src="img/launcher.png" alt="The desktop launcher: pick a workspace, demo, review a capture, or quick-connect"></p>
+<p><img src="img/launcher.png" alt="The two-column desktop launcher: configure a session on the left, quick open on the right"></p>
+<p>The launcher is two columns on one screen — nothing to expand, nothing scrolls:</p>
 <ul>
-<li><strong>OPEN WORKSPACE…</strong> — pick a <code>.bforge.toml</code> file; the engine starts in-process and the workbench opens.</li>
-<li><strong>Recent workspaces</strong> — one click re-opens a workspace you used before.</li>
+<li><strong>CONFIGURE SESSION (left)</strong> — every session parameter as a form, no TOML needed; save it as a profile and the next session of the same kind is one click.</li>
+<li><strong>OPEN WORKSPACE… (right)</strong> — pick a <code>.bforge.toml</code> file; the engine starts in-process and the workbench opens.</li>
+<li><strong>Recent workspaces (right)</strong> — one click re-opens a workspace you used before; <code>×</code> or <strong>CLEAR</strong> prunes the list (workspace files are kept).</li>
+<li><strong>Saved profiles (right)</strong> — every configured session, one click each.</li>
 <li><strong>DEMO (loopback, no hardware)</strong> — two simulated devices and a bridge, no board needed. Perfect first run.</li>
 <li><strong>REVIEW A CAPTURE (.bflog)</strong> — open a recorded vault read-only; nothing records, nothing is damaged.</li>
 <li><strong>QUICK CONNECT</strong> — pick a serial port, connect at 115200 8N1 without a workspace file.</li>

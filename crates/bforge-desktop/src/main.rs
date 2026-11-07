@@ -201,21 +201,25 @@ fn read_recent() -> Vec<String> {
     serde_json::from_str::<Vec<String>>(&text).unwrap_or_default()
 }
 
-fn remember(path: &Path) {
+fn write_recent(recent: &[String]) {
     let Some(file) = recent_path() else {
         return;
     };
+    if let Some(parent) = file.parent() {
+        let _ = std::fs::create_dir_all(parent);
+    }
+    if let Ok(text) = serde_json::to_string_pretty(recent) {
+        let _ = std::fs::write(file, text);
+    }
+}
+
+fn remember(path: &Path) {
     let mut recent = read_recent();
     let entry = path.display().to_string();
     recent.retain(|item| item != &entry);
     recent.insert(0, entry);
     recent.truncate(8);
-    if let Some(parent) = file.parent() {
-        let _ = std::fs::create_dir_all(parent);
-    }
-    if let Ok(text) = serde_json::to_string_pretty(&recent) {
-        let _ = std::fs::write(file, text);
-    }
+    write_recent(&recent);
 }
 
 /// Start a session from a workspace, and return the URL it serves.
@@ -305,6 +309,27 @@ fn pick_workspace() -> Option<String> {
 #[tauri::command]
 fn recent_workspaces() -> Vec<String> {
     read_recent()
+}
+
+/// Drop one entry from the recents list; the workspace file itself is untouched.
+/// Returns the list as it now stands, so the launcher can show it directly.
+#[tauri::command]
+fn remove_recent_workspace(path: String) -> Vec<String> {
+    let entry = path.trim().to_string();
+    let recent: Vec<String> = read_recent()
+        .into_iter()
+        .filter(|item| *item != entry)
+        .collect();
+    write_recent(&recent);
+    recent
+}
+
+/// Empty the recents list entirely; the workspace files themselves are untouched.
+/// Returns the (now empty) list for the same reason.
+#[tauri::command]
+fn clear_recent_workspaces() -> Vec<String> {
+    write_recent(&Vec::new());
+    Vec::new()
 }
 
 /// The example workspace that needs no hardware, if it is beside the binary.
@@ -717,6 +742,8 @@ fn main() {
             pick_header_file,
             start_review,
             recent_workspaces,
+            remove_recent_workspace,
+            clear_recent_workspaces,
             demo_workspace,
             start_workspace,
             start_configured,

@@ -33,10 +33,14 @@ Everything you see here runs against the real engine (`bforge-serve`); every scr
 
 Launch `bforge-desktop.exe` (Windows; `bforge-desktop` on Linux/macOS). The **launcher** is the first screen:
 
-![The desktop launcher: pick a workspace, demo, review a capture, or quick-connect](img/launcher.png)
+![The two-column desktop launcher: configure a session on the left, quick open on the right](img/launcher.png)
 
-- **OPEN WORKSPACE…** — pick a `.bforge.toml` file; the engine starts in-process and the workbench opens.
-- **Recent workspaces** — one click re-opens a workspace you used before.
+The launcher is two columns on one screen — nothing to expand, nothing scrolls:
+
+- **CONFIGURE SESSION (left)** — every session parameter as a form, no TOML needed; save it as a profile and the next session of the same kind is one click.
+- **OPEN WORKSPACE… (right)** — pick a `.bforge.toml` file; the engine starts in-process and the workbench opens.
+- **Recent workspaces (right)** — one click re-opens a workspace you used before; `×` or **CLEAR** prunes the list (workspace files are kept).
+- **Saved profiles (right)** — every configured session, one click each.
 - **DEMO (loopback, no hardware)** — two simulated devices and a bridge, no board needed. Perfect first run.
 - **REVIEW A CAPTURE (.bflog)** — open a recorded vault read-only; nothing records, nothing is damaged.
 - **QUICK CONNECT** — pick a serial port, connect at 115200 8N1 without a workspace file.

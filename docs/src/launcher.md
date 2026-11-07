@@ -1,48 +1,59 @@
 # Desktop Launcher
 
-The launcher is the desktop application's first screen: it is where a session begins — pick a workspace, reopen a recent one or a saved profile, run the demo, review a capture, quick-connect, or configure a brand-new session without writing a single line of TOML.
+The launcher is the desktop application's first screen: it is where a session begins — configure a brand-new session without writing a single line of TOML, or reopen a recent one, a saved profile, the demo, a capture review, or a quick connect in one click.
 
-![The desktop launcher with the CONFIGURE SESSION form](img/launcher.png)
+![The two-column desktop launcher: CONFIGURE SESSION on the left, QUICK OPEN on the right](img/launcher.png)
 
 It appears only inside the desktop shell when no engine session is running; once a workspace starts, the workbench replaces it. **DISCONNECT in the ribbon stops the session and returns here** — the vault is sealed and the port released, so reconnecting (even after physically replugging a device) is one click.
 
-## CONFIGURE SESSION (no TOML needed)
+## Two columns, one screen
 
-Every session parameter, exposed:
+The launcher is a fixed two-column layout — the window itself never scrolls, so expanding nothing ever pushes content off screen:
 
-- **Profile name** — saved for reuse; the session also shows under this name.
-- **Port id** — the name the workbench shows for the port (`dev`, `esp`, …).
-- **Serial port** — dropdown of detected ports (with USB identity) or a manual device path.
-- **Baud rate** — presets (9600 … 2M) or a custom value; data bits, parity, stop bits.
-- **Framing** — `delimiter` (with the byte in hex), `cobs`, `slip`, `intel_hex`, `header_length` (sync word, length offset/width), `idle_gap` (µs of silence).
+- **Left — CONFIGURE SESSION.** Every session parameter as a form, grouped into titled cards (identity, port, line settings, framing, checksum, dissector). Each card keeps its fields together, so the whole form fits on screen at desktop window sizes.
+- **Right — QUICK OPEN.** Everything that starts a session in one click: open a workspace file, the recent list, saved profiles, quick connect, the demo and capture review. Each list can be pruned in place.
+
+## CONFIGURE SESSION (left column, no TOML needed)
+
+Every session parameter, exposed and grouped:
+
+- **Session identity** — **Profile name** (saved for reuse; the session also shows under this name) and **Port id** (the name the workbench shows for the port: `dev`, `esp`, …).
+- **Serial port** — dropdown of detected ports (with USB identity) or a manual device path / address.
+- **Line settings** — baud rate presets (9600 … 2M) or a custom value; data bits, parity, stop bits.
+- **Framing** — `delimiter` (with the byte in hex), `cobs`, `slip`, `intel_hex`, `header_length` (sync word, length offset/width), `idle_gap` (µs of silence). Only the fields the chosen mode needs are shown.
 - **Checksum** — `none`, `crc8`, `crc16_ccitt_false`, `crc32c`.
 - **Protocol dissector** (optional) — pick a C header file and the root struct name. Frames decode live; change it later in [Schema Dialects](schema-dialects.html).
 
 **START SESSION** starts the engine with this configuration immediately (and saves it as a profile when a name is given). **SAVE PROFILE** stores just the configuration.
 
-## SAVED PROFILES
+## QUICK OPEN (right column)
 
-Every configured session is stored as `<name>.bforge.toml` in the profiles folder (beside the recents list). Each profile is a one-click button on the launcher — the same kind of session never needs configuring twice. `×` deletes a profile.
-
-## OPEN WORKSPACE…
+### OPEN WORKSPACE…
 
 Opens a native file dialog for a `.bforge.toml` workspace. The engine starts **in the same process** — the ports are owned by the app you launched — and the window navigates to the workbench. The workspace is added to the recents list.
 
 A workspace can also be passed on the command line (`bforge-desktop.exe path\to\workspace.bforge.toml`): the engine starts immediately and skips the launcher.
 
-## Recent workspaces
+### Recent workspaces
 
-Up to 8 recent workspaces as one-click buttons (path in the subtitle, name in bold). The list lives beside the window-geometry file, so a launch looks like the last one.
+Up to 8 recent workspaces as one-click buttons (name in bold, path beneath). The list lives beside the window-geometry file, so a launch looks like the last one. The list is managed in place:
 
-## DEMO (loopback, no hardware)
+- **`×` on a row** removes that entry from the list — the workspace file itself is kept.
+- **CLEAR** in the section header wipes the whole list (it asks for a second click — `SURE?` — before doing so). As with a single removal, only the list is cleared; no workspace file is touched.
+
+### SAVED PROFILES
+
+Every configured session is stored as `<name>.bforge.toml` in the profiles folder (beside the recents list). Each profile is a one-click button on the launcher — the same kind of session never needs configuring twice. `×` deletes the profile file.
+
+### DEMO (loopback, no hardware)
 
 Starts the bundled loopback workspace: two simulated devices (`loopback-a` OBC simulator, `loopback-b` EPS simulator) joined by a forwarding bridge. It needs no board and no configuration — the ideal first look at every panel, and it exercises the full decode path (COBS framing, CRC32C, a 12-field C-struct dissector).
 
-## REVIEW A CAPTURE (.bflog)
+### REVIEW A CAPTURE (.bflog)
 
 Opens a recorded [vault](rec-vaults.html) **read-only**: no ports are opened, nothing records, the file cannot be damaged. Frames decode with the workspace sidecar written beside the capture, so the review shows the same dissection the session had. Use it to inspect a bug-report capture someone else sent you.
 
-## QUICK CONNECT (serial, 115200 8N1)
+### QUICK CONNECT (serial, 115200 8N1)
 
 The fastest path to a live link with no configuration at all:
 
