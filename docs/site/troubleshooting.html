@@ -57,6 +57,10 @@ footer{border-top:1px solid var(--line);color:var(--faint);font-size:12px;paddin
 <p>You are looking at the demo generator, not the wire. It appears when the UI has no engine: start <code>bforge serve</code> (or the desktop app), then reload. While a session runs, simulated rows never mix into real frames — the demo data seeds only when no engine is reachable.</p>
 <h2>TX fails: <code>port &quot;X&quot; is not in this session</code></h2>
 <p>The panel&#39;s DESTINATION badge names a port this engine does not have. Ports are workspace ids (<code>esp</code>, <code>obc</code>), not device paths — check the ribbon selector and the <a href="activity-log.html">Activity Log</a> <code>tx_failed</code> entry for the exact port name.</p>
+<h2>DISCONNECT / reconnect behaviour</h2>
+<p><strong>DISCONNECT in the ribbon stops the whole engine session</strong>: the vault is sealed (the <a href="activity-log.html">Activity Log</a> records it, and <code>&lt;vault&gt;.activity.jsonl</code> lands next to the capture), the serial port is released, and — in the desktop app — the launcher returns. There is no &quot;half disconnected&quot; state where the engine keeps streaming: if frames still arrive after DISCONNECT, the engine did not receive the stop (check the toast&#39;s reason).</p>
+<p>To reconnect — including after physically unplugging and replugging a device — return to the launcher and start the session again: a saved profile, quick-connect, or OPEN WORKSPACE. A session that restarts re-opens its ports from scratch, which is why replugging is handled by starting a session <em>after</em> the device is attached, not by pressing CONNECT against a stopped one.</p>
+<p>Against a CLI engine (<code>bforge serve</code>), DISCONNECT stops that engine process too (same graceful seal) — restart <code>bforge serve</code> to stream again.</p>
 <h2>Frames decode wrong</h2>
 <ol>
 <li>Check the framing in the workspace: <code>cobs</code> vs <code>delimiter</code> mismatch produces garbage frames that fail decode (<code>ERR: …</code> rows).</li>

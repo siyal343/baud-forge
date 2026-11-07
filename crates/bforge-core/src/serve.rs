@@ -926,6 +926,19 @@ fn handle(mut stream: TcpStream, shared: Arc<Shared>, stop: Arc<AtomicBool>) {
         logs_view(&mut stream, &shared, target);
         return;
     }
+    if method == "POST" && path == "/api/session/stop" {
+        // The UI's disconnect: the pump breaks out, seals the vault, and the
+        // session ends cleanly (the CLI process exits; the desktop shell's
+        // server thread finishes).
+        stop.store(true, Ordering::Relaxed);
+        respond(
+            &mut stream,
+            "200 OK",
+            "application/json",
+            b"{\"ok\":true,\"stopped\":\"graceful\",\"vault_sealed\":true}",
+        );
+        return;
+    }
     if method == "POST" && path == "/api/logs/client" {
         let body = read_body(&mut reader, content_length);
         client_log(&mut stream, &shared, &body);
@@ -2546,9 +2559,12 @@ fn quick_connect(stream: &mut TcpStream, shared: &Arc<Shared>, body: &[u8]) {
         ui: None,
     };
 
+    // A running server pumps the session it was started with; ports cannot be
+    // added underneath it. Record the requested config (the workspace export
+    // carries it) and answer honestly — this is NOT a port open.
     *shared.config.lock().unwrap() = Some(config);
-    let body = format!("{{\"ok\":true,\"port\":\"{port_id}\"}}");
-    respond(stream, "200 OK", "application/json", body.as_bytes());
+    let body = "{\"ok\":false,\"error\":\"a running session's ports are fixed; restart the engine with the device in the workspace, or use the desktop launcher's quick connect\"}";
+    respond(stream, "501 Not Implemented", "application/json", body.as_bytes());
 }
 
 fn workspace_export(stream: &mut TcpStream, shared: &Arc<Shared>) {

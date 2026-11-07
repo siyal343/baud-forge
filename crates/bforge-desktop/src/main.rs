@@ -463,6 +463,123 @@ fn stop_workspace(app: tauri::AppHandle) {
     app.state::<Engine>().stop();
 }
 
+/// Where launcher-configured profiles live, beside the recents list.
+fn profiles_dir() -> Option<PathBuf> {
+    recent_path().and_then(|path| path.parent().map(|parent| parent.join("profiles")))
+}
+
+#[derive(serde::Serialize)]
+struct ProfileDto {
+    name: String,
+    path: String,
+}
+
+/// The launcher's saved session profiles (`<name>.bforge.toml`).
+#[tauri::command]
+fn list_profiles() -> Vec<ProfileDto> {
+    let Some(dir) = profiles_dir() else {
+        return Vec::new();
+    };
+    let Ok(entries) = std::fs::read_dir(dir) else {
+        return Vec::new();
+    };
+    let mut profiles: Vec<ProfileDto> = entries
+        .filter_map(|entry| entry.ok())
+        .filter_map(|entry| {
+            let path = entry.path();
+            let name = path.file_stem()?.to_string_lossy().into_owned();
+            (path.extension()?.to_str()? == "bforge").then(|| ProfileDto {
+                name,
+                path: path.display().to_string(),
+            })
+        })
+        .collect();
+    profiles.sort_by(|a, b| a.name.to_lowercase().cmp(&b.name.to_lowercase()));
+    profiles
+}
+
+/// Persist a launcher-configured session as a named profile.
+#[tauri::command]
+fn save_profile(app: tauri::AppHandle, name: String, content: String) -> Result<String, String> {
+    let _ = &app;
+    let safe = name
+        .trim()
+        .chars()
+        .map(|c| if c.is_alphanumeric() || c == '-' || c == '_' || c == ' ' { c } else { '-' })
+        .collect::<String>()
+        .trim()
+        .to_string();
+    if safe.is_empty() {
+        return Err("profile name is empty".to_string());
+    }
+    let dir = profiles_dir().ok_or("cannot resolve the profiles directory")?;
+    std::fs::create_dir_all(&dir).map_err(|error| error.to_string())?;
+    // `config.bforge.toml` is the extension convention the vault sidecars use.
+    let path = dir.join(format!("{}.bforge.toml", safe.replace(' ', "-")));
+    std::fs::write(&path, &content).map_err(|error| format!("{}: {error}", path.display()))?;
+    Ok(path.display().to_string())
+}
+
+/// Delete a saved profile (only files inside the profiles directory).
+#[tauri::command]
+fn delete_profile(path: String) -> Result<(), String> {
+    let Some(dir) = profiles_dir() else {
+        return Err("cannot resolve the profiles directory".to_string());
+    };
+    let target = PathBuf::from(&path);
+    if target.parent() != Some(dir.as_path()) {
+        return Err("only profiles in the profiles directory can be deleted here".to_string());
+    }
+    std::fs::remove_file(&target).map_err(|error| error.to_string())
+}
+
+/// Start a session from launcher-built configuration text; optionally keep it
+/// as a named profile so the next session of this kind is one click.
+#[tauri::command]
+fn start_configured(
+    app: tauri::AppHandle,
+    config_text: String,
+    profile_name: Option<String>,
+) -> Result<String, String> {
+    // Validate before writing anything: a profile that cannot parse would
+    // poison the launcher's saved list.
+    let parsed: ProjectConfig = toml::from_str(&config_text).map_err(|error| format!("config invalid: {error}"))?;
+    if parsed.ports.is_empty() {
+        return Err("config invalid: at least one [[ports]] entry is required".to_string());
+    }
+    let dir = profiles_dir().ok_or("cannot resolve the profiles directory")?;
+    std::fs::create_dir_all(&dir).map_err(|error| error.to_string())?;
+    let path = match &profile_name {
+        Some(name) if !name.trim().is_empty() => {
+            let safe = name
+                .trim()
+                .chars()
+                .map(|c| if c.is_alphanumeric() || c == '-' || c == '_' || c == ' ' { c } else { '-' })
+                .collect::<String>();
+            dir.join(format!("{}.bforge.toml", safe.trim().replace(' ', "-")))
+        }
+        _ => dir.join(format!(
+            "session-{}.bforge.toml",
+            std::time::SystemTime::now()
+                .duration_since(std::time::UNIX_EPOCH)
+                .map(|since| since.as_millis())
+                .unwrap_or(0)
+        )),
+    };
+    std::fs::write(&path, &config_text).map_err(|error| format!("{}: {error}", path.display()))?;
+    start(&app, &path, None)
+}
+
+/// Pick a C-header file for the launcher's dissector field.
+#[tauri::command]
+fn pick_header_file() -> Option<String> {
+    rfd::FileDialog::new()
+        .add_filter("C header", &["h"])
+        .set_title("Protocol header (C struct)")
+        .pick_file()
+        .map(|file| file.display().to_string())
+}
+
 /// Write the vault beside itself in a format the person can open elsewhere (FR-STO-02).
 ///
 /// The window has no download shelf, so this writes the file and reports where it went
@@ -597,15 +714,20 @@ fn main() {
         .invoke_handler(tauri::generate_handler![
             pick_workspace,
             pick_vault,
+            pick_header_file,
             start_review,
             recent_workspaces,
             demo_workspace,
             start_workspace,
+            start_configured,
             stop_workspace,
             export_vault,
             engine_state,
             list_serial_ports,
-            quick_connect
+            quick_connect,
+            list_profiles,
+            save_profile,
+            delete_profile
         ])
         .setup(|app| {
             if let Some(window) = app.get_webview_window("main") {

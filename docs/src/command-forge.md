@@ -44,7 +44,7 @@ The checksum covers the payload bytes and is appended in the wire byte order of 
 
 ## Transmitting
 
-Press **TRANSMIT PAYLOAD (ENTER)** (or `Enter` in any cell). What happens:
+Press **TRANSMIT PAYLOAD (ENTER)** (or `Enter` in any cell). Without a live engine session the button reads **TRANSMIT PAYLOAD (NO LINK)** — you can still compose and checksum a frame, and the attempt is reported honestly:
 
 - The engine sends the bytes on the destination port; the send outcome (`sent`, faulted bytes, dropped) comes back from the wire.
 - A `TX` row appears in the [Packet Stream](packet-stream.html) with the exact wire hex.

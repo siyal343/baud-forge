@@ -99,7 +99,7 @@ footer{border-top:1px solid var(--line);color:var(--faint);font-size:12px;paddin
 </tbody></table>
 <p>The checksum covers the payload bytes and is appended in the wire byte order of the algorithm.</p>
 <h2>Transmitting</h2>
-<p>Press <strong>TRANSMIT PAYLOAD (ENTER)</strong> (or <code>Enter</code> in any cell). What happens:</p>
+<p>Press <strong>TRANSMIT PAYLOAD (ENTER)</strong> (or <code>Enter</code> in any cell). Without a live engine session the button reads <strong>TRANSMIT PAYLOAD (NO LINK)</strong> — you can still compose and checksum a frame, and the attempt is reported honestly:</p>
 <ul>
 <li>The engine sends the bytes on the destination port; the send outcome (<code>sent</code>, faulted bytes, dropped) comes back from the wire.</li>
 <li>A <code>TX</code> row appears in the <a href="packet-stream.html">Packet Stream</a> with the exact wire hex.</li>

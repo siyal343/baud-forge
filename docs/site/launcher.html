@@ -45,9 +45,23 @@ footer{border-top:1px solid var(--line);color:var(--faint);font-size:12px;paddin
 <div class="grp">Records</div><a href="activity-log.html">Activity Log</a><a href="rec-vaults.html">REC & Vaults</a><a href="exports.html">Exports</a>
 <div class="grp">Reference</div><a href="keyboard-shortcuts.html">Keyboard Shortcuts</a><a href="troubleshooting.html">Troubleshooting</a></nav>
 <main><h1>Desktop Launcher</h1>
-<p>The launcher is the desktop application&#39;s first screen: it is where a session begins — pick a workspace, reopen a recent one, run the demo, review a capture, or quick-connect to a serial port with no workspace file at all.</p>
-<p><img src="img/launcher.png" alt="The desktop launcher"></p>
-<p>It appears only inside the desktop shell when no engine session is running; once a workspace starts, the workbench replaces it (the same engine that serves the browser serves the desktop).</p>
+<p>The launcher is the desktop application&#39;s first screen: it is where a session begins — pick a workspace, reopen a recent one or a saved profile, run the demo, review a capture, quick-connect, or configure a brand-new session without writing a single line of TOML.</p>
+<p><img src="img/launcher.png" alt="The desktop launcher with the CONFIGURE SESSION form"></p>
+<p>It appears only inside the desktop shell when no engine session is running; once a workspace starts, the workbench replaces it. <strong>DISCONNECT in the ribbon stops the session and returns here</strong> — the vault is sealed and the port released, so reconnecting (even after physically replugging a device) is one click.</p>
+<h2>CONFIGURE SESSION (no TOML needed)</h2>
+<p>Every session parameter, exposed:</p>
+<ul>
+<li><strong>Profile name</strong> — saved for reuse; the session also shows under this name.</li>
+<li><strong>Port id</strong> — the name the workbench shows for the port (<code>dev</code>, <code>esp</code>, …).</li>
+<li><strong>Serial port</strong> — dropdown of detected ports (with USB identity) or a manual device path.</li>
+<li><strong>Baud rate</strong> — presets (9600 … 2M) or a custom value; data bits, parity, stop bits.</li>
+<li><strong>Framing</strong> — <code>delimiter</code> (with the byte in hex), <code>cobs</code>, <code>slip</code>, <code>intel_hex</code>, <code>header_length</code> (sync word, length offset/width), <code>idle_gap</code> (µs of silence).</li>
+<li><strong>Checksum</strong> — <code>none</code>, <code>crc8</code>, <code>crc16_ccitt_false</code>, <code>crc32c</code>.</li>
+<li><strong>Protocol dissector</strong> (optional) — pick a C header file and the root struct name. Frames decode live; change it later in <a href="schema-dialects.html">Schema Dialects</a>.</li>
+</ul>
+<p><strong>START SESSION</strong> starts the engine with this configuration immediately (and saves it as a profile when a name is given). <strong>SAVE PROFILE</strong> stores just the configuration.</p>
+<h2>SAVED PROFILES</h2>
+<p>Every configured session is stored as <code>&lt;name&gt;.bforge.toml</code> in the profiles folder (beside the recents list). Each profile is a one-click button on the launcher — the same kind of session never needs configuring twice. <code>×</code> deletes a profile.</p>
 <h2>OPEN WORKSPACE…</h2>
 <p>Opens a native file dialog for a <code>.bforge.toml</code> workspace. The engine starts <strong>in the same process</strong> — the ports are owned by the app you launched — and the window navigates to the workbench. The workspace is added to the recents list.</p>
 <p>A workspace can also be passed on the command line (<code>bforge-desktop.exe path\to\workspace.bforge.toml</code>): the engine starts immediately and skips the launcher.</p>
@@ -58,15 +72,16 @@ footer{border-top:1px solid var(--line);color:var(--faint);font-size:12px;paddin
 <h2>REVIEW A CAPTURE (.bflog)</h2>
 <p>Opens a recorded <a href="rec-vaults.html">vault</a> <strong>read-only</strong>: no ports are opened, nothing records, the file cannot be damaged. Frames decode with the workspace sidecar written beside the capture, so the review shows the same dissection the session had. Use it to inspect a bug-report capture someone else sent you.</p>
 <h2>QUICK CONNECT (serial, 115200 8N1)</h2>
-<p>The fastest path to a live link with no workspace file:</p>
+<p>The fastest path to a live link with no configuration at all:</p>
 <ol>
 <li>The port list shows every serial port the OS reports (with USB identity when known — <code>COM8 (303a:1001)</code>).</li>
 <li>Pick one, press <strong>CONNECT</strong>.</li>
-<li>BaudForge writes a temporary workspace (delimiter framing at 115200 8N1, no dissector), starts the engine on it and opens the workbench. Frames arrive raw — add a dissector live via <a href="schema-dialects.html">Schema Dialects</a> or write a proper workspace when the shape of the protocol is clear.</li>
+<li>BaudForge writes a temporary workspace (delimiter framing at 115200 8N1, no dissector), starts the engine on it and opens the workbench. Frames arrive raw — add a dissector live via <a href="schema-dialects.html">Schema Dialects</a> or configure a proper session when the shape of the protocol is clear.</li>
 </ol>
 <h2>After the launcher</h2>
 <ul>
 <li>The ribbon must read <strong>LINK OPEN</strong> — <code>SIMULATED</code> means no engine session is behind this page (see <a href="troubleshooting.html">Troubleshooting</a>).</li>
+<li><strong>DISCONNECT</strong> in the ribbon stops the session gracefully (vault sealed) and brings the launcher back — the way to start a different session without closing the application.</li>
 <li>The engine stops with the app; the session&#39;s raw capture is sealed automatically on exit (see <a href="rec-vaults.html">REC &amp; Vaults</a>).</li>
 <li>Only one program on the machine can hold a serial port — if the launcher&#39;s session shows the port <code>closed</code>, check for another engine (see <a href="troubleshooting.html#the-port-will-not-open">Troubleshooting</a>).</li>
 </ul>

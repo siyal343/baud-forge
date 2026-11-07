@@ -8,9 +8,7 @@ import {
   AlertTriangle,
   ArrowDown,
   Search,
-  Settings2,
 } from 'lucide-react';
-import { UartConfigModal } from './UartConfigModal';
 
 const ROW_HEIGHT = 20;
 const OVERSCAN = 8;
@@ -42,10 +40,6 @@ export const PacketStreamView: React.FC = () => {
     directionFilter,
     portFilter,
     errorsOnly,
-    dataBits,
-    parity,
-    stopBits,
-    delimiterMode,
     selectPacket,
     setAutoScroll,
     clearStream,
@@ -62,9 +56,6 @@ export const PacketStreamView: React.FC = () => {
       directionFilter: s.directionFilter,
       portFilter: s.portFilter,
       errorsOnly: s.errorsOnly,
-      dataBits: s.dataBits,
-      parity: s.parity,
-      stopBits: s.stopBits,
       delimiterMode: s.delimiterMode,
       selectPacket: s.selectPacket,
       setAutoScroll: s.setAutoScroll,
@@ -78,15 +69,12 @@ export const PacketStreamView: React.FC = () => {
 
   const headerRef = useRef<HTMLDivElement>(null);
   const containerRef = useRef<HTMLDivElement>(null);
-  const uartBtnRef = useRef<HTMLButtonElement>(null);
 
   const [scrollTop, setScrollTop] = useState(0);
   const [viewportHeight, setViewportHeight] = useState(500);
   const [isUserScrolledUp, setIsUserScrolledUp] = useState(false);
   const [newFramesCount, setNewFramesCount] = useState(0);
 
-  const [isUartModalOpen, setIsUartModalOpen] = useState(false);
-  const [uartAnchorRect, setUartAnchorRect] = useState<DOMRect | null>(null);
 
   // Column Widths State (saved to / loaded from localStorage)
   const [colWidths, setColWidths] = useState<Record<string, number>>(() => {
@@ -324,7 +312,6 @@ export const PacketStreamView: React.FC = () => {
   const topSpacerHeight = startIndex * ROW_HEIGHT;
   const bottomSpacerHeight = Math.max(0, (totalRows - endIndex) * ROW_HEIGHT);
 
-  const uartShorthand = `${dataBits}${parity.charAt(0).toUpperCase()}${stopBits}`;
 
   return (
     <div className="relative flex flex-col h-full bg-[#10141D] select-none text-[11px] overflow-hidden">
@@ -340,23 +327,8 @@ export const PacketStreamView: React.FC = () => {
         </div>
 
         <div className="flex items-center gap-1.5 flex-1 justify-end">
-          {/* UART Line & Delimiter Settings Button */}
-          <button
-            ref={uartBtnRef}
-            onClick={() => {
-              if (uartBtnRef.current) {
-                setUartAnchorRect(uartBtnRef.current.getBoundingClientRect());
-              }
-              setIsUartModalOpen(true);
-            }}
-            title="Configure serial frame delimiter and UART parameters (Data/Parity/Stop bits)"
-            className="flex items-center gap-1 px-1.5 py-0.5 rounded bg-[#10141D] hover:bg-[#1E2638] border border-[#2D3A4E] hover:border-[#00E5FF]/50 text-[#94A3B8] hover:text-[#00E5FF] font-mono text-[9.5px] transition-colors"
-          >
-            <span className="font-bold text-[#E2E8F0]">{uartShorthand}</span>
-            <span className="text-[#64748B]">·</span>
-            <span className="text-[#00E5FF] uppercase font-semibold">{delimiterMode}</span>
-            <Settings2 className="w-2.5 h-2.5 text-[#64748B] ml-0.5" />
-          </button>
+          {/* Serial line + framing configuration lives in ONE place: the
+              ribbon's settings chip. A second trigger here duplicated it. */}
 
           {/* Direction filter chips (spec 2.3: All/RX/TX/FAULT) */}
           <div className="flex items-center rounded border border-[#222D3D] overflow-hidden shrink-0">
@@ -608,12 +580,6 @@ export const PacketStreamView: React.FC = () => {
         </button>
       )}
 
-      {/* Port Framing & Delimiter Modal */}
-      <UartConfigModal
-        isOpen={isUartModalOpen}
-        onClose={() => setIsUartModalOpen(false)}
-        anchorRect={uartAnchorRect}
-      />
     </div>
   );
 };

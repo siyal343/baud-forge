@@ -181,11 +181,12 @@ try {
   if (conn) {
     await page.mouse.click(conn.x, conn.y);
     let toast = '';
-    for (let i = 0; i < 12 && !toast.includes('simulated link'); i++) {
+    // The connect path is honest about what an offline CONNECT means now.
+    for (let i = 0; i < 12 && !toast.includes('Engine unreachable'); i++) {
       await sleep(500);
       toast = await toasts(page);
     }
-    check('CONNECT warns engine offline', toast.includes('simulated link'), toast.slice(0, 120));
+    check('CONNECT warns engine offline', toast.includes('Engine unreachable'), toast.slice(0, 120));
   } else {
     check('CONNECT warns engine offline', false, 'CONNECT button not found after disconnect');
   }
@@ -285,13 +286,9 @@ try {
         await page.mouse.click(tx.x, tx.y);
         await sleep(900);
         const dispatched = await page.evaluate(() => {
-          const region = [...document.querySelectorAll('[role="region"]')].find((r2) =>
-            (r2.getAttribute('aria-label') || '').includes('PACKET STREAM')
-          );
-          // The virtualized grid only renders the visible window and truncates
-          // long summaries, so assert the recorded Command row + the dispatch
-          // toast instead of the full summary text.
-          const hasCommandRow = !!region && region.innerText.includes('Command');
+          // The store is the authoritative record: the virtualized grid only
+          // renders the visible window, which may have scrolled off the tail.
+          const hasCommandRow = window.__bforgeStore.getState().packets.some((p) => p.protocol === 'Command');
           const toastsNow = [...document.querySelectorAll('[role="status"]')].map((d) => d.textContent).join(' ');
           return hasCommandRow && toastsNow.includes('TX recorded locally only');
         });

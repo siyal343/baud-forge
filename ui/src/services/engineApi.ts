@@ -311,16 +311,45 @@ export class EngineApiClient {
   }
 
   /** Open a hardware port session (POST /api/quick-connect). */
-  async quickConnect(device: string, baudRate: number): Promise<boolean> {
+  async quickConnect(device: string, baudRate: number): Promise<{ ok: boolean; error?: string }> {
     try {
       const res = await this.fetchWithTimeout('/api/quick-connect', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ device, baud_rate: baudRate }),
       });
-      return res.ok;
+      const data = await res.json().catch(() => ({}));
+      if (!res.ok || data?.ok === false) {
+        // A 5xx through the dev proxy (or a dead engine) means unreachable,
+        // not "the engine refused this specific connect".
+        const error =
+          res.status >= 500
+            ? 'engine unreachable'
+            : data?.error || `HTTP ${res.status}`;
+        return { ok: false, error };
+      }
+      return { ok: true };
     } catch {
-      return false;
+      return { ok: false, error: 'engine unreachable' };
+    }
+  }
+
+  /** Gracefully stop the engine session: the vault is sealed and the serve
+   * loop ends (CLI process exits; desktop shell's server thread finishes). */
+  async sessionStop(): Promise<{ ok: boolean; error?: string }> {
+    try {
+      const res = await this.fetchWithTimeout('/api/session/stop', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: '{}',
+      }, 5000);
+      if (!res.ok) {
+        const data = await res.json().catch(() => ({}));
+        return { ok: false, error: data?.error || `HTTP ${res.status}` };
+      }
+      return { ok: true };
+    } catch {
+      return { ok: false, error: 'engine unreachable' };
     }
   }
 

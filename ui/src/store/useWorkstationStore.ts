@@ -3,6 +3,7 @@ import { PacketRow, DissectedField, ScopeSignalSample, PinsView, PortView, Bridg
 import { generateSampleImuPacket, generateScopeSample } from '../services/simulationEngine';
 import { engineApi } from '../services/engineApi';
 import { logAction } from '../services/activityLog';
+import { isDesktopShell } from '../components/Launcher';
 import { toast } from './useToastStore';
 
 interface WorkstationState {
@@ -333,26 +334,50 @@ export const useWorkstationStore = create<WorkstationState>((set, get) => ({
     set({ uiScale: clamped });
   },
   connect: async () => {
-    // Reach the engine so a real port session starts (serve.rs /api/quick-connect).
-    const ok = await engineApi.quickConnect(get().selectedPort, get().baudRate);
-    if (ok) {
+    // The desktop launcher owns real session starts (Tauri). Against a CLI
+    // engine, a running session's ports are fixed — /api/quick-connect says
+    // so honestly instead of pretending to open one.
+    const result = await engineApi.quickConnect(get().selectedPort, get().baudRate);
+    if (result.ok) {
       set({ isConnected: true, portState: 'open' });
       toast.success('Link opened', `${get().selectedPort} @ ${get().baudRate} baud connected by engine.`);
     } else {
-      // Simulated-mode fallback: keep the local link state honest about the engine.
-      set({ isConnected: true, portState: 'open' });
-      toast.warn(
-        'Engine unreachable — simulated link only',
-        `${get().selectedPort} is open in the workstation, but no hardware session was started.`
+      set({ isConnected: false, portState: 'closed' });
+      toast.error(
+        result.error === 'engine unreachable'
+          ? 'Engine unreachable — no session to connect to'
+          : 'Connect refused by engine',
+        result.error ??
+          'Restart the engine with the device in the workspace, or use the desktop launcher.'
       );
     }
   },
 
-  disconnect: () => {
-    set({ isConnected: false, portState: 'closed' });
-    // NOTE: serve.rs exposes no disconnect endpoint yet — the engine-side
-    // session (if any) keeps running; only the workstation link closes.
-    toast.info('Link closed', 'Workstation detached. An engine-side session may still be running.');
+  disconnect: async () => {
+    // The engine owns the port — a UI-only flip would leave it streaming.
+    // Desktop: the shell stops the session and the launcher returns.
+    // Browser: the engine seals the vault and its serve loop ends.
+    if (isDesktopShell()) {
+      try {
+        const core = (window as unknown as { __TAURI__?: { core?: { invoke: (cmd: string) => Promise<unknown> } } }).__TAURI__?.core;
+        if (core) {
+          await core.invoke('stop_workspace');
+          toast.info('Session stopped', 'The engine sealed the vault; the launcher is opening.');
+          window.location.replace('index.html');
+          return;
+        }
+      } catch {
+        // fall through to the HTTP lever
+      }
+    }
+    const result = await engineApi.sessionStop();
+    if (result.ok) {
+      set({ isConnected: false, portState: 'closed' });
+      toast.info('Session stopped', 'The vault was sealed and the engine is shutting down. Restart `bforge serve` to record again.');
+    } else {
+      set({ isConnected: false, portState: 'closed' });
+      toast.warn('Workstation detached', 'The engine could not be stopped from here (' + (result.error ?? 'unreachable') + ') — stop its process to release the port.');
+    }
   },
 
   setSelectedPort: (port) => set({ selectedPort: port }),

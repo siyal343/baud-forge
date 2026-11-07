@@ -1162,17 +1162,21 @@ typedef struct {
           <div className="flex items-center justify-end pt-1 shrink-0">
             <button
               onClick={() => handleSend()}
-              disabled={!isConnected}
-              data-tooltip="Transmit current payload through selected port"
+              data-tooltip={
+                isConnected
+                  ? 'Transmit current payload through selected port'
+                  : 'No engine session — the frame is composed and the attempt is reported honestly (marked NOT SENT)'
+              }
               data-tooltip-shortcut="Enter"
               className={`flex items-center gap-2 px-5 py-2 rounded font-semibold text-xs transition-all ${
                 isConnected
                   ? 'bg-[#00E5FF] text-[#0A0D13] hover:bg-[#38BDF8] shadow-[0_0_12px_rgba(0,229,255,0.35)] cursor-pointer active:scale-95'
-                  : 'bg-[#222D3D] text-[#64748B] cursor-not-allowed'
+                  : 'bg-[#161C28] border border-[#F59E0B]/50 text-[#F59E0B] hover:bg-[#1E2638] cursor-pointer'
               }`}
+              title={undefined}
             >
               <Send className="w-3.5 h-3.5" />
-              TRANSMIT PAYLOAD (ENTER)
+              {isConnected ? 'TRANSMIT PAYLOAD (ENTER)' : 'TRANSMIT PAYLOAD (NO LINK)'}
             </button>
           </div>
         </div>

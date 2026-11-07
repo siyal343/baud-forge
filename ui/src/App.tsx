@@ -44,7 +44,6 @@ export const App: React.FC = () => {
   if (launcherState === 'checking') return null;
   if (launcherState === 'show') return <Launcher />;
   const {
-    isConnected,
     isSimulated,
     isPaused,
     isFaultArmed,
@@ -63,7 +62,6 @@ export const App: React.FC = () => {
     setFilterText,
   } = useWorkstationStore(
     useShallow((s) => ({
-      isConnected: s.isConnected,
       isSimulated: s.isSimulated,
       isPaused: s.isPaused,
       isFaultArmed: s.isFaultArmed,
@@ -237,9 +235,12 @@ export const App: React.FC = () => {
     };
   }, [updateSnapshot, updateSession, addPacketBatch]);
 
-  // Continuous Telemetry Stream Generator (Simulation Mode)
+  // Continuous Telemetry Stream Generator (Simulation Mode). Runs whenever
+  // the workstation is in simulated mode — even after an honest refused
+  // CONNECT — so the offline demo stream keeps flowing (the SIMULATED badge
+  // says what it is). A real engine session flips isSimulated off.
   useEffect(() => {
-    if (!isConnected || !isSimulated || isPaused) return;
+    if (!isSimulated || isPaused) return;
 
     let pktCounter = 0;
     const interval = setInterval(() => {
@@ -251,7 +252,7 @@ export const App: React.FC = () => {
     }, 50); // 20 packets/sec (115.2k typical rate)
 
     return () => clearInterval(interval);
-  }, [isConnected, isSimulated, isPaused, isFaultArmed, selectedPort, addPacket]);
+  }, [isSimulated, isPaused, isFaultArmed, selectedPort, addPacket]);
 
   // Global Keyboard Shortcuts
   useEffect(() => {

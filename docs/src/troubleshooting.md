@@ -18,6 +18,14 @@ You are looking at the demo generator, not the wire. It appears when the UI has 
 
 The panel's DESTINATION badge names a port this engine does not have. Ports are workspace ids (`esp`, `obc`), not device paths — check the ribbon selector and the [Activity Log](activity-log.html) `tx_failed` entry for the exact port name.
 
+## DISCONNECT / reconnect behaviour
+
+**DISCONNECT in the ribbon stops the whole engine session**: the vault is sealed (the [Activity Log](activity-log.html) records it, and `<vault>.activity.jsonl` lands next to the capture), the serial port is released, and — in the desktop app — the launcher returns. There is no "half disconnected" state where the engine keeps streaming: if frames still arrive after DISCONNECT, the engine did not receive the stop (check the toast's reason).
+
+To reconnect — including after physically unplugging and replugging a device — return to the launcher and start the session again: a saved profile, quick-connect, or OPEN WORKSPACE. A session that restarts re-opens its ports from scratch, which is why replugging is handled by starting a session *after* the device is attached, not by pressing CONNECT against a stopped one.
+
+Against a CLI engine (`bforge serve`), DISCONNECT stops that engine process too (same graceful seal) — restart `bforge serve` to stream again.
+
 ## Frames decode wrong
 
 1. Check the framing in the workspace: `cobs` vs `delimiter` mismatch produces garbage frames that fail decode (`ERR: …` rows).
