@@ -64,7 +64,7 @@ by a line delimiter, decoded by the pack, then checked by `bforge assert` rules
 None of them tries to be complete. Each decodes the fields a person asks for first,
 and reports the rest as a byte count. A pack that guesses a layout produces
 confident wrong numbers, which is the failure mode this project exists to avoid, so
-the gaps are named in DEFERRED instead of filled with a guess.
+the gaps are named and deferred instead of filled with a guess.
 
 ## Test
 

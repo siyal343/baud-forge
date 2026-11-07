@@ -10,7 +10,7 @@ cannot do everything, and knowing which is which is the point of this page.
 | **Long ingest soak** — 4 ports at 1.2 MB/s for an hour, 4.3 GB vault | Headless, unattended, 8 GiB for the RSS ceiling, and the disk only has to hold one run | `specs/0007` measured 60 seconds; the nightly workflow measures 600 |
 | **Memory harness at scale** — 4 GiB vault, full read | Real Linux `/proc/self/status` numbers, not a cross-compiled branch | `specs/0007` measured 512 MiB |
 | **Linux end-to-end checks** — `record`, `tail`, `assert` over the TCP simulator, the yield socket, `libudev` enumeration | The Linux code paths run for real instead of under a Windows test | the Linux branches were verified only by CI's test run |
-| **Linux desktop build** — `.deb` and AppImage, screenshotted under Xvfb | Tauri on Linux needs no MSVC, so the GUI can be built and *seen* here without touching this workstation | Phase 2 is blocked locally (see `GUI-SETUP.md`) |
+| **Linux desktop build** — `.deb` and AppImage, screenshotted under Xvfb | Tauri on Linux needs no MSVC, so the GUI can be built and *seen* here without touching this workstation | Phase 2 is blocked locally |
 
 ## What it cannot do
 

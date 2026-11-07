@@ -8,7 +8,8 @@
 //!   capture here can be put beside an analyser capture of the same wire.
 //! - **PCAPNG**: a Wireshark container, link type USER0, each packet
 //!   `port u16, direction u8, payload`, timestamps in microseconds.
-//! - **Parquet**: refused by name; see the note in `NEXT.md`.
+//! - **Parquet**: refused by name (D-109); CSV and JSON Lines carry the same
+//!   columns, and a columnar writer would add dependencies nobody has asked for.
 
 use std::io::Write;
 

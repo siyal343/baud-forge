@@ -10,8 +10,8 @@
 //!
 //! Deliberate deviation from ADR-003: `tree-sitter-c` is named there, but this
 //! build has no C compiler, so the parser is written by hand. The interface is a
-//! function, so swapping the front end later does not touch the executor. See
-//! `DEFERRED.md` D-35.
+//! function, so swapping the front end later does not touch the executor.
+//! Deferred as D-35.
 
 use crate::{DissectorIr, IrOp, SchemaSource};
 use std::collections::HashMap;

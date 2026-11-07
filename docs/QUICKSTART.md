@@ -113,15 +113,16 @@ end)
 | `0 frames` on a socket port | the device is not sending, or the framing mode is wrong |
 | the plot is empty | no numeric field yet; pick one from the selector |
 | `404` from `/api/vault` | the server was started without `--vault` |
-| `webview2` error on start | install the Evergreen runtime, see `docs/GUI-SETUP.md` |
+| `webview2` error on start | install the Microsoft Edge WebView2 Evergreen runtime |
 | a send answers `409` | the port refused the write; check the state line in the sidebar |
 | Windows warns before running | unsigned build (D-95); check `SHA256SUMS.txt` and run anyway |
 
 ## What this release is not
 
-No installer signing (D-95), no macOS signing or notarisation (D-96), no WebGL plots
-(D-63), no time-axis scrubbing (D-68), no protobuf/Kaitai/defmt/MAVLink decoder, no C++
-demangling. The complete list, with a reason and an unblocking condition for each, is
-`DEFERRED.md`.
+No installer signing (D-95) and no macOS signing or notarisation (D-96), so the
+first launch shows a SmartScreen / Gatekeeper warning. The deferred-gaps log,
+with a reason and an unblocking condition for each D-number used across the
+specs, is kept out of the repository.
 
-Status and remaining scope: `STATUS.md`. What changed in each release: `RELEASE-NOTES.md`.
+What changed in each release: the
+[GitHub Releases](https://github.com/siyal343/baud-forge/releases) page.

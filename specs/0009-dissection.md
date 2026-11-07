@@ -78,7 +78,7 @@ could be verified. The front end is therefore hand-written for the subset above.
 
 The interface is `cheader::parse(&str) -> CHeader`, so a `tree-sitter-c` front end
 can replace the tokenizer without touching the executor or the compiled IR. The
-gap is recorded as D-35 in [DEFERRED.md](../DEFERRED.md), together with the
+gap is recorded as D-35, together with the
 shapes this parser refuses (D-36, D-37).
 
 ## Measured
