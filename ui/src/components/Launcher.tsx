@@ -52,7 +52,11 @@ export const Launcher: React.FC = () => {
   }, []);
 
   const navigate = (base: string) => {
-    window.location.replace(`${base}/?v=${Date.now()}`);
+    // Relative, exactly like the shell's own open_workbench: the workbench
+    // must run on THIS origin (?api points it at the engine). Navigating to
+    // the engine's absolute URL would land on a page where the Tauri ACL
+    // rejects every invoke — the launcher would just re-render, forever.
+    window.location.replace(`index.html?api=${base}&v=${Date.now()}`);
   };
 
   const startWorkspace = async (path: string) => {
@@ -74,7 +78,13 @@ export const Launcher: React.FC = () => {
   const openPicker = async () => {
     const core = tauri();
     if (!core) return;
-    const path = (await core.invoke('pick_workspace')) as string | null;
+    let path: string | null = null;
+    try {
+      path = (await core.invoke('pick_workspace')) as string | null;
+    } catch (e) {
+      setError(String(e));
+      return;
+    }
     if (path) await startWorkspace(path);
   };
 
@@ -96,9 +106,13 @@ export const Launcher: React.FC = () => {
   const reviewVault = async () => {
     const core = tauri();
     if (!core) return;
-    const path = (await core.invoke('pick_vault', { suggest: 'capture.bflog' })) as
-      | string
-      | null;
+    let path: string | null = null;
+    try {
+      path = (await core.invoke('pick_vault', { suggest: 'capture.bflog' })) as string | null;
+    } catch (e) {
+      setError(String(e));
+      return;
+    }
     if (!path) return;
     setBusy(path);
     setError(null);

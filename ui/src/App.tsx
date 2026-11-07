@@ -31,8 +31,10 @@ export const App: React.FC = () => {
       .then((state: string | null) => {
         if (state) {
           // A session is already running (workspace passed on the command
-          // line) — follow it.
-          window.location.replace(state.split(' ')[0] + '/?v=' + Date.now());
+          // line) — follow it, on THIS origin with ?api pointing at the
+          // engine. The engine's absolute URL would hit the Tauri ACL: every
+          // invoke is rejected there and the launcher would re-render forever.
+          window.location.replace(`index.html?api=${state.split(' ')[0]}&v=${Date.now()}`);
         } else {
           setLauncherState('show');
         }
