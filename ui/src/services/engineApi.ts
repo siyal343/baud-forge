@@ -563,10 +563,40 @@ export class EngineApiClient {
     }
   }
 
-  getVaultExportUrl(format: string, path?: string): string {
-    const params = new URLSearchParams({ format });
-    if (path) params.set('path', path);
-    return `${this.baseUrl}/api/vault/export?${params.toString()}`;
+  /**
+   * Export a vault through the engine and hand the bytes to the browser as a
+   * blob download. An anchor straight at the endpoint cannot report errors —
+   * a 404 "no vault" was silently saved as a corrupt export — and cross-origin
+   * downloads are dropped entirely by the desktop webview's ACL. The long
+   * deadline matches the endpoint's whole-vault-in-memory response: a 285 000
+   * record vault is ~76 MB of CSV.
+   */
+  async exportVaultFile(
+    format: string,
+    path?: string
+  ): Promise<{ ok: true; filename: string } | { ok: false; error: string }> {
+    try {
+      const params = new URLSearchParams({ format });
+      if (path) params.set('path', path);
+      const res = await this.fetchWithTimeout(`/api/vault/export?${params.toString()}`, undefined, 120_000);
+      if (!res.ok) {
+        let error = `HTTP ${res.status}`;
+        try {
+          const body = await res.json();
+          if (body?.error) error = body.error;
+        } catch {
+          // non-JSON error body — keep the status line
+        }
+        return { ok: false, error };
+      }
+      const disposition = res.headers.get('content-disposition') || '';
+      const match = disposition.match(/filename="([^"]+)"/);
+      const filename = match ? match[1] : `bforge-vault.${format}`;
+      triggerFileDownload(await res.blob(), filename);
+      return { ok: true, filename };
+    } catch (err: unknown) {
+      return { ok: false, error: err instanceof Error ? err.message : String(err) };
+    }
   }
 
   async getVaultInfo(path?: string): Promise<{

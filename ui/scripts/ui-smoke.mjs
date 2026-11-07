@@ -452,6 +452,66 @@ try {
       `header=${state.header} empty=${state.empty} filters=${state.filters}`
     );
   }
+  // T11: vault export modal — stacking order and honest export results.
+  // The overlay must sit above dockview chrome (sashes are z-99, the floating
+  // group host is forced to z-500) or panel separators paint over the dimmed
+  // backdrop. A vault export without an engine must SAY it failed — the old
+  // anchor download reported "Download initiated" while saving nothing.
+  {
+    await page.evaluate(() => window.__bforgeStore.getState().setExportModalOpen(true));
+    await sleep(400);
+    const modal = await page.evaluate(() => {
+      const overlay = [...document.querySelectorAll('div')].find((d) =>
+        d.className?.includes?.('z-[999998]')
+      );
+      const open = [...document.querySelectorAll('h2')].some((h) =>
+        h.textContent.includes('Session Vault Export')
+      );
+      return { open, z: overlay ? getComputedStyle(overlay).zIndex : null };
+    });
+    const zOk = modal.z !== null && Number(modal.z) >= 999998;
+    check('export modal opens above dockview chrome', modal.open && zOk, `z=${modal.z}`);
+
+    // Vault source with no engine: the click must produce a real request and
+    // an honest failure, never a fake success message.
+    await page.evaluate(() => {
+      [...document.querySelectorAll('button')]
+        .find((b) => b.textContent.includes('EXPORT PCAPNG'))
+        ?.click();
+    });
+    await sleep(1200);
+    const vaultStatus = await page.evaluate(() =>
+      [...document.querySelectorAll('span')].map((s) => s.textContent).find((t) => t.startsWith('Export failed') || t.startsWith('Saved'))
+    );
+    check(
+      'vault export reports failure without an engine',
+      typeof vaultStatus === 'string' && vaultStatus.startsWith('Export failed'),
+      String(vaultStatus)
+    );
+
+    // Memory source: client-side export still succeeds.
+    await page.evaluate(() => {
+      [...document.querySelectorAll('button')]
+        .find((b) => b.textContent.includes('Live Stream Buffer'))
+        ?.click();
+    });
+    await sleep(300);
+    await page.evaluate(() => {
+      [...document.querySelectorAll('button')]
+        .find((b) => b.textContent.includes('EXPORT PCAPNG'))
+        ?.click();
+    });
+    await sleep(1200);
+    const memStatus = await page.evaluate(() =>
+      [...document.querySelectorAll('span')].map((s) => s.textContent).find((t) => t.includes('Exported') || t.startsWith('Export failed'))
+    );
+    check(
+      'memory export succeeds client-side',
+      typeof memStatus === 'string' && memStatus.includes('Exported'),
+      String(memStatus)
+    );
+    await page.evaluate(() => window.__bforgeStore.getState().setExportModalOpen(false));
+  }
 } finally {
   await browser.close();
 }

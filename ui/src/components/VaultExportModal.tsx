@@ -15,6 +15,7 @@ import {
 } from 'lucide-react';
 import { useWorkstationStore } from '../store/useWorkstationStore';
 import { engineApi, exportPacketsClientSide } from '../services/engineApi';
+import { isDesktopShell } from './Launcher';
 
 type ExportFormat = 'pcapng' | 'csv' | 'saleae' | 'jsonl' | 'parquet';
 
@@ -90,7 +91,9 @@ export const VaultExportModal: React.FC = () => {
   );
   const [selectedFormat, setSelectedFormat] = useState<ExportFormat>('pcapng');
   const [sourceMode, setSourceMode] = useState<'vault' | 'memory'>('vault');
-  const [customVaultPath, setCustomVaultPath] = useState(vaultPath || 'vaults/session_001.bflog');
+  // Empty means the active session vault — a hardcoded example path here used
+  // to export a vault that does not exist and report success anyway.
+  const [customVaultPath, setCustomVaultPath] = useState(vaultPath || '');
   const [vaultInfo, setVaultInfo] = useState<{
     path: string;
     records: number;
@@ -103,7 +106,7 @@ export const VaultExportModal: React.FC = () => {
 
   useEffect(() => {
     if (isExportModalOpen && sourceMode === 'vault') {
-      engineApi.getVaultInfo(customVaultPath).then((info) => {
+      engineApi.getVaultInfo(customVaultPath.trim() || undefined).then((info) => {
         setVaultInfo(info);
       });
     }
@@ -118,22 +121,38 @@ export const VaultExportModal: React.FC = () => {
 
     try {
       if (sourceMode === 'vault') {
-        const downloadUrl = engineApi.getVaultExportUrl(selectedFormat, customVaultPath);
-        // In browser or webview: initiate anchor download
-        const a = document.createElement('a');
-        a.href = downloadUrl;
-        a.download = `bforge-vault.${selectedFormat === 'saleae' ? 'saleae.csv' : selectedFormat}`;
-        document.body.appendChild(a);
-        a.click();
-        document.body.removeChild(a);
-        setStatusMessage(`Download initiated via engine endpoint /api/vault/export?format=${selectedFormat}`);
+        const path = customVaultPath.trim() || undefined;
+        if (isDesktopShell()) {
+          // The webview has no download shelf, and an anchor pointing at the
+          // engine is a cross-origin navigation the ACL swallows — the click
+          // used to do nothing at all. Write the file natively instead; the
+          // command reports where it went.
+          const tauri = (window as unknown as { __TAURI__?: { core?: { invoke: (cmd: string, args?: Record<string, unknown>) => Promise<unknown> } } }).__TAURI__;
+          const outPath = await tauri?.core?.invoke('export_vault', {
+            format: selectedFormat,
+            path: path ?? null,
+          });
+          if (typeof outPath === 'string') {
+            setStatusMessage(`Vault exported to ${outPath}`);
+          } else {
+            setStatusMessage('Export failed: desktop shell did not answer the export request');
+          }
+        } else {
+          const result = await engineApi.exportVaultFile(selectedFormat, path);
+          if (result.ok) {
+            setStatusMessage(`Saved ${result.filename}`);
+          } else {
+            setStatusMessage(`Export failed: ${result.error}`);
+          }
+        }
       } else {
         // Export live in-memory packets
         exportPacketsClientSide(packets, selectedFormat, baudRate);
         setStatusMessage(`Exported ${packets.length.toLocaleString()} in-memory frames to ${selectedFormat.toUpperCase()}`);
       }
-    } catch (err: any) {
-      setStatusMessage(`Export failed: ${err?.message || err}`);
+    } catch (err: unknown) {
+      const message = err instanceof Error ? err.message : String(err);
+      setStatusMessage(`Export failed: ${message}`);
     } finally {
       setIsExporting(false);
     }
@@ -141,8 +160,11 @@ export const VaultExportModal: React.FC = () => {
 
   const selectedOpt = FORMAT_OPTIONS.find((f) => f.id === selectedFormat)!;
 
+  // Above every dockview surface: the floating-group host (index.css, z:500),
+  // drag overlays (z:999) and watermark (z:9999) all painted over a z-50
+  // backdrop, leaving bright panel separators floating on the dimmed page.
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/75 backdrop-blur-[2px] p-4">
+    <div className="fixed inset-0 z-[999998] flex items-center justify-center bg-black/75 backdrop-blur-[2px] p-4">
       <div className="bg-[#0E131F] border border-[#222D3D] rounded-lg shadow-2xl w-full max-w-2xl overflow-hidden flex flex-col font-sans text-[#E2E8F0]">
         {/* Header */}
         <div className="flex items-center justify-between px-4 py-3 bg-[#161C28] border-b border-[#222D3D]">
@@ -223,7 +245,7 @@ export const VaultExportModal: React.FC = () => {
                   value={customVaultPath}
                   onChange={(e) => setCustomVaultPath(e.target.value)}
                   className="w-2/3 px-2 py-0.5 bg-[#0E131F] border border-[#222D3D] rounded text-[10px] font-mono text-[#E2E8F0] focus:border-[#00E5FF] focus:outline-none"
-                  placeholder="vaults/session_001.bflog"
+                  placeholder="Active session vault"
                 />
               </div>
               <div className="flex items-center justify-between text-[10px] font-mono text-[#64748B] pt-1 border-t border-[#222D3D]">
@@ -278,9 +300,19 @@ export const VaultExportModal: React.FC = () => {
 
           {/* Feedback status */}
           {statusMessage && (
-            <div className="flex items-center gap-2 p-2 rounded bg-[#161C28] border border-[#222D3D] text-[10px] font-mono text-[#00E5FF]">
-              <CheckCircle2 className="w-3.5 h-3.5 shrink-0 text-[#10B981]" />
-              <span>{statusMessage}</span>
+            <div
+              className={`flex items-center gap-2 p-2 rounded bg-[#161C28] border text-[10px] font-mono ${
+                statusMessage.startsWith('Export failed')
+                  ? 'border-[#EF4444]/40 text-[#EF4444]'
+                  : 'border-[#222D3D] text-[#00E5FF]'
+              }`}
+            >
+              {statusMessage.startsWith('Export failed') ? (
+                <AlertCircle className="w-3.5 h-3.5 shrink-0 text-[#EF4444]" />
+              ) : (
+                <CheckCircle2 className="w-3.5 h-3.5 shrink-0 text-[#10B981]" />
+              )}
+              <span className="break-all">{statusMessage}</span>
             </div>
           )}
         </div>

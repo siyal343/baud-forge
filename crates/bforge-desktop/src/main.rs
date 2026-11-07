@@ -608,16 +608,24 @@ fn pick_header_file() -> Option<String> {
 /// Write the vault beside itself in a format the person can open elsewhere (FR-STO-02).
 ///
 /// The window has no download shelf, so this writes the file and reports where it went
-/// rather than handing bytes to a browser.
+/// rather than handing bytes to a browser. `path` targets another vault; without it
+/// the active session's vault is exported.
 #[tauri::command]
-fn export_vault(app: tauri::AppHandle, format: String) -> Result<String, String> {
-    let vault = {
-        let running = app.state::<Engine>();
-        let guard = running.running.lock().unwrap();
-        guard
-            .as_ref()
-            .map(|running| running.vault.clone())
-            .ok_or("no session to export")?
+fn export_vault(
+    app: tauri::AppHandle,
+    format: String,
+    path: Option<String>,
+) -> Result<String, String> {
+    let vault = match path {
+        Some(path) if !path.trim().is_empty() => std::path::PathBuf::from(path),
+        _ => {
+            let running = app.state::<Engine>();
+            let guard = running.running.lock().unwrap();
+            guard
+                .as_ref()
+                .map(|running| running.vault.clone())
+                .ok_or("no session to export")?
+        }
     };
     let Some(format) = bforge_storage::format_from_name(&format) else {
         return Err(format!(
