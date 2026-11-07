@@ -1054,15 +1054,18 @@ fn devices_and_quick_connect_and_export() {
         assert!(status.contains("200"), "devices status: {status}");
         assert!(body.starts_with('[') && body.ends_with(']'), "devices body: {body}");
 
-        // POST /api/quick-connect
+        // POST /api/quick-connect — an honest 501: a running session's ports
+        // are fixed (the desktop launcher's Tauri quick-connect is the path
+        // that opens one). The requested config is still recorded, which the
+        // export checks below depend on.
         let (status, body) = post(
             &address,
             "/api/quick-connect",
             r#"{"device":"COM99","baud_rate":115200,"framing":"delimiter"}"#,
         );
-        assert!(status.contains("200"), "quick-connect status: {status}");
-        assert!(body.contains("\"ok\":true"), "quick-connect body: {body}");
-        assert!(body.contains("\"port\":\"serial0\""), "quick-connect body: {body}");
+        assert!(status.contains("501"), "quick-connect status: {status}");
+        assert!(body.contains("\"ok\":false"), "quick-connect body: {body}");
+        assert!(body.contains("ports are fixed"), "quick-connect body: {body}");
 
         // POST /api/workspace/export
         let (status, body) = post(&address, "/api/workspace/export", "{}");

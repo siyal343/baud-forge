@@ -158,10 +158,14 @@ fn open_with_retry(path: &Path) -> Result<LogReader, DiffError> {
         match LogReader::open(path) {
             Ok(reader) => return Ok(reader),
             Err(error) => {
-                last = Some(DiffError::Io(std::io::Error::new(
-                    std::io::ErrorKind::Other,
-                    format!("{}: {}", path.display(), error),
-                )));
+                // Still a storage error — just one that carries the path, so
+                // "cannot find the file" says WHICH file. Rewrapping as `Io`
+                // would misreport a storage-layer failure.
+                last = Some(DiffError::Storage(StorageError::Io(format!(
+                    "{}: {}",
+                    path.display(),
+                    error
+                ))));
                 if attempt < 2 {
                     std::thread::sleep(std::time::Duration::from_millis(150));
                 }
