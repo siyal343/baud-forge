@@ -83,10 +83,10 @@ export const App: React.FC = () => {
     }))
   );
 
-  // Initial demo capture load on start so screen is immediately rich with realistic data
-  useEffect(() => {
-    loadSampleCapture();
-  }, [loadSampleCapture]);
+  // The demo capture seeds only when there is no engine to connect to —
+  // tryConnect's failure path seeds it after the first failed health check.
+  // Seeding unconditionally on mount mixed fake `COM8` rows (FAULT badges
+  // included) into a real session's stream.
 
   // Try connecting to live Rust Engine (bforge serve /api/events).
   // Retries health checks on a 5 s loop (so a late-starting engine is picked
@@ -185,8 +185,17 @@ export const App: React.FC = () => {
       engineApi.checkHealth().then((isHealthy) => {
         if (disposed) return;
         if (!isHealthy) {
+          // No engine (yet): keep the screen rich with the simulated capture.
+          if (useWorkstationStore.getState().packets.length === 0) {
+            loadSampleCapture();
+          }
           retryTimer = window.setTimeout(tryConnect, 5000);
           return;
+        }
+        // First connect (not an SSE reconnect): drop any simulated rows so the
+        // real session's stream holds only what the hardware actually sent.
+        if (useWorkstationStore.getState().isSimulated) {
+          useWorkstationStore.getState().clearStream();
         }
         useWorkstationStore.setState({ isSimulated: false, isConnected: true });
         unsubscribe = engineApi.subscribeEvents(

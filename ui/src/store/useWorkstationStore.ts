@@ -294,7 +294,7 @@ export const useWorkstationStore = create<WorkstationState>((set, get) => ({
   engineRecording: false,
   rxBytes: 0,
   txBytes: 0,
-  packetRate: 20,
+  packetRate: 0,
   overruns: 0,
   uiScale: (() => {
     try {

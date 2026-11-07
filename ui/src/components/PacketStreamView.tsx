@@ -243,14 +243,28 @@ export const PacketStreamView: React.FC = () => {
     [autoScroll, setAutoScroll]
   );
 
-  // Auto-scroll to bottom on incoming frames if follow mode active
+  // Auto-scroll to bottom on incoming frames if follow mode active. The write
+  // is rAF-deferred and skipped when already at the bottom: at hundreds of
+  // frames per second a synchronous forced scroll per batch saturated the main
+  // thread (the whole workbench froze under load).
   useEffect(() => {
-    if (autoScroll && containerRef.current) {
-      containerRef.current.scrollTop = containerRef.current.scrollHeight;
-    } else if (isUserScrolledUp) {
+    if (!autoScroll || isUserScrolledUp || !containerRef.current) return;
+    const raf = requestAnimationFrame(() => {
+      const el = containerRef.current;
+      if (!el) return;
+      if (el.scrollHeight - el.scrollTop - el.clientHeight > 4) {
+        el.scrollTop = el.scrollHeight;
+      }
+    });
+    return () => cancelAnimationFrame(raf);
+  }, [packets.length, autoScroll, isUserScrolledUp]);
+
+  // Count frames the reader misses while they have scrolled up to study history.
+  useEffect(() => {
+    if (isUserScrolledUp && !autoScroll) {
       setNewFramesCount((prev) => prev + 1);
     }
-  }, [packets.length, autoScroll, isUserScrolledUp]);
+  }, [packets.length, isUserScrolledUp, autoScroll]);
 
   const handleJumpToLive = () => {
     setAutoScroll(true);
