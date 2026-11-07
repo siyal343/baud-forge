@@ -1,0 +1,106 @@
+<!doctype html>
+<html lang="en"><head><meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Session Diff — BaudForge</title>
+<meta name="description" content="BaudForge user documentation — hardware engineering workstation">
+<style>
+:root{--bg:#0a0d13;--panel:#10141d;--panel2:#161c28;--line:#222d3d;--fg:#e2e8f0;--dim:#94a3b8;--faint:#64748b;--accent:#00e5ff;--warn:#f59e0b;--err:#ef4444}
+*{box-sizing:border-box}
+body{margin:0;background:var(--bg);color:var(--fg);font:14px/1.65 'Segoe UI',system-ui,sans-serif}
+a{color:var(--accent);text-decoration:none}a:hover{text-decoration:underline}
+header.top{display:flex;align-items:center;gap:12px;padding:10px 22px;border-bottom:1px solid var(--line);background:var(--panel);position:sticky;top:0;z-index:10}
+header.top .brand{font-family:Consolas,monospace;font-weight:700;letter-spacing:.18em;color:var(--accent);font-size:15px}
+header.top .tag{font-size:11px;color:var(--dim);border:1px solid var(--line);border-radius:3px;padding:1px 7px}
+header.top .gh{margin-left:auto;font-size:12px}
+.wrap{display:flex;max-width:1440px;margin:0 auto}
+nav.side{width:250px;min-width:250px;padding:22px 14px 60px;border-right:1px solid var(--line);position:sticky;top:53px;height:calc(100vh - 53px);overflow-y:auto;background:var(--panel)}
+nav.side .grp{font-family:Consolas,monospace;font-size:10px;letter-spacing:.14em;text-transform:uppercase;color:var(--faint);margin:18px 10px 6px}
+nav.side a{display:block;padding:5px 10px;border-radius:5px;color:var(--dim);font-size:13px}
+nav.side a:hover{background:var(--panel2);color:var(--fg);text-decoration:none}
+nav.side a.cur{background:rgba(0,229,255,.08);color:var(--accent);border-left:2px solid var(--accent)}
+main{flex:1;min-width:0;padding:34px 44px 90px;max-width:940px}
+main h1{font-size:27px;border-bottom:1px solid var(--line);padding-bottom:12px;margin-top:0}
+main h2{font-size:19px;margin-top:38px;border-left:3px solid var(--accent);padding-left:10px}
+main h3{font-size:15px;color:var(--dim)}
+main img{max-width:100%;border:1px solid var(--line);border-radius:8px;margin:14px 0;box-shadow:0 6px 24px rgba(0,0,0,.45);display:block}
+main code{background:var(--panel2);border:1px solid var(--line);border-radius:4px;padding:1px 6px;font:12.5px Consolas,monospace;color:#fbcfe8}
+main pre{background:var(--panel);border:1px solid var(--line);border-radius:8px;padding:14px 16px;overflow-x:auto}
+main pre code{background:none;border:none;padding:0;color:#a5f3fc;line-height:1.55}
+main table{border-collapse:collapse;width:100%;margin:14px 0;font-size:13.5px}
+main th{background:var(--panel2);text-align:left;font-family:Consolas,monospace;font-size:12px;letter-spacing:.05em;text-transform:uppercase;color:var(--dim)}
+main th,main td{border:1px solid var(--line);padding:7px 11px;vertical-align:top}
+main tr:nth-child(even) td{background:rgba(22,28,40,.4)}
+main blockquote{border-left:3px solid var(--warn);background:rgba(245,158,11,.07);margin:14px 0;padding:10px 16px;color:var(--dim)}
+.pager{display:flex;justify-content:space-between;margin-top:56px;padding-top:18px;border-top:1px solid var(--line);font-family:Consolas,monospace;font-size:13px}
+.pager a.prev::before{content:'← '}
+.pager a.next::after{content:' →'}
+footer{border-top:1px solid var(--line);color:var(--faint);font-size:12px;padding:16px 22px;text-align:center}
+</style></head>
+<body>
+<header class="top"><span class="brand">BAUDFORGE</span><span class="tag">v1.0 docs</span><a class="gh" href="https://github.com/siyal343/baud-forge">GitHub ↗</a></header>
+<div class="wrap">
+<nav class="side"><div class="grp">Getting started</div><a href="index.html">Overview & Quickstart</a><a href="launcher.html">Desktop Launcher</a>
+<div class="grp">Observing</div><a href="packet-stream.html">Packet Stream</a><a href="protocol-dissector.html">Protocol Dissector</a><a href="hex-inspector.html">Hex & ASCII</a><a href="oscilloscope.html">Telemetry Oscilloscope</a><a href="dvr-replay.html">DVR & Replay</a><a href="session-diff.html" class="cur">Session Diff</a><a href="schema-dialects.html">Schema Dialects</a>
+<div class="grp">Instruments</div><a href="command-forge.html">Command Forge</a><a href="pin-sequencer.html">Pin Sequencer</a><a href="fault-rig.html">HIL Fault Rig</a><a href="file-transfer.html">X/YMODEM Transfer</a><a href="mitm-bridge.html">MITM Bridge</a><a href="elf-symbols.html">ELF Symbols</a>
+<div class="grp">Records</div><a href="activity-log.html">Activity Log</a><a href="rec-vaults.html">REC & Vaults</a><a href="exports.html">Exports</a>
+<div class="grp">Reference</div><a href="keyboard-shortcuts.html">Keyboard Shortcuts</a><a href="troubleshooting.html">Troubleshooting</a></nav>
+<main><h1>Session Diff</h1>
+<p>The Session Diff compares two recorded vaults and reports exactly where and how they diverge — the regression gate between a golden baseline and today&#39;s hardware run.</p>
+<p><img src="img/session-diff.png" alt="A diff between two real hardware captures"></p>
+<h2>Running a diff</h2>
+<ol>
+<li><strong>A: Baseline golden vault</strong> — the capture you trust (<code>vaults/imu-assert.bflog</code>).</li>
+<li><strong>B: Test comparison vault</strong> — the run under test (<code>vaults/s6-COM8.bflog</code>).</li>
+<li><strong>RUN DIFF</strong>.</li>
+</ol>
+<p>Both vaults are read-only inputs; the engine&#39;s semantic diff engine walks them record by record and reports:</p>
+<table>
+<thead>
+<tr>
+<th>Metric</th>
+<th>Meaning</th>
+</tr>
+</thead>
+<tbody><tr>
+<td><strong>RECORDS (A / B)</strong></td>
+<td>Raw records in each vault.</td>
+</tr>
+<tr>
+<td><strong>FRAMES (A / B)</strong></td>
+<td>Decoded frames in each.</td>
+</tr>
+<tr>
+<td><strong>MISSING FRAMES</strong></td>
+<td>Frames present in A but absent in B — dropped on the wire.</td>
+</tr>
+<tr>
+<td><strong>FIRST DIVERGENCE</strong></td>
+<td>The first record where the two runs differ, with the reason (<code>payload byte mismatch at offset 3</code>) and the record index.</td>
+</tr>
+<tr>
+<td><strong>① FIELD DIVERGENCE</strong> badge</td>
+<td>Lights when decoded fields differ, not just bytes.</td>
+</tr>
+<tr>
+<td><strong>Field table</strong></td>
+<td>Per-field: difference count and sample values from each side.</td>
+</tr>
+</tbody></table>
+<p>Presets (e.g. <code>IMU Assert vs Hardware Run</code>, <code>COM8 Run 2 vs Run 4</code>) fill both paths from your rig&#39;s usual comparison pairs.</p>
+<h2>What a diff is good for</h2>
+<ul>
+<li><strong>Regression gating</strong>: flash a new build, run the same stimulus, diff against the golden capture — field drift and dropped frames show up instantly instead of in the field.</li>
+<li><strong>Corruption forensics</strong>: the first-divergence offset points at the exact byte where the runs split — usually where a fault or a firmware change bit you.</li>
+<li><strong>Two-run A/B</strong>: capture the same stimulus before and after a wiring change; the field table quantifies what moved.</li>
+</ul>
+<h2>How decoding applies</h2>
+<p>Diff decodes with each vault&#39;s <strong>sidecar workspace</strong> (<code>&lt;vault&gt;.bforge.toml</code>), so frames compare as decoded fields where possible; without a sidecar it compares raw records. The vault writer copies the workspace beside the capture when <a href="rec-vaults.html">REC</a> starts, which is what makes a reviewed capture decode.</p>
+<h2>Tips</h2>
+<ul>
+<li>Both paths are engine-relative (where the engine process runs — usually the repo root) or absolute.</li>
+<li>If a vault cannot be opened, the panel shows the engine&#39;s actual error — <code>storage: io: &lt;path&gt;: …</code> names the file — never a fabricated comparison.</li>
+</ul>
+<div class="pager"><a class="prev" href="dvr-replay.html">DVR & Replay</a><a class="next" href="command-forge.html">Command Forge</a></div></main>
+</div>
+<footer>BaudForge — hardware engineering workstation · built from docs/src with marked · screenshots from the live application on real hardware</footer>
+</body></html>

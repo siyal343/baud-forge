@@ -147,13 +147,37 @@ fn decode_frames(
 /// When `config` is `None`, check for sidecars `<vault_stem>.bforge.toml` next to
 /// `a` or `b`. If found, use that configuration. If no configuration is found,
 /// compare raw records.
+/// Open a vault, tolerating the transient share violations Windows file
+/// watchers (antivirus, search indexing) hold on freshly written captures.
+/// Three tries spread over ~300 ms; a genuinely missing file still fails fast
+/// on the first try's error path. The path rides in the error — "cannot find
+/// the file" without WHICH file answers nothing.
+fn open_with_retry(path: &Path) -> Result<LogReader, DiffError> {
+    let mut last: Option<DiffError> = None;
+    for attempt in 0..3 {
+        match LogReader::open(path) {
+            Ok(reader) => return Ok(reader),
+            Err(error) => {
+                last = Some(DiffError::Io(std::io::Error::new(
+                    std::io::ErrorKind::Other,
+                    format!("{}: {}", path.display(), error),
+                )));
+                if attempt < 2 {
+                    std::thread::sleep(std::time::Duration::from_millis(150));
+                }
+            }
+        }
+    }
+    Err(last.expect("at least one open attempt was made"))
+}
+
 pub fn diff_vaults(
     a: &Path,
     b: &Path,
     config: Option<&ProjectConfig>,
 ) -> Result<DiffReport, DiffError> {
-    let mut reader_a = LogReader::open(a)?;
-    let mut reader_b = LogReader::open(b)?;
+    let mut reader_a = open_with_retry(a)?;
+    let mut reader_b = open_with_retry(b)?;
 
     let sidecar_config;
     let active_config = match config {

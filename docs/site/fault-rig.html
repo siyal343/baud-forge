@@ -1,0 +1,97 @@
+<!doctype html>
+<html lang="en"><head><meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>HIL Fault Rig — BaudForge</title>
+<meta name="description" content="BaudForge user documentation — hardware engineering workstation">
+<style>
+:root{--bg:#0a0d13;--panel:#10141d;--panel2:#161c28;--line:#222d3d;--fg:#e2e8f0;--dim:#94a3b8;--faint:#64748b;--accent:#00e5ff;--warn:#f59e0b;--err:#ef4444}
+*{box-sizing:border-box}
+body{margin:0;background:var(--bg);color:var(--fg);font:14px/1.65 'Segoe UI',system-ui,sans-serif}
+a{color:var(--accent);text-decoration:none}a:hover{text-decoration:underline}
+header.top{display:flex;align-items:center;gap:12px;padding:10px 22px;border-bottom:1px solid var(--line);background:var(--panel);position:sticky;top:0;z-index:10}
+header.top .brand{font-family:Consolas,monospace;font-weight:700;letter-spacing:.18em;color:var(--accent);font-size:15px}
+header.top .tag{font-size:11px;color:var(--dim);border:1px solid var(--line);border-radius:3px;padding:1px 7px}
+header.top .gh{margin-left:auto;font-size:12px}
+.wrap{display:flex;max-width:1440px;margin:0 auto}
+nav.side{width:250px;min-width:250px;padding:22px 14px 60px;border-right:1px solid var(--line);position:sticky;top:53px;height:calc(100vh - 53px);overflow-y:auto;background:var(--panel)}
+nav.side .grp{font-family:Consolas,monospace;font-size:10px;letter-spacing:.14em;text-transform:uppercase;color:var(--faint);margin:18px 10px 6px}
+nav.side a{display:block;padding:5px 10px;border-radius:5px;color:var(--dim);font-size:13px}
+nav.side a:hover{background:var(--panel2);color:var(--fg);text-decoration:none}
+nav.side a.cur{background:rgba(0,229,255,.08);color:var(--accent);border-left:2px solid var(--accent)}
+main{flex:1;min-width:0;padding:34px 44px 90px;max-width:940px}
+main h1{font-size:27px;border-bottom:1px solid var(--line);padding-bottom:12px;margin-top:0}
+main h2{font-size:19px;margin-top:38px;border-left:3px solid var(--accent);padding-left:10px}
+main h3{font-size:15px;color:var(--dim)}
+main img{max-width:100%;border:1px solid var(--line);border-radius:8px;margin:14px 0;box-shadow:0 6px 24px rgba(0,0,0,.45);display:block}
+main code{background:var(--panel2);border:1px solid var(--line);border-radius:4px;padding:1px 6px;font:12.5px Consolas,monospace;color:#fbcfe8}
+main pre{background:var(--panel);border:1px solid var(--line);border-radius:8px;padding:14px 16px;overflow-x:auto}
+main pre code{background:none;border:none;padding:0;color:#a5f3fc;line-height:1.55}
+main table{border-collapse:collapse;width:100%;margin:14px 0;font-size:13.5px}
+main th{background:var(--panel2);text-align:left;font-family:Consolas,monospace;font-size:12px;letter-spacing:.05em;text-transform:uppercase;color:var(--dim)}
+main th,main td{border:1px solid var(--line);padding:7px 11px;vertical-align:top}
+main tr:nth-child(even) td{background:rgba(22,28,40,.4)}
+main blockquote{border-left:3px solid var(--warn);background:rgba(245,158,11,.07);margin:14px 0;padding:10px 16px;color:var(--dim)}
+.pager{display:flex;justify-content:space-between;margin-top:56px;padding-top:18px;border-top:1px solid var(--line);font-family:Consolas,monospace;font-size:13px}
+.pager a.prev::before{content:'← '}
+.pager a.next::after{content:' →'}
+footer{border-top:1px solid var(--line);color:var(--faint);font-size:12px;padding:16px 22px;text-align:center}
+</style></head>
+<body>
+<header class="top"><span class="brand">BAUDFORGE</span><span class="tag">v1.0 docs</span><a class="gh" href="https://github.com/siyal343/baud-forge">GitHub ↗</a></header>
+<div class="wrap">
+<nav class="side"><div class="grp">Getting started</div><a href="index.html">Overview & Quickstart</a><a href="launcher.html">Desktop Launcher</a>
+<div class="grp">Observing</div><a href="packet-stream.html">Packet Stream</a><a href="protocol-dissector.html">Protocol Dissector</a><a href="hex-inspector.html">Hex & ASCII</a><a href="oscilloscope.html">Telemetry Oscilloscope</a><a href="dvr-replay.html">DVR & Replay</a><a href="session-diff.html">Session Diff</a><a href="schema-dialects.html">Schema Dialects</a>
+<div class="grp">Instruments</div><a href="command-forge.html">Command Forge</a><a href="pin-sequencer.html">Pin Sequencer</a><a href="fault-rig.html" class="cur">HIL Fault Rig</a><a href="file-transfer.html">X/YMODEM Transfer</a><a href="mitm-bridge.html">MITM Bridge</a><a href="elf-symbols.html">ELF Symbols</a>
+<div class="grp">Records</div><a href="activity-log.html">Activity Log</a><a href="rec-vaults.html">REC & Vaults</a><a href="exports.html">Exports</a>
+<div class="grp">Reference</div><a href="keyboard-shortcuts.html">Keyboard Shortcuts</a><a href="troubleshooting.html">Troubleshooting</a></nav>
+<main><h1>HIL Fault Injection Rig</h1>
+<p>The Fault Rig corrupts what your <strong>device receives</strong> — the hardware-in-the-loop way to answer &quot;what does my firmware do when the wire turns hostile?&quot;. Bit flips, dropped frames, CRC corruption, truncation and bus delays, all reproducible.</p>
+<p><img src="img/fault-rig.png" alt="The fault rig armed with a bit-flip profile"></p>
+<h2>The master interlock</h2>
+<p>The red <strong>MASTER FAULT INTERLOCK: ARMED (TRANSMITTING ERRORS)</strong> banner appears whenever a profile is live, and the ribbon&#39;s <code>FAULT</code> badge lights up. Everything you transmit while armed is corrupted according to the profile — flip it off the moment you are done; the arm state is session-local (it clears when the engine stops).</p>
+<h2>Profiles</h2>
+<table>
+<thead>
+<tr>
+<th>Profile</th>
+<th>What it does</th>
+</tr>
+</thead>
+<tbody><tr>
+<td><strong>BIT FLIP (BER)</strong></td>
+<td>Random single-bit flips across transmitted bytes at the chosen bit error rate — the radiation-test classic. The slider reads <code>10^-n</code> (errors per bit).</td>
+</tr>
+<tr>
+<td><strong>PACKET DROP</strong></td>
+<td>Drops every Nth transmission (<code>drop_every</code>).</td>
+</tr>
+<tr>
+<td><strong>CORRUPT CRC</strong></td>
+<td>Damages bytes so the device&#39;s own checksum check fires.</td>
+</tr>
+<tr>
+<td><strong>TRUNCATE</strong></td>
+<td>Cuts frames short mid-transmission.</td>
+</tr>
+<tr>
+<td><strong>BUS DELAY</strong></td>
+<td>Holds bytes back by <code>delay_ms</code> (± <code>jitter_ms</code>) — tests your device&#39;s timeouts.</td>
+</tr>
+</tbody></table>
+<p>Set the parameters, then <strong>APPLY LIVE MUTATION TO ENGINE</strong> — the profile is live immediately; no restart.</p>
+<h2>What exactly is corrupted</h2>
+<p>Fault injection applies to the <strong>transmit path</strong>: the bytes you send through <a href="command-forge.html">Command Forge</a>, a pin sequence, or a bridge forward are corrupted <em>before they reach the device</em>. The engine reports what actually left: a send reply carries <code>fault_bytes</code> (how many bytes the profile altered) alongside <code>sent</code>. Your device&#39;s reaction — CRC-fail handling, retry logic, watchdog resets — is the experiment.</p>
+<p>Receive-side corruption (damaging what the <em>workstation</em> sees) is deliberately not a feature; the engine&#39;s job on receive is to tell you the truth about the wire.</p>
+<h2>One-shot firmware triggers</h2>
+<p>Three buttons send ASCII commands to firmware that understands the test protocol (<code>fault bad_crc 3</code>, <code>fault drop 2</code>) — for firmware that implements its own self-test triggers. They fail honestly with the engine&#39;s reason if the port cannot take them.</p>
+<h2>Verifying it works</h2>
+<ol>
+<li>Arm <code>BIT FLIP</code> at a high rate.</li>
+<li>Send a frame from <a href="command-forge.html">Command Forge</a>.</li>
+<li>The send reply&#39;s <code>fault_bytes</code> shows the corruption (at BER 1.0, every byte is altered).</li>
+<li>Watch the device&#39;s response — and the <a href="activity-log.html">Activity Log</a> records every arm/clear.</li>
+</ol>
+<div class="pager"><a class="prev" href="pin-sequencer.html">Pin Sequencer</a><a class="next" href="file-transfer.html">X/YMODEM Transfer</a></div></main>
+</div>
+<footer>BaudForge — hardware engineering workstation · built from docs/src with marked · screenshots from the live application on real hardware</footer>
+</body></html>

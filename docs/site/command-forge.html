@@ -1,0 +1,124 @@
+<!doctype html>
+<html lang="en"><head><meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Command Forge — BaudForge</title>
+<meta name="description" content="BaudForge user documentation — hardware engineering workstation">
+<style>
+:root{--bg:#0a0d13;--panel:#10141d;--panel2:#161c28;--line:#222d3d;--fg:#e2e8f0;--dim:#94a3b8;--faint:#64748b;--accent:#00e5ff;--warn:#f59e0b;--err:#ef4444}
+*{box-sizing:border-box}
+body{margin:0;background:var(--bg);color:var(--fg);font:14px/1.65 'Segoe UI',system-ui,sans-serif}
+a{color:var(--accent);text-decoration:none}a:hover{text-decoration:underline}
+header.top{display:flex;align-items:center;gap:12px;padding:10px 22px;border-bottom:1px solid var(--line);background:var(--panel);position:sticky;top:0;z-index:10}
+header.top .brand{font-family:Consolas,monospace;font-weight:700;letter-spacing:.18em;color:var(--accent);font-size:15px}
+header.top .tag{font-size:11px;color:var(--dim);border:1px solid var(--line);border-radius:3px;padding:1px 7px}
+header.top .gh{margin-left:auto;font-size:12px}
+.wrap{display:flex;max-width:1440px;margin:0 auto}
+nav.side{width:250px;min-width:250px;padding:22px 14px 60px;border-right:1px solid var(--line);position:sticky;top:53px;height:calc(100vh - 53px);overflow-y:auto;background:var(--panel)}
+nav.side .grp{font-family:Consolas,monospace;font-size:10px;letter-spacing:.14em;text-transform:uppercase;color:var(--faint);margin:18px 10px 6px}
+nav.side a{display:block;padding:5px 10px;border-radius:5px;color:var(--dim);font-size:13px}
+nav.side a:hover{background:var(--panel2);color:var(--fg);text-decoration:none}
+nav.side a.cur{background:rgba(0,229,255,.08);color:var(--accent);border-left:2px solid var(--accent)}
+main{flex:1;min-width:0;padding:34px 44px 90px;max-width:940px}
+main h1{font-size:27px;border-bottom:1px solid var(--line);padding-bottom:12px;margin-top:0}
+main h2{font-size:19px;margin-top:38px;border-left:3px solid var(--accent);padding-left:10px}
+main h3{font-size:15px;color:var(--dim)}
+main img{max-width:100%;border:1px solid var(--line);border-radius:8px;margin:14px 0;box-shadow:0 6px 24px rgba(0,0,0,.45);display:block}
+main code{background:var(--panel2);border:1px solid var(--line);border-radius:4px;padding:1px 6px;font:12.5px Consolas,monospace;color:#fbcfe8}
+main pre{background:var(--panel);border:1px solid var(--line);border-radius:8px;padding:14px 16px;overflow-x:auto}
+main pre code{background:none;border:none;padding:0;color:#a5f3fc;line-height:1.55}
+main table{border-collapse:collapse;width:100%;margin:14px 0;font-size:13.5px}
+main th{background:var(--panel2);text-align:left;font-family:Consolas,monospace;font-size:12px;letter-spacing:.05em;text-transform:uppercase;color:var(--dim)}
+main th,main td{border:1px solid var(--line);padding:7px 11px;vertical-align:top}
+main tr:nth-child(even) td{background:rgba(22,28,40,.4)}
+main blockquote{border-left:3px solid var(--warn);background:rgba(245,158,11,.07);margin:14px 0;padding:10px 16px;color:var(--dim)}
+.pager{display:flex;justify-content:space-between;margin-top:56px;padding-top:18px;border-top:1px solid var(--line);font-family:Consolas,monospace;font-size:13px}
+.pager a.prev::before{content:'← '}
+.pager a.next::after{content:' →'}
+footer{border-top:1px solid var(--line);color:var(--faint);font-size:12px;padding:16px 22px;text-align:center}
+</style></head>
+<body>
+<header class="top"><span class="brand">BAUDFORGE</span><span class="tag">v1.0 docs</span><a class="gh" href="https://github.com/siyal343/baud-forge">GitHub ↗</a></header>
+<div class="wrap">
+<nav class="side"><div class="grp">Getting started</div><a href="index.html">Overview & Quickstart</a><a href="launcher.html">Desktop Launcher</a>
+<div class="grp">Observing</div><a href="packet-stream.html">Packet Stream</a><a href="protocol-dissector.html">Protocol Dissector</a><a href="hex-inspector.html">Hex & ASCII</a><a href="oscilloscope.html">Telemetry Oscilloscope</a><a href="dvr-replay.html">DVR & Replay</a><a href="session-diff.html">Session Diff</a><a href="schema-dialects.html">Schema Dialects</a>
+<div class="grp">Instruments</div><a href="command-forge.html" class="cur">Command Forge</a><a href="pin-sequencer.html">Pin Sequencer</a><a href="fault-rig.html">HIL Fault Rig</a><a href="file-transfer.html">X/YMODEM Transfer</a><a href="mitm-bridge.html">MITM Bridge</a><a href="elf-symbols.html">ELF Symbols</a>
+<div class="grp">Records</div><a href="activity-log.html">Activity Log</a><a href="rec-vaults.html">REC & Vaults</a><a href="exports.html">Exports</a>
+<div class="grp">Reference</div><a href="keyboard-shortcuts.html">Keyboard Shortcuts</a><a href="troubleshooting.html">Troubleshooting</a></nav>
+<main><h1>Command Forge</h1>
+<p>The Command Forge composes and transmits frames to your device: raw hex byte-cells, ASCII text with line termination, or packed C-structs — with an auto-checksum appended and real feedback on what actually left.</p>
+<p><img src="img/command-forge.png" alt="Command Forge in HEX format with byte cells and CRC16"></p>
+<h2>Destination</h2>
+<p>The <strong>DESTINATION</strong> badge (top right of the panel) shows the port your frame will go to — the workbench&#39;s selected port (<code>esp</code> in the screenshot). Change it from the ribbon&#39;s port selector.</p>
+<h2>Format: HEX</h2>
+<ul>
+<li><strong>BYTE CELLS</strong> — one editable cell per byte, <code>+ BYTE</code> appends. Values are hex (<code>AA 55 01 02 …</code>).</li>
+<li><strong>RAW TEXT</strong> — type hex with spaces or commas: <code>6D 6F 64 65 20 69 6D 75 0A</code>.</li>
+<li>The <strong>B BYTES</strong> counter shows the payload size as you type.</li>
+</ul>
+<h2>Format: ASCII</h2>
+<p>Switch the FORMAT to <code>ASCII</code>, type text, and pick a <strong>LINE TERMINATION</strong>: <code>None</code>, <code>CR (\r)</code>, <code>LF (\n)</code>, <code>CRLF</code>, or <code>NULL (\0)</code> — the terminator is appended exactly like a real console would.</p>
+<h2>Format: STRUCT</h2>
+<p>Define fields from a C header and send packed little-endian wire bytes:</p>
+<p><img src="img/forge-struct.png" alt="The STRUCT format with a C struct and packed preview"></p>
+<ol>
+<li>Paste or edit a C <code>typedef struct</code> in the editor.</li>
+<li>The panel parses it into editable field rows (ints, fixed-width, enums) with per-field inputs.</li>
+<li>The packed wire preview shows the resulting bytes; <code>N BYTES (packed)</code> confirms the size.</li>
+<li>Pointers, bitfields and unknown types are reported as errors — never silently skipped.</li>
+</ol>
+<h2>Auto checksum</h2>
+<p><strong>AUTO CHECKSUM</strong> appends a checksum to the wire payload on transmit:</p>
+<table>
+<thead>
+<tr>
+<th>Algorithm</th>
+<th>Bytes</th>
+<th>Notes</th>
+</tr>
+</thead>
+<tbody><tr>
+<td><code>CRC-16/CCITT-FALSE</code></td>
+<td>2</td>
+<td>poly 0x1021, init 0xFFFF (the common &quot;modbus test&quot; value 0xB4B8 for <code>123456789</code>)</td>
+</tr>
+<tr>
+<td><code>CRC-16/MODBUS</code></td>
+<td>2</td>
+<td>poly 0x8005 reflected</td>
+</tr>
+<tr>
+<td><code>CRC-32C</code></td>
+<td>4</td>
+<td>Castagnoli, as used by COBS+CRC32C links</td>
+</tr>
+<tr>
+<td><code>none</code></td>
+<td>0</td>
+<td>no append</td>
+</tr>
+</tbody></table>
+<p>The checksum covers the payload bytes and is appended in the wire byte order of the algorithm.</p>
+<h2>Transmitting</h2>
+<p>Press <strong>TRANSMIT PAYLOAD (ENTER)</strong> (or <code>Enter</code> in any cell). What happens:</p>
+<ul>
+<li>The engine sends the bytes on the destination port; the send outcome (<code>sent</code>, faulted bytes, dropped) comes back from the wire.</li>
+<li>A <code>TX</code> row appears in the <a href="packet-stream.html">Packet Stream</a> with the exact wire hex.</li>
+<li>If the engine <strong>refused</strong> the send (wrong port, offline), you get an error toast with the engine&#39;s actual reason, and the row is marked <strong>[NOT SENT: …]</strong> with error styling — bytes that never left are never counted as TX.</li>
+</ul>
+<h2>User commands &amp; macros</h2>
+<ul>
+<li><strong>ADD COMMAND</strong> saves the current payload as a one-click button (e.g. <code>Sync Ping (AA55)</code>).</li>
+<li>A command can be <strong>SINGLE</strong> (one shot per click) or <strong>LOOP 500ms</strong> (periodic — the badge shows the cadence; click again to stop).</li>
+<li>Commands persist per browser so your rig&#39;s button set survives a reload.</li>
+</ul>
+<h2>Pacing</h2>
+<p>For flow-controlled devices, a paced send splits the payload into chunks with a delay (<code>pace_ms</code>) — the engine paces the transmission so slow bootloaders can keep up.</p>
+<h2>Tips</h2>
+<ul>
+<li>The CRC badge (<code>CRC16: 0xB4B8</code> in the screenshot) previews the checksum that will be appended before you transmit.</li>
+<li>Undecided what to send? The device&#39;s own decoded rows tell you what it expects — the <a href="protocol-dissector.html">Protocol Dissector</a> shows the wire order of every field.</li>
+</ul>
+<div class="pager"><a class="prev" href="session-diff.html">Session Diff</a><a class="next" href="pin-sequencer.html">Pin Sequencer</a></div></main>
+</div>
+<footer>BaudForge — hardware engineering workstation · built from docs/src with marked · screenshots from the live application on real hardware</footer>
+</body></html>

@@ -1,0 +1,82 @@
+<!doctype html>
+<html lang="en"><head><meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>X/YMODEM Transfer — BaudForge</title>
+<meta name="description" content="BaudForge user documentation — hardware engineering workstation">
+<style>
+:root{--bg:#0a0d13;--panel:#10141d;--panel2:#161c28;--line:#222d3d;--fg:#e2e8f0;--dim:#94a3b8;--faint:#64748b;--accent:#00e5ff;--warn:#f59e0b;--err:#ef4444}
+*{box-sizing:border-box}
+body{margin:0;background:var(--bg);color:var(--fg);font:14px/1.65 'Segoe UI',system-ui,sans-serif}
+a{color:var(--accent);text-decoration:none}a:hover{text-decoration:underline}
+header.top{display:flex;align-items:center;gap:12px;padding:10px 22px;border-bottom:1px solid var(--line);background:var(--panel);position:sticky;top:0;z-index:10}
+header.top .brand{font-family:Consolas,monospace;font-weight:700;letter-spacing:.18em;color:var(--accent);font-size:15px}
+header.top .tag{font-size:11px;color:var(--dim);border:1px solid var(--line);border-radius:3px;padding:1px 7px}
+header.top .gh{margin-left:auto;font-size:12px}
+.wrap{display:flex;max-width:1440px;margin:0 auto}
+nav.side{width:250px;min-width:250px;padding:22px 14px 60px;border-right:1px solid var(--line);position:sticky;top:53px;height:calc(100vh - 53px);overflow-y:auto;background:var(--panel)}
+nav.side .grp{font-family:Consolas,monospace;font-size:10px;letter-spacing:.14em;text-transform:uppercase;color:var(--faint);margin:18px 10px 6px}
+nav.side a{display:block;padding:5px 10px;border-radius:5px;color:var(--dim);font-size:13px}
+nav.side a:hover{background:var(--panel2);color:var(--fg);text-decoration:none}
+nav.side a.cur{background:rgba(0,229,255,.08);color:var(--accent);border-left:2px solid var(--accent)}
+main{flex:1;min-width:0;padding:34px 44px 90px;max-width:940px}
+main h1{font-size:27px;border-bottom:1px solid var(--line);padding-bottom:12px;margin-top:0}
+main h2{font-size:19px;margin-top:38px;border-left:3px solid var(--accent);padding-left:10px}
+main h3{font-size:15px;color:var(--dim)}
+main img{max-width:100%;border:1px solid var(--line);border-radius:8px;margin:14px 0;box-shadow:0 6px 24px rgba(0,0,0,.45);display:block}
+main code{background:var(--panel2);border:1px solid var(--line);border-radius:4px;padding:1px 6px;font:12.5px Consolas,monospace;color:#fbcfe8}
+main pre{background:var(--panel);border:1px solid var(--line);border-radius:8px;padding:14px 16px;overflow-x:auto}
+main pre code{background:none;border:none;padding:0;color:#a5f3fc;line-height:1.55}
+main table{border-collapse:collapse;width:100%;margin:14px 0;font-size:13.5px}
+main th{background:var(--panel2);text-align:left;font-family:Consolas,monospace;font-size:12px;letter-spacing:.05em;text-transform:uppercase;color:var(--dim)}
+main th,main td{border:1px solid var(--line);padding:7px 11px;vertical-align:top}
+main tr:nth-child(even) td{background:rgba(22,28,40,.4)}
+main blockquote{border-left:3px solid var(--warn);background:rgba(245,158,11,.07);margin:14px 0;padding:10px 16px;color:var(--dim)}
+.pager{display:flex;justify-content:space-between;margin-top:56px;padding-top:18px;border-top:1px solid var(--line);font-family:Consolas,monospace;font-size:13px}
+.pager a.prev::before{content:'← '}
+.pager a.next::after{content:' →'}
+footer{border-top:1px solid var(--line);color:var(--faint);font-size:12px;padding:16px 22px;text-align:center}
+</style></head>
+<body>
+<header class="top"><span class="brand">BAUDFORGE</span><span class="tag">v1.0 docs</span><a class="gh" href="https://github.com/siyal343/baud-forge">GitHub ↗</a></header>
+<div class="wrap">
+<nav class="side"><div class="grp">Getting started</div><a href="index.html">Overview & Quickstart</a><a href="launcher.html">Desktop Launcher</a>
+<div class="grp">Observing</div><a href="packet-stream.html">Packet Stream</a><a href="protocol-dissector.html">Protocol Dissector</a><a href="hex-inspector.html">Hex & ASCII</a><a href="oscilloscope.html">Telemetry Oscilloscope</a><a href="dvr-replay.html">DVR & Replay</a><a href="session-diff.html">Session Diff</a><a href="schema-dialects.html">Schema Dialects</a>
+<div class="grp">Instruments</div><a href="command-forge.html">Command Forge</a><a href="pin-sequencer.html">Pin Sequencer</a><a href="fault-rig.html">HIL Fault Rig</a><a href="file-transfer.html" class="cur">X/YMODEM Transfer</a><a href="mitm-bridge.html">MITM Bridge</a><a href="elf-symbols.html">ELF Symbols</a>
+<div class="grp">Records</div><a href="activity-log.html">Activity Log</a><a href="rec-vaults.html">REC & Vaults</a><a href="exports.html">Exports</a>
+<div class="grp">Reference</div><a href="keyboard-shortcuts.html">Keyboard Shortcuts</a><a href="troubleshooting.html">Troubleshooting</a></nav>
+<main><h1>X/YMODEM File Transfer</h1>
+<p>The File Transfer panel runs a real XMODEM state machine between the engine and your device — firmware uploads, log dumps, any file over the wire — with block-level telemetry and honest failure reporting.</p>
+<p><img src="img/file-transfer.png" alt="The transfer panel with XMODEM-CRC selected"></p>
+<h2>Protocol &amp; file setup</h2>
+<ul>
+<li><strong>PROTOCOL DIALECT</strong> — <code>XMODEM-CRC</code> (128-byte blocks) or <code>XMODEM-1K</code> (1024-byte blocks). Both use CRC-16/XMODEM (poly 0x1021), never the checksum fallback.</li>
+<li><strong>TRANSFER DIRECTION</strong> — <code>SEND (UPLOAD)</code> pushes a staged file to the device; <code>RECV (DUMP)</code> pulls one from it.</li>
+<li><strong>STAGE FILE…</strong> — pick the local file to send. The staged name and size show below (e.g. <code>esp32_firmware_v1.8.bin</code>, <code>32768</code>).</li>
+</ul>
+<h2>Sending a file</h2>
+<ol>
+<li><strong>STAGE FILE…</strong> and pick the binary.</li>
+<li>Select <code>SEND (UPLOAD)</code>.</li>
+<li>Press <strong>START TRANSFER</strong>. The engine polls the device for <code>C</code> (CRC mode), then streams <code>SOH/STX</code> blocks: header, block number, complement, payload, CRC-16.</li>
+<li>Watch <strong>TRANSFER TELEMETRY</strong>: block counter (<code>#7 / 256</code>), block size, progress in bytes, and retries — every retransmission is visible, not hidden.</li>
+<li>The <strong>TRANSFER PROTOCOL LOG</strong> narrates the conversation (handshake → transferring → finishing → done).</li>
+<li>Completion is <code>done</code> — the device ACKed the final EOT.</li>
+</ol>
+<h2>Receiving a file</h2>
+<ol>
+<li>Select <code>RECV (DUMP)</code>, enter the expected file name and size.</li>
+<li>Press <strong>START TRANSFER</strong>. The engine polls <code>C</code> and ACKs the device&#39;s blocks, trimming XMODEM&#39;s <code>^Z</code> padding at the end.</li>
+<li>When the phase reaches <code>done</code>, the received bytes are offered as a <strong>download</strong> — byte-for-byte what the device sent.</li>
+</ol>
+<h2>Phases (and what they mean)</h2>
+<p><code>handshake</code> → <code>transferring</code> → <code>finishing</code> → <code>done</code>, or <code>failed:reason</code>. Failures are <strong>honest by design</strong>: a device that answers <code>CAN</code> shows <code>failed:cancelled by device (CAN)</code>; a link that stays silent times out rather than pretending. Retries (up to 10 per block) are counted and shown.</p>
+<h2>Tips</h2>
+<ul>
+<li>Transfers bypass the vault and decoders: protocol traffic is not session data, so your <a href="rec-vaults.html">REC vault</a> stays clean.</li>
+<li>The state machine lives in the engine — the CLI can arm the same transfer (<code>POST /api/transfer</code>), which is how the automated e2e suite drives it.</li>
+<li>If the device does not speak XMODEM it answers CAN immediately — you will see a clean failure in seconds, not a hang.</li>
+</ul>
+<div class="pager"><a class="prev" href="fault-rig.html">HIL Fault Rig</a><a class="next" href="mitm-bridge.html">MITM Bridge</a></div></main>
+</div>
+<footer>BaudForge — hardware engineering workstation · built from docs/src with marked · screenshots from the live application on real hardware</footer>
+</body></html>

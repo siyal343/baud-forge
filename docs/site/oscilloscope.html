@@ -1,0 +1,88 @@
+<!doctype html>
+<html lang="en"><head><meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Telemetry Oscilloscope — BaudForge</title>
+<meta name="description" content="BaudForge user documentation — hardware engineering workstation">
+<style>
+:root{--bg:#0a0d13;--panel:#10141d;--panel2:#161c28;--line:#222d3d;--fg:#e2e8f0;--dim:#94a3b8;--faint:#64748b;--accent:#00e5ff;--warn:#f59e0b;--err:#ef4444}
+*{box-sizing:border-box}
+body{margin:0;background:var(--bg);color:var(--fg);font:14px/1.65 'Segoe UI',system-ui,sans-serif}
+a{color:var(--accent);text-decoration:none}a:hover{text-decoration:underline}
+header.top{display:flex;align-items:center;gap:12px;padding:10px 22px;border-bottom:1px solid var(--line);background:var(--panel);position:sticky;top:0;z-index:10}
+header.top .brand{font-family:Consolas,monospace;font-weight:700;letter-spacing:.18em;color:var(--accent);font-size:15px}
+header.top .tag{font-size:11px;color:var(--dim);border:1px solid var(--line);border-radius:3px;padding:1px 7px}
+header.top .gh{margin-left:auto;font-size:12px}
+.wrap{display:flex;max-width:1440px;margin:0 auto}
+nav.side{width:250px;min-width:250px;padding:22px 14px 60px;border-right:1px solid var(--line);position:sticky;top:53px;height:calc(100vh - 53px);overflow-y:auto;background:var(--panel)}
+nav.side .grp{font-family:Consolas,monospace;font-size:10px;letter-spacing:.14em;text-transform:uppercase;color:var(--faint);margin:18px 10px 6px}
+nav.side a{display:block;padding:5px 10px;border-radius:5px;color:var(--dim);font-size:13px}
+nav.side a:hover{background:var(--panel2);color:var(--fg);text-decoration:none}
+nav.side a.cur{background:rgba(0,229,255,.08);color:var(--accent);border-left:2px solid var(--accent)}
+main{flex:1;min-width:0;padding:34px 44px 90px;max-width:940px}
+main h1{font-size:27px;border-bottom:1px solid var(--line);padding-bottom:12px;margin-top:0}
+main h2{font-size:19px;margin-top:38px;border-left:3px solid var(--accent);padding-left:10px}
+main h3{font-size:15px;color:var(--dim)}
+main img{max-width:100%;border:1px solid var(--line);border-radius:8px;margin:14px 0;box-shadow:0 6px 24px rgba(0,0,0,.45);display:block}
+main code{background:var(--panel2);border:1px solid var(--line);border-radius:4px;padding:1px 6px;font:12.5px Consolas,monospace;color:#fbcfe8}
+main pre{background:var(--panel);border:1px solid var(--line);border-radius:8px;padding:14px 16px;overflow-x:auto}
+main pre code{background:none;border:none;padding:0;color:#a5f3fc;line-height:1.55}
+main table{border-collapse:collapse;width:100%;margin:14px 0;font-size:13.5px}
+main th{background:var(--panel2);text-align:left;font-family:Consolas,monospace;font-size:12px;letter-spacing:.05em;text-transform:uppercase;color:var(--dim)}
+main th,main td{border:1px solid var(--line);padding:7px 11px;vertical-align:top}
+main tr:nth-child(even) td{background:rgba(22,28,40,.4)}
+main blockquote{border-left:3px solid var(--warn);background:rgba(245,158,11,.07);margin:14px 0;padding:10px 16px;color:var(--dim)}
+.pager{display:flex;justify-content:space-between;margin-top:56px;padding-top:18px;border-top:1px solid var(--line);font-family:Consolas,monospace;font-size:13px}
+.pager a.prev::before{content:'← '}
+.pager a.next::after{content:' →'}
+footer{border-top:1px solid var(--line);color:var(--faint);font-size:12px;padding:16px 22px;text-align:center}
+</style></head>
+<body>
+<header class="top"><span class="brand">BAUDFORGE</span><span class="tag">v1.0 docs</span><a class="gh" href="https://github.com/siyal343/baud-forge">GitHub ↗</a></header>
+<div class="wrap">
+<nav class="side"><div class="grp">Getting started</div><a href="index.html">Overview & Quickstart</a><a href="launcher.html">Desktop Launcher</a>
+<div class="grp">Observing</div><a href="packet-stream.html">Packet Stream</a><a href="protocol-dissector.html">Protocol Dissector</a><a href="hex-inspector.html">Hex & ASCII</a><a href="oscilloscope.html" class="cur">Telemetry Oscilloscope</a><a href="dvr-replay.html">DVR & Replay</a><a href="session-diff.html">Session Diff</a><a href="schema-dialects.html">Schema Dialects</a>
+<div class="grp">Instruments</div><a href="command-forge.html">Command Forge</a><a href="pin-sequencer.html">Pin Sequencer</a><a href="fault-rig.html">HIL Fault Rig</a><a href="file-transfer.html">X/YMODEM Transfer</a><a href="mitm-bridge.html">MITM Bridge</a><a href="elf-symbols.html">ELF Symbols</a>
+<div class="grp">Records</div><a href="activity-log.html">Activity Log</a><a href="rec-vaults.html">REC & Vaults</a><a href="exports.html">Exports</a>
+<div class="grp">Reference</div><a href="keyboard-shortcuts.html">Keyboard Shortcuts</a><a href="troubleshooting.html">Troubleshooting</a></nav>
+<main><h1>Telemetry Oscilloscope</h1>
+<p>The oscilloscope plots your telemetry the way lab hardware does: two analog channels, logic rails, cursors, a measurements HUD — and trace lanes bound straight from your decoded protocol fields.</p>
+<p><img src="img/oscilloscope.png" alt="The oscilloscope with channels and the measurements HUD"></p>
+<h2>Channels</h2>
+<ul>
+<li><strong>CH1 / CH2</strong> — pick any decoded numeric field per channel (the dropdown lists every field the current schema produces). The channel badge shows its scale, e.g. <code>1 V/div</code>, <code>0.5 r/s/div</code>.</li>
+<li><strong>MATH</strong> — a derived trace.</li>
+<li><strong>LOGIC</strong> — the serial line state rails (break/framing/parity events from the wire).</li>
+<li>Click a channel badge to toggle visibility; the colour key at the top right of the canvas shows what each rail is.</li>
+</ul>
+<p><strong>RUNNING / STOPPED</strong> freezes the display: the canvas keeps the last frame drawn (frozen state is verifiable — the frame is really still there, not blanked) so you can read it at leisure. Time base (<code>50 ms/div</code>) zooms the horizontal axis.</p>
+<h2>Measurements HUD</h2>
+<p>The HUD overlays live waveform metrics per channel — <strong>Vpp, Mean, RMS</strong> — computed over the visible window, so a drifting sensor bias or a rail collapse is visible without exporting anything.</p>
+<h2>Trace lanes (per-field plots)</h2>
+<p>The workbench&#39;s headline trick: plot <strong>any decoded field</strong> over time.</p>
+<ol>
+<li>Select a frame in the <a href="packet-stream.html">Packet Stream</a>.</li>
+<li>In the <a href="protocol-dissector.html">Protocol Dissector</a>, click the 📈 button on a numeric field (e.g. <code>gyro_z</code>).</li>
+<li>A coloured lane appears below the analog zone, auto-scaled, labelled with the field name — updating live with every frame.</li>
+</ol>
+<p><img src="img/scope-trace-lanes.png" alt="A gyro_z trace lane bound from the dissector"></p>
+<p>Multiple fields → multiple lanes. In the scope ribbon each lane stem can be toggled or unbound; unbinding also works from the dissector&#39;s plot button (it toggles).</p>
+<h2>Scope-click sync (Workflow B)</h2>
+<p>This is the instrument-level time machine:</p>
+<ol>
+<li>Make sure the cursor mode is armed (default <code>X1</code>/<code>X2</code> behaviour; set <code>OFF</code> for pure playhead seeking).</li>
+<li><strong>Click anywhere on the canvas.</strong></li>
+<li>The playhead snaps to the clicked instant, the Packet Stream selects the nearest frame to that timestamp, the dissector and hex view follow, and the DVR bar shows <code>PAUSED AT T-1.116s</code>.</li>
+</ol>
+<p><img src="img/workflow-b.png" alt="A scope click paused the stream at the clicked instant and synced every panel"></p>
+<p>This is how you go from &quot;the gyro spiked around 14:32&quot; to the exact frame in two clicks. Press <strong>LIVE SNAP</strong> or <code>Space</code> to return to the live tail.</p>
+<h2>Cursors</h2>
+<p>Cursor modes: <code>OFF</code> (seek-only), <code>X1</code>/<code>X2</code> (time cursors), <code>Y</code> (amplitude cursors), <code>X-Y</code> (phase plot). <code>SET X1/X2</code> drops a cursor at the playhead; <code>CTR</code> centres, <code>SNAP</code> snaps cursors to frame timestamps, <code>CLR</code> clears. The <code>1.8x</code> control zooms the cursor region.</p>
+<h2>Tips</h2>
+<ul>
+<li>While the live capture is paused the scope keeps repainting the buffered window — scrub the DVR bar and the scope scrubs with you.</li>
+<li>Trace lanes survive schema changes as long as the field name still exists; if a rename leaves a lane orphaned, unbind and re-plot from the new field.</li>
+</ul>
+<div class="pager"><a class="prev" href="hex-inspector.html">Hex & ASCII</a><a class="next" href="dvr-replay.html">DVR & Replay</a></div></main>
+</div>
+<footer>BaudForge — hardware engineering workstation · built from docs/src with marked · screenshots from the live application on real hardware</footer>
+</body></html>

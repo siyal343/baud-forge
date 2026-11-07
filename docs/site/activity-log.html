@@ -1,0 +1,80 @@
+<!doctype html>
+<html lang="en"><head><meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Activity Log — BaudForge</title>
+<meta name="description" content="BaudForge user documentation — hardware engineering workstation">
+<style>
+:root{--bg:#0a0d13;--panel:#10141d;--panel2:#161c28;--line:#222d3d;--fg:#e2e8f0;--dim:#94a3b8;--faint:#64748b;--accent:#00e5ff;--warn:#f59e0b;--err:#ef4444}
+*{box-sizing:border-box}
+body{margin:0;background:var(--bg);color:var(--fg);font:14px/1.65 'Segoe UI',system-ui,sans-serif}
+a{color:var(--accent);text-decoration:none}a:hover{text-decoration:underline}
+header.top{display:flex;align-items:center;gap:12px;padding:10px 22px;border-bottom:1px solid var(--line);background:var(--panel);position:sticky;top:0;z-index:10}
+header.top .brand{font-family:Consolas,monospace;font-weight:700;letter-spacing:.18em;color:var(--accent);font-size:15px}
+header.top .tag{font-size:11px;color:var(--dim);border:1px solid var(--line);border-radius:3px;padding:1px 7px}
+header.top .gh{margin-left:auto;font-size:12px}
+.wrap{display:flex;max-width:1440px;margin:0 auto}
+nav.side{width:250px;min-width:250px;padding:22px 14px 60px;border-right:1px solid var(--line);position:sticky;top:53px;height:calc(100vh - 53px);overflow-y:auto;background:var(--panel)}
+nav.side .grp{font-family:Consolas,monospace;font-size:10px;letter-spacing:.14em;text-transform:uppercase;color:var(--faint);margin:18px 10px 6px}
+nav.side a{display:block;padding:5px 10px;border-radius:5px;color:var(--dim);font-size:13px}
+nav.side a:hover{background:var(--panel2);color:var(--fg);text-decoration:none}
+nav.side a.cur{background:rgba(0,229,255,.08);color:var(--accent);border-left:2px solid var(--accent)}
+main{flex:1;min-width:0;padding:34px 44px 90px;max-width:940px}
+main h1{font-size:27px;border-bottom:1px solid var(--line);padding-bottom:12px;margin-top:0}
+main h2{font-size:19px;margin-top:38px;border-left:3px solid var(--accent);padding-left:10px}
+main h3{font-size:15px;color:var(--dim)}
+main img{max-width:100%;border:1px solid var(--line);border-radius:8px;margin:14px 0;box-shadow:0 6px 24px rgba(0,0,0,.45);display:block}
+main code{background:var(--panel2);border:1px solid var(--line);border-radius:4px;padding:1px 6px;font:12.5px Consolas,monospace;color:#fbcfe8}
+main pre{background:var(--panel);border:1px solid var(--line);border-radius:8px;padding:14px 16px;overflow-x:auto}
+main pre code{background:none;border:none;padding:0;color:#a5f3fc;line-height:1.55}
+main table{border-collapse:collapse;width:100%;margin:14px 0;font-size:13.5px}
+main th{background:var(--panel2);text-align:left;font-family:Consolas,monospace;font-size:12px;letter-spacing:.05em;text-transform:uppercase;color:var(--dim)}
+main th,main td{border:1px solid var(--line);padding:7px 11px;vertical-align:top}
+main tr:nth-child(even) td{background:rgba(22,28,40,.4)}
+main blockquote{border-left:3px solid var(--warn);background:rgba(245,158,11,.07);margin:14px 0;padding:10px 16px;color:var(--dim)}
+.pager{display:flex;justify-content:space-between;margin-top:56px;padding-top:18px;border-top:1px solid var(--line);font-family:Consolas,monospace;font-size:13px}
+.pager a.prev::before{content:'← '}
+.pager a.next::after{content:' →'}
+footer{border-top:1px solid var(--line);color:var(--faint);font-size:12px;padding:16px 22px;text-align:center}
+</style></head>
+<body>
+<header class="top"><span class="brand">BAUDFORGE</span><span class="tag">v1.0 docs</span><a class="gh" href="https://github.com/siyal343/baud-forge">GitHub ↗</a></header>
+<div class="wrap">
+<nav class="side"><div class="grp">Getting started</div><a href="index.html">Overview & Quickstart</a><a href="launcher.html">Desktop Launcher</a>
+<div class="grp">Observing</div><a href="packet-stream.html">Packet Stream</a><a href="protocol-dissector.html">Protocol Dissector</a><a href="hex-inspector.html">Hex & ASCII</a><a href="oscilloscope.html">Telemetry Oscilloscope</a><a href="dvr-replay.html">DVR & Replay</a><a href="session-diff.html">Session Diff</a><a href="schema-dialects.html">Schema Dialects</a>
+<div class="grp">Instruments</div><a href="command-forge.html">Command Forge</a><a href="pin-sequencer.html">Pin Sequencer</a><a href="fault-rig.html">HIL Fault Rig</a><a href="file-transfer.html">X/YMODEM Transfer</a><a href="mitm-bridge.html">MITM Bridge</a><a href="elf-symbols.html">ELF Symbols</a>
+<div class="grp">Records</div><a href="activity-log.html" class="cur">Activity Log</a><a href="rec-vaults.html">REC & Vaults</a><a href="exports.html">Exports</a>
+<div class="grp">Reference</div><a href="keyboard-shortcuts.html">Keyboard Shortcuts</a><a href="troubleshooting.html">Troubleshooting</a></nav>
+<main><h1>Activity Log</h1>
+<p>The Activity Log is one interleaved timeline of <strong>everything that happened</strong> in the session — what the engine did (<code>tx</code>, <code>rec_start</code>, <code>overrun</code>, <code>transfer_arm</code>…) and what you pressed (trace binds, scope seeks, replay, toasts). When a wire-level mystery appears, this is the first panel to open.</p>
+<p><img src="img/activity-log.png" alt="The activity log with engine and UI rows interleaved"></p>
+<h2>Reading a row</h2>
+<p><code>HH:MM:SS.mmm | LEVEL | SOURCE | event | detail</code></p>
+<ul>
+<li><strong>LEVEL</strong> — <code>DEBUG</code>, <code>INFO</code>, <code>WARN</code>, <code>ERROR</code>, filter chips at the top show levels <strong>at or above</strong> the selection (<code>WARN</code> hides info/debug noise, keeps errors).</li>
+<li><strong>SOURCE</strong> — <code>ENGINE</code> (what the engine did) or <code>UI</code> (what a human clicked).</li>
+<li><strong>event</strong> — a short machine tag: <code>tx</code>, <code>tx_failed</code>, <code>rec_start</code>, <code>rec_stop</code>, <code>port_state</code>, <code>overrun</code>, <code>damaged_tail</code>, <code>bridge_set</code>, <code>elf_load</code>, <code>schema_apply</code>, <code>transfer_arm/cancel/drain</code>, <code>trace_bind</code>, <code>scope_seek</code>, <code>replay_start</code>, <code>toast</code>, <code>engine_error</code>…</li>
+<li><strong>detail</strong> — the specifics: <code>esp: 9 B</code>, <code>obc: c_header (240 B of source)</code>, <code>frame 1227 @ 263898217 µs</code>.</li>
+</ul>
+<p>The ring holds the <strong>last 2,000 entries</strong>; <strong>FOLLOW TAIL</strong> keeps the newest in view (uncheck — or scroll up — to freeze while you read).</p>
+<h2>What gets logged</h2>
+<ul>
+<li><strong>Engine</strong>: every command the workbench or CLI sends (TX, pins, yields, faults, REC, bridges, ELF loads, schema applies, transfers), lifecycle (<code>engine_start</code>, <code>port_state</code>, session start/stop), and device trouble — overruns and damaged tails land as <code>WARN</code>.</li>
+<li><strong>UI</strong>: every toast, trace bind/unbind, scope seek, replay start/stop, launcher intent — and every failed engine call with the operation that produced it.</li>
+<li><strong>Verbose mode</strong>: append <code>?debug=1</code> to the page URL to also log debug-level UI actions.</li>
+</ul>
+<h2>Export</h2>
+<ul>
+<li><strong>COPY</strong> — the visible entries as plain text, straight to the clipboard.</li>
+<li><strong>⬇ DOWNLOAD</strong> — the visible entries as <code>.jsonl</code> (one JSON object per line) — attach it to a bug report.</li>
+</ul>
+<h2>The vault&#39;s audit trail</h2>
+<p>When the engine shuts down, the whole ring is written next to the last recorded vault as <strong><code>&lt;vault&gt;.activity.jsonl</code></strong> — a capture carries its own &quot;what happened while we recorded&quot; record. Open a capture months later and the JSONL tells you which buttons were pressed during it.</p>
+<h2>Tips</h2>
+<ul>
+<li><code>tx_failed</code> with <code>port &quot;X&quot; is not in this session</code> means the UI was aimed at a port this engine does not have — check the DESTINATION badge.</li>
+<li><code>overrun</code> (WARN) means slabs were dropped because a consumer fell behind — if you see it, your device outran the pipeline&#39;s reader; look at baud/framing before blaming the firmware.</li>
+</ul>
+<div class="pager"><a class="prev" href="schema-dialects.html">Schema Dialects</a><a class="next" href="rec-vaults.html">REC & Vaults</a></div></main>
+</div>
+<footer>BaudForge — hardware engineering workstation · built from docs/src with marked · screenshots from the live application on real hardware</footer>
+</body></html>

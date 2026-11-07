@@ -491,14 +491,18 @@ export class EngineApiClient {
     }
   }
 
-  async getDiff(pathA: string, pathB: string): Promise<any> {
+  /** Compare two vaults. The engine's error text is carried through — a 409
+   * with "storage: …" is NOT "engine unreachable", and the panel must show
+   * the real reason. */
+  async getDiff(pathA: string, pathB: string): Promise<{ ok: boolean; report?: any; error?: string }> {
     try {
       const params = new URLSearchParams({ a: pathA, b: pathB });
-      const res = await this.fetchWithTimeout(`/api/diff?${params.toString()}`);
-      if (!res.ok) return null;
-      return await res.json();
+      const res = await this.fetchWithTimeout(`/api/diff?${params.toString()}`, undefined, 8000);
+      const data = await res.json().catch(() => null);
+      if (!res.ok) return { ok: false, error: data?.error || `HTTP ${res.status}` };
+      return { ok: true, report: data };
     } catch {
-      return null;
+      return { ok: false, error: 'engine unreachable' };
     }
   }
 

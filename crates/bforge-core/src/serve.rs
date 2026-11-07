@@ -1377,12 +1377,35 @@ fn fault(stream: &mut TcpStream, shared: &Arc<Shared>, body: &[u8]) {
 }
 
 /// `key=value` pairs from a request target, decoded the little that is needed.
+/// Percent-decode a query value. `URLSearchParams` (and every HTTP client)
+/// encodes `/` as `%2F`, so a path like `vaults%2Frun.bflog` must decode
+/// before it can name a file — `%20` alone was never enough.
+fn percent_decode(text: &str) -> String {
+    let bytes = text.as_bytes();
+    let mut out: Vec<u8> = Vec::with_capacity(bytes.len());
+    let mut i = 0;
+    while i < bytes.len() {
+        if bytes[i] == b'%' && i + 2 < bytes.len() {
+            let hi = (bytes[i + 1] as char).to_digit(16);
+            let lo = (bytes[i + 2] as char).to_digit(16);
+            if let (Some(hi), Some(lo)) = (hi, lo) {
+                out.push((hi * 16 + lo) as u8);
+                i += 3;
+                continue;
+            }
+        }
+        out.push(bytes[i]);
+        i += 1;
+    }
+    String::from_utf8_lossy(&out).into_owned()
+}
+
 fn query(target: &str) -> std::collections::HashMap<String, String> {
     let mut map = std::collections::HashMap::new();
     if let Some((_, query)) = target.split_once('?') {
         for pair in query.split('&') {
             if let Some((key, value)) = pair.split_once('=') {
-                map.insert(key.to_string(), value.replace("%20", " "));
+                map.insert(key.to_string(), percent_decode(value));
             }
         }
     }
@@ -2677,6 +2700,19 @@ fn respond(stream: &mut TcpStream, status: &str, content_type: &str, body: &[u8]
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    /// Query values arrive percent-encoded from every HTTP client
+    /// (`URLSearchParams` turns `/` into `%2F`); a path must decode before it
+    /// can name a file. This exact encoding broke /api/diff from the UI.
+    #[test]
+    fn query_values_percent_decode() {
+        let params = query("/api/diff?a=vaults%2Frun.bflog&b=vaults%2Fbase%20run.bflog");
+        assert_eq!(params.get("a").unwrap(), "vaults/run.bflog");
+        assert_eq!(params.get("b").unwrap(), "vaults/base run.bflog");
+        // A literal '%25' escape decodes to '%'.
+        let params = query("/api/x?name=50%25");
+        assert_eq!(params.get("name").unwrap(), "50%");
+    }
 
     /// A client that does not read the frame slot is told, once per replaced batch.
     ///

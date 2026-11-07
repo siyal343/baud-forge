@@ -1,0 +1,106 @@
+<!doctype html>
+<html lang="en"><head><meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Protocol Dissector — BaudForge</title>
+<meta name="description" content="BaudForge user documentation — hardware engineering workstation">
+<style>
+:root{--bg:#0a0d13;--panel:#10141d;--panel2:#161c28;--line:#222d3d;--fg:#e2e8f0;--dim:#94a3b8;--faint:#64748b;--accent:#00e5ff;--warn:#f59e0b;--err:#ef4444}
+*{box-sizing:border-box}
+body{margin:0;background:var(--bg);color:var(--fg);font:14px/1.65 'Segoe UI',system-ui,sans-serif}
+a{color:var(--accent);text-decoration:none}a:hover{text-decoration:underline}
+header.top{display:flex;align-items:center;gap:12px;padding:10px 22px;border-bottom:1px solid var(--line);background:var(--panel);position:sticky;top:0;z-index:10}
+header.top .brand{font-family:Consolas,monospace;font-weight:700;letter-spacing:.18em;color:var(--accent);font-size:15px}
+header.top .tag{font-size:11px;color:var(--dim);border:1px solid var(--line);border-radius:3px;padding:1px 7px}
+header.top .gh{margin-left:auto;font-size:12px}
+.wrap{display:flex;max-width:1440px;margin:0 auto}
+nav.side{width:250px;min-width:250px;padding:22px 14px 60px;border-right:1px solid var(--line);position:sticky;top:53px;height:calc(100vh - 53px);overflow-y:auto;background:var(--panel)}
+nav.side .grp{font-family:Consolas,monospace;font-size:10px;letter-spacing:.14em;text-transform:uppercase;color:var(--faint);margin:18px 10px 6px}
+nav.side a{display:block;padding:5px 10px;border-radius:5px;color:var(--dim);font-size:13px}
+nav.side a:hover{background:var(--panel2);color:var(--fg);text-decoration:none}
+nav.side a.cur{background:rgba(0,229,255,.08);color:var(--accent);border-left:2px solid var(--accent)}
+main{flex:1;min-width:0;padding:34px 44px 90px;max-width:940px}
+main h1{font-size:27px;border-bottom:1px solid var(--line);padding-bottom:12px;margin-top:0}
+main h2{font-size:19px;margin-top:38px;border-left:3px solid var(--accent);padding-left:10px}
+main h3{font-size:15px;color:var(--dim)}
+main img{max-width:100%;border:1px solid var(--line);border-radius:8px;margin:14px 0;box-shadow:0 6px 24px rgba(0,0,0,.45);display:block}
+main code{background:var(--panel2);border:1px solid var(--line);border-radius:4px;padding:1px 6px;font:12.5px Consolas,monospace;color:#fbcfe8}
+main pre{background:var(--panel);border:1px solid var(--line);border-radius:8px;padding:14px 16px;overflow-x:auto}
+main pre code{background:none;border:none;padding:0;color:#a5f3fc;line-height:1.55}
+main table{border-collapse:collapse;width:100%;margin:14px 0;font-size:13.5px}
+main th{background:var(--panel2);text-align:left;font-family:Consolas,monospace;font-size:12px;letter-spacing:.05em;text-transform:uppercase;color:var(--dim)}
+main th,main td{border:1px solid var(--line);padding:7px 11px;vertical-align:top}
+main tr:nth-child(even) td{background:rgba(22,28,40,.4)}
+main blockquote{border-left:3px solid var(--warn);background:rgba(245,158,11,.07);margin:14px 0;padding:10px 16px;color:var(--dim)}
+.pager{display:flex;justify-content:space-between;margin-top:56px;padding-top:18px;border-top:1px solid var(--line);font-family:Consolas,monospace;font-size:13px}
+.pager a.prev::before{content:'← '}
+.pager a.next::after{content:' →'}
+footer{border-top:1px solid var(--line);color:var(--faint);font-size:12px;padding:16px 22px;text-align:center}
+</style></head>
+<body>
+<header class="top"><span class="brand">BAUDFORGE</span><span class="tag">v1.0 docs</span><a class="gh" href="https://github.com/siyal343/baud-forge">GitHub ↗</a></header>
+<div class="wrap">
+<nav class="side"><div class="grp">Getting started</div><a href="index.html">Overview & Quickstart</a><a href="launcher.html">Desktop Launcher</a>
+<div class="grp">Observing</div><a href="packet-stream.html">Packet Stream</a><a href="protocol-dissector.html" class="cur">Protocol Dissector</a><a href="hex-inspector.html">Hex & ASCII</a><a href="oscilloscope.html">Telemetry Oscilloscope</a><a href="dvr-replay.html">DVR & Replay</a><a href="session-diff.html">Session Diff</a><a href="schema-dialects.html">Schema Dialects</a>
+<div class="grp">Instruments</div><a href="command-forge.html">Command Forge</a><a href="pin-sequencer.html">Pin Sequencer</a><a href="fault-rig.html">HIL Fault Rig</a><a href="file-transfer.html">X/YMODEM Transfer</a><a href="mitm-bridge.html">MITM Bridge</a><a href="elf-symbols.html">ELF Symbols</a>
+<div class="grp">Records</div><a href="activity-log.html">Activity Log</a><a href="rec-vaults.html">REC & Vaults</a><a href="exports.html">Exports</a>
+<div class="grp">Reference</div><a href="keyboard-shortcuts.html">Keyboard Shortcuts</a><a href="troubleshooting.html">Troubleshooting</a></nav>
+<main><h1>Protocol Dissector</h1>
+<p>The Protocol Dissector turns the selected frame&#39;s raw bytes into named fields with types, offsets, raw hex and decoded values. It is the panel that answers &quot;what does byte 10 actually mean?&quot;.</p>
+<p><img src="img/dissector.png" alt="The dissector showing a 12-field ImuPacket decode"></p>
+<h2>How decoding works</h2>
+<p>The engine decodes every incoming frame with the <strong>dissector configured on that port</strong> in the workspace file:</p>
+<pre><code class="language-toml">dissector = { type = &quot;c_header&quot;, file = &quot;imu_packet.h&quot;, root_struct = &quot;ImuPacket&quot; }
+</code></pre>
+<p>Supported dissector types:</p>
+<table>
+<thead>
+<tr>
+<th>Type</th>
+<th>Source</th>
+<th>Notes</th>
+</tr>
+</thead>
+<tbody><tr>
+<td><code>c_header</code></td>
+<td>A C header file</td>
+<td><code>struct __attribute__((packed))</code>; bitfields, nested arrays, enums. Root struct names the entry type.</td>
+</tr>
+<tr>
+<td><code>native</code></td>
+<td>Built-in pack</td>
+<td><code>ccsds_tm</code>, <code>ccsds_tc</code>, <code>csp</code>, <code>modbus_rtu</code>, <code>protobuf</code></td>
+</tr>
+<tr>
+<td><code>protobuf</code></td>
+<td><code>.proto</code> text</td>
+<td>compiled live by the engine</td>
+</tr>
+<tr>
+<td><code>mavlink</code></td>
+<td>MAVLink XML</td>
+<td>dialect definition</td>
+</tr>
+</tbody></table>
+<p>Frames whose checksum fails, or whose length does not match the schema, appear with an honest <code>ERR: …</code> summary — the dissector never invents values for bytes it cannot decode.</p>
+<h2>Using the panel</h2>
+<ol>
+<li><strong>Select a frame</strong> in the Packet Stream. The field table fills: name, type, raw hex slice, decoded value, unit.</li>
+<li><strong>Hover a field</strong> — the Hex Inspector highlights exactly those bytes in the frame.</li>
+<li><strong>Click a field</strong> — it becomes the active selection (the <code>Selected: name · Offset: 0x0A..0x0D</code> banner pins it).</li>
+<li><strong>📈 (Plot)</strong> — numeric fields show a plot button; clicking it binds the field to a live trace lane on the <a href="oscilloscope.html">Telemetry Oscilloscope</a>. A toast confirms the binding; the lane appears immediately and updates with every frame.</li>
+</ol>
+<p><img src="img/scope-trace-lanes.png" alt="A trace lane bound from the dissector&#39;s plot button"></p>
+<h2>Header decode rules (C structs)</h2>
+<ul>
+<li>Structs must be declared <code>packed</code> — <code>struct __attribute__((packed)) ImuPacket { … }</code> — so offsets match the wire.</li>
+<li>Bitfields (<code>uint8_t flags : 3; uint8_t channel : 5;</code>) decode into separate rows sharing one byte.</li>
+<li>Nested arrays expand as <code>samples.samples[0..n]</code> rows.</li>
+<li><code>__le16/__le32/__be16/__be32</code> fix endianness per field; plain <code>uint16_t</code> follows host order — prefer the explicit types on wire formats.</li>
+<li>A trailing CRC field is checked when the port&#39;s framing checksum matches (<code>crc = &quot;crc32c&quot;</code> in framing).</li>
+</ul>
+<h2>Changing the decoder live</h2>
+<p>You do not need to restart to change how frames decode — upload a new schema in <a href="schema-dialects.html">Schema Dialects</a> and <strong>APPLY TO WORKSPACE</strong> swaps the port&#39;s dissector mid-session. The stream re-dissects from that instant on; the vault still holds the raw bytes.</p>
+<div class="pager"><a class="prev" href="packet-stream.html">Packet Stream</a><a class="next" href="hex-inspector.html">Hex & ASCII</a></div></main>
+</div>
+<footer>BaudForge — hardware engineering workstation · built from docs/src with marked · screenshots from the live application on real hardware</footer>
+</body></html>

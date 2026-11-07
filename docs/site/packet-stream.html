@@ -1,0 +1,117 @@
+<!doctype html>
+<html lang="en"><head><meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Packet Stream — BaudForge</title>
+<meta name="description" content="BaudForge user documentation — hardware engineering workstation">
+<style>
+:root{--bg:#0a0d13;--panel:#10141d;--panel2:#161c28;--line:#222d3d;--fg:#e2e8f0;--dim:#94a3b8;--faint:#64748b;--accent:#00e5ff;--warn:#f59e0b;--err:#ef4444}
+*{box-sizing:border-box}
+body{margin:0;background:var(--bg);color:var(--fg);font:14px/1.65 'Segoe UI',system-ui,sans-serif}
+a{color:var(--accent);text-decoration:none}a:hover{text-decoration:underline}
+header.top{display:flex;align-items:center;gap:12px;padding:10px 22px;border-bottom:1px solid var(--line);background:var(--panel);position:sticky;top:0;z-index:10}
+header.top .brand{font-family:Consolas,monospace;font-weight:700;letter-spacing:.18em;color:var(--accent);font-size:15px}
+header.top .tag{font-size:11px;color:var(--dim);border:1px solid var(--line);border-radius:3px;padding:1px 7px}
+header.top .gh{margin-left:auto;font-size:12px}
+.wrap{display:flex;max-width:1440px;margin:0 auto}
+nav.side{width:250px;min-width:250px;padding:22px 14px 60px;border-right:1px solid var(--line);position:sticky;top:53px;height:calc(100vh - 53px);overflow-y:auto;background:var(--panel)}
+nav.side .grp{font-family:Consolas,monospace;font-size:10px;letter-spacing:.14em;text-transform:uppercase;color:var(--faint);margin:18px 10px 6px}
+nav.side a{display:block;padding:5px 10px;border-radius:5px;color:var(--dim);font-size:13px}
+nav.side a:hover{background:var(--panel2);color:var(--fg);text-decoration:none}
+nav.side a.cur{background:rgba(0,229,255,.08);color:var(--accent);border-left:2px solid var(--accent)}
+main{flex:1;min-width:0;padding:34px 44px 90px;max-width:940px}
+main h1{font-size:27px;border-bottom:1px solid var(--line);padding-bottom:12px;margin-top:0}
+main h2{font-size:19px;margin-top:38px;border-left:3px solid var(--accent);padding-left:10px}
+main h3{font-size:15px;color:var(--dim)}
+main img{max-width:100%;border:1px solid var(--line);border-radius:8px;margin:14px 0;box-shadow:0 6px 24px rgba(0,0,0,.45);display:block}
+main code{background:var(--panel2);border:1px solid var(--line);border-radius:4px;padding:1px 6px;font:12.5px Consolas,monospace;color:#fbcfe8}
+main pre{background:var(--panel);border:1px solid var(--line);border-radius:8px;padding:14px 16px;overflow-x:auto}
+main pre code{background:none;border:none;padding:0;color:#a5f3fc;line-height:1.55}
+main table{border-collapse:collapse;width:100%;margin:14px 0;font-size:13.5px}
+main th{background:var(--panel2);text-align:left;font-family:Consolas,monospace;font-size:12px;letter-spacing:.05em;text-transform:uppercase;color:var(--dim)}
+main th,main td{border:1px solid var(--line);padding:7px 11px;vertical-align:top}
+main tr:nth-child(even) td{background:rgba(22,28,40,.4)}
+main blockquote{border-left:3px solid var(--warn);background:rgba(245,158,11,.07);margin:14px 0;padding:10px 16px;color:var(--dim)}
+.pager{display:flex;justify-content:space-between;margin-top:56px;padding-top:18px;border-top:1px solid var(--line);font-family:Consolas,monospace;font-size:13px}
+.pager a.prev::before{content:'← '}
+.pager a.next::after{content:' →'}
+footer{border-top:1px solid var(--line);color:var(--faint);font-size:12px;padding:16px 22px;text-align:center}
+</style></head>
+<body>
+<header class="top"><span class="brand">BAUDFORGE</span><span class="tag">v1.0 docs</span><a class="gh" href="https://github.com/siyal343/baud-forge">GitHub ↗</a></header>
+<div class="wrap">
+<nav class="side"><div class="grp">Getting started</div><a href="index.html">Overview & Quickstart</a><a href="launcher.html">Desktop Launcher</a>
+<div class="grp">Observing</div><a href="packet-stream.html" class="cur">Packet Stream</a><a href="protocol-dissector.html">Protocol Dissector</a><a href="hex-inspector.html">Hex & ASCII</a><a href="oscilloscope.html">Telemetry Oscilloscope</a><a href="dvr-replay.html">DVR & Replay</a><a href="session-diff.html">Session Diff</a><a href="schema-dialects.html">Schema Dialects</a>
+<div class="grp">Instruments</div><a href="command-forge.html">Command Forge</a><a href="pin-sequencer.html">Pin Sequencer</a><a href="fault-rig.html">HIL Fault Rig</a><a href="file-transfer.html">X/YMODEM Transfer</a><a href="mitm-bridge.html">MITM Bridge</a><a href="elf-symbols.html">ELF Symbols</a>
+<div class="grp">Records</div><a href="activity-log.html">Activity Log</a><a href="rec-vaults.html">REC & Vaults</a><a href="exports.html">Exports</a>
+<div class="grp">Reference</div><a href="keyboard-shortcuts.html">Keyboard Shortcuts</a><a href="troubleshooting.html">Troubleshooting</a></nav>
+<main><h1>Packet Stream</h1>
+<p>The Packet Stream is the live view of everything on the wire. Every frame the engine receives or transmits appears here as a row: sequence number, delta time since the previous frame, wall-clock time, direction, port, length, protocol and the decoded summary.</p>
+<p><img src="img/overview.png" alt="Packet Stream with live decoded frames"></p>
+<h2>Reading a row</h2>
+<table>
+<thead>
+<tr>
+<th>Column</th>
+<th>Meaning</th>
+</tr>
+</thead>
+<tbody><tr>
+<td><strong>SEQ</strong></td>
+<td>Monotonic frame number (<code>#00019</code>). Click a row to select the frame everywhere — dissector, hex view, scope cursor.</td>
+</tr>
+<tr>
+<td><strong>DELTA T</strong></td>
+<td>Microseconds since the previous frame <strong>on that port</strong> — your inter-frame gap.</td>
+</tr>
+<tr>
+<td><strong>TIME</strong></td>
+<td>Wall-clock arrival time (<code>HH:MM:SS.mmm</code>).</td>
+</tr>
+<tr>
+<td><strong>DIR</strong></td>
+<td><code>RX</code> (device → you), <code>TX</code> (you → device), <code>A-&gt;B</code>/<code>B-&gt;A</code> (bridge forwarding), <code>FAULT</code> (fault-injected or damaged frame).</td>
+</tr>
+<tr>
+<td><strong>PORT</strong></td>
+<td>The workspace port id the frame arrived on (<code>esp</code>, <code>obc</code>, …).</td>
+</tr>
+<tr>
+<td><strong>LEN</strong></td>
+<td>Payload length in bytes.</td>
+</tr>
+<tr>
+<td><strong>PROTOCOL</strong></td>
+<td>The dissector tag that decoded it, e.g. <code>C_STRUCT:ImuPacket</code>.</td>
+</tr>
+<tr>
+<td><strong>SUMMARY</strong></td>
+<td>Decoded field summary, printable text, or the raw payload for undecoded frames.</td>
+</tr>
+</tbody></table>
+<p>A green dot next to the protocol means the frame&#39;s checksum validated; a red-tinted row means the frame carried an error (<code>ERR: …</code> summary).</p>
+<h2>Filters</h2>
+<ul>
+<li><strong>Text filter</strong> — press <code>/</code> anywhere in the workbench to focus it. Matches port, protocol, summary and hex. <code>Esc</code> clears it; <code>Ctrl+L</code> clears the stream.</li>
+<li><strong>Direction chips</strong> — <code>ALL</code>, <code>RX</code>, <code>TX</code>, <code>FAULT</code> — show only what you care about.</li>
+<li><strong>Port select</strong> — with a multi-port workspace (or a bridge), pick one port or <code>ALL PORTS</code>.</li>
+<li><strong>ERRORS</strong> — only frames that failed to decode or failed their checksum.</li>
+<li><strong>AUTO ON/OFF</strong> — follow-the-tail. When you scroll up to study history, following pauses and a badge counts the frames you are missing; press <strong>LIVE SNAP</strong> (or scroll back to the bottom) to resume.</li>
+</ul>
+<h2>Selecting frames</h2>
+<p>Click any row. The selection drives the whole workbench: the Protocol Dissector shows that frame&#39;s fields, the Hex Inspector highlights its bytes, and — with cursor mode OFF on the oscilloscope — the scope snaps its cursor to that frame&#39;s timestamp (see <a href="oscilloscope.html#scope-click-sync-workflow-b">Workflow B</a>).</p>
+<p>Arrow keys step the selection while the stream is paused; <code>Space</code> pauses/resumes the live capture.</p>
+<h2>Virtualization</h2>
+<p>The stream renders only the visible window (plus a small overscan), so it stays smooth at hundreds of frames per second with a 10,000-frame buffer. The header shows which slice you are looking at: <code>ROWS 9862–9895 OF 10000</code>.</p>
+<h2>Exporting what you see</h2>
+<p>The stream toolbar&#39;s export button offers <strong>CSV</strong>, <strong>Saleae CSV</strong>, <strong>JSONL</strong> and <strong>PCAPNG</strong> of the packets currently in the buffer (filters apply). See <a href="exports.html">Exports</a> for the exact formats.</p>
+<h2>Column widths</h2>
+<p>Drag the header separators to resize any column; double-click a separator to reset it. Layouts persist per browser.</p>
+<h2>Tips</h2>
+<ul>
+<li>Frames bypass nothing: what you see is what the wire carried, including bridge-forwarded bytes (shown as <code>TX</code> rows on the destination port) and fault-injected transmissions.</li>
+<li>The buffer holds the last 10,000 frames. Record with <a href="rec-vaults.html">REC</a> if you need the whole session — the vault keeps everything.</li>
+</ul>
+<div class="pager"><a class="prev" href="launcher.html">Desktop Launcher</a><a class="next" href="protocol-dissector.html">Protocol Dissector</a></div></main>
+</div>
+<footer>BaudForge — hardware engineering workstation · built from docs/src with marked · screenshots from the live application on real hardware</footer>
+</body></html>

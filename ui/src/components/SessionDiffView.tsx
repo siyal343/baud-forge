@@ -41,17 +41,17 @@ export const SessionDiffView: React.FC = () => {
     setLoading(true);
     setError(null);
     try {
-      const data = await engineApi.getDiff(vaultA.trim(), vaultB.trim());
-      if (data && !data.error) {
-        setResult(data);
+      const result = await engineApi.getDiff(vaultA.trim(), vaultB.trim());
+      if (result.ok && result.report) {
+        setResult(result.report);
       } else {
         // Honest failure: never fabricate a diff. A validation tool that
-        // invents divergences is worse than one that reports it is offline.
+        // invents divergences is worse than one that reports the real reason.
         setResult(null);
         setError(
-          data?.error
-            ? String(data.error)
-            : 'Engine unreachable (or vault missing) — no real comparison available. Start the bforge engine and ensure both .bflog paths exist.'
+          result.error
+            ? String(result.error)
+            : 'Engine unreachable — no real comparison available. Start the bforge engine and ensure both .bflog paths exist.'
         );
       }
     } catch (err: any) {
