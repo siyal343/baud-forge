@@ -76,13 +76,13 @@ export const FaultRigView: React.FC = () => {
   const triggerOneShotCorruptCrc = async () => {
     // Send fault bad_crc 3 to physical firmware
     const faultHex = '66 61 75 6c 74 20 62 61 64 5f 63 72 63 20 33 0a';
-    const ok = await engineApi.sendBytes(selectedPort, faultHex);
-    if (ok) {
+    const result = await engineApi.sendBytes(selectedPort, faultHex);
+    if (result.ok) {
       setStatusMsg('Dispatched one-shot CRC corruption...');
       pushToast('success', 'One-shot CRC corruption sent', `3 bad-CRC frames requested on ${selectedPort}.`);
     } else {
-      setStatusMsg('Engine unreachable — one-shot NOT delivered');
-      pushToast('error', 'One-shot not delivered', `No engine connection on ${selectedPort} — firmware trigger never left the workstation.`);
+      setStatusMsg('One-shot NOT delivered');
+      pushToast('error', 'One-shot not delivered', result.error ?? `No engine connection on ${selectedPort}.`);
     }
     setTimeout(() => setStatusMsg(null), 1500);
   };
@@ -90,13 +90,13 @@ export const FaultRigView: React.FC = () => {
   const triggerOneShotDrop = async () => {
     // Send fault drop 2 to physical firmware
     const faultHex = '66 61 75 6c 74 20 64 72 6f 70 20 32 0a';
-    const ok = await engineApi.sendBytes(selectedPort, faultHex);
-    if (ok) {
+    const result = await engineApi.sendBytes(selectedPort, faultHex);
+    if (result.ok) {
       setStatusMsg('Dispatched one-shot frame drop...');
       pushToast('success', 'One-shot frame drop sent', `2 dropped frames requested on ${selectedPort}.`);
     } else {
-      setStatusMsg('Engine unreachable — one-shot NOT delivered');
-      pushToast('error', 'One-shot not delivered', `No engine connection on ${selectedPort} — firmware trigger never left the workstation.`);
+      setStatusMsg('One-shot NOT delivered');
+      pushToast('error', 'One-shot not delivered', result.error ?? `No engine connection on ${selectedPort}.`);
     }
     setTimeout(() => setStatusMsg(null), 1500);
   };

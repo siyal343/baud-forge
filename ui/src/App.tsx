@@ -125,7 +125,9 @@ export const App: React.FC = () => {
               .map((b: number) => b.toString(16).padStart(2, '0'))
               .join(' ')
               .toUpperCase(),
-            decodedValue: field.value,
+            // The numeric reading (`value_num`) makes the field plottable —
+            // the trace-lane buttons need a real number, not the display string.
+            decodedValue: field.value_num ?? field.value,
             unit: field.name.includes('mv')
               ? 'mV'
               : field.name.includes('us')
@@ -135,17 +137,29 @@ export const App: React.FC = () => {
               : undefined,
           }));
 
+          // The engine serializes Direction in PascalCase (`Rx`, `Tx`,
+          // `MitmAToB`, `MitmBToA`, `InjectedFault`) — match it exactly, or
+          // every honest RX frame would wear a FAULT badge.
+          const direction: PacketDirection =
+            f.direction === 'rx' || f.direction === 'Rx'
+              ? 'RX'
+              : f.direction === 'tx' || f.direction === 'Tx'
+              ? 'TX'
+              : f.direction === 'MitmAToB'
+              ? 'A->B'
+              : f.direction === 'MitmBToA'
+              ? 'B->A'
+              : f.direction === 'InjectedFault'
+              ? 'FAULT'
+              : 'RX';
+
           return {
             seqId: Math.round(f.timestamp_us / 1000) % 1000000 || idx + 1,
             timestampNs: f.timestamp_us * 1000,
             timestampUs: f.timestamp_us,
             deltaUs: f.delta_us,
             timeStr,
-            direction: (f.direction === 'rx'
-              ? 'RX'
-              : f.direction === 'tx'
-              ? 'TX'
-              : 'FAULT') as PacketDirection,
+            direction,
             port: f.port,
             length: f.len,
             rawBytes: bytes,

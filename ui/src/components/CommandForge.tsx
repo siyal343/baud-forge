@@ -462,11 +462,14 @@ typedef struct {
     const hexToSend = wireBytes.map((b) => b.toString(16).padStart(2, '0')).join(' ');
 
     // Dispatch via engineApi — the result is checked, never discarded.
-    const ok = await engineApi.sendBytes(selectedPort, hexToSend);
+    const result = await engineApi.sendBytes(selectedPort, hexToSend);
+    const ok = result.ok;
     if (!ok) {
-      toast.warn(
-        'Engine unreachable — TX recorded locally only',
-        `No bytes reached ${selectedPort}. Start the bforge engine to transmit on the wire.`
+      toast.error(
+        result.error === 'engine unreachable'
+          ? 'Engine unreachable — TX recorded locally only'
+          : 'TX rejected by engine',
+        result.error ?? `No bytes reached ${selectedPort}.`
       );
     }
 
@@ -490,11 +493,14 @@ typedef struct {
       protocol: 'Command',
       summary: `TX (${modeLabel}): ${summaryText}${
         checksum.length ? ` + ${autoCrc.toUpperCase()} (${checksum.length}B)` : ''
-      }${ok ? '' : ' [engine offline]'}`,
+      }${ok ? '' : ` [NOT SENT: ${result.error ?? 'engine offline'}]`}`,
       dissectedFields: [],
-      hasError: false,
+      // A send the engine refused never left, so the row must not read as a success.
+      hasError: !ok,
+      errorMsg: ok ? undefined : result.error,
     });
-    recordTx(wireBytes.length);
+    // Bytes the engine rejected never reached the wire — they are not TX traffic.
+    if (ok) recordTx(wireBytes.length);
   };
 
   const executeCommand = (cmd: UserCommand) => {

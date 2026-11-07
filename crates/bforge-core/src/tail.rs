@@ -639,11 +639,28 @@ pub fn decoder_from_text(
 ) -> Result<Decoder, TailError> {
     match kind {
         "c_header" => {
-            let root = root
-                .ok_or_else(|| TailError::Settings("c_header needs a root_struct".into()))?;
             let header = bforge_dissect::cheader::parse(text)
                 .map_err(|error| TailError::Settings(format!("header: {error}")))?;
-            let ir = bforge_dissect::cheader::compile(&header, root, "uploaded")
+            // An uploaded header without an explicit root is unambiguous when it
+            // declares exactly one struct — the schema panel has no root field,
+            // so a single-struct header (the common case) must just work.
+            let root = match root {
+                Some(root) => root.to_string(),
+                None => {
+                    let names: Vec<&str> =
+                        header.structs.iter().map(|s| s.name.as_str()).collect();
+                    match names.as_slice() {
+                        [only] => (*only).to_string(),
+                        _ => {
+                            return Err(TailError::Settings(format!(
+                                "c_header needs a root_struct (declared: {})",
+                                names.join(", ")
+                            )))
+                        }
+                    }
+                }
+            };
+            let ir = bforge_dissect::cheader::compile(&header, &root, "uploaded")
                 .map_err(|error| TailError::Settings(format!("{root}: {error}")))?;
             Ok(Decoder::Ir {
                 tag: format!("C_STRUCT:{root}"),

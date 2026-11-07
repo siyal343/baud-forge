@@ -288,12 +288,12 @@ export const useWorkstationStore = create<WorkstationState>((set, get) => ({
 
   // Simulation & Metrics
   isSimulated: true,
-  vaultPath: 'vaults/session_001.bflog',
+  vaultPath: '',
   vaultBytes: 0,
   vaultChunks: 0,
   engineRecording: false,
-  rxBytes: 4210080,
-  txBytes: 15420,
+  rxBytes: 0,
+  txBytes: 0,
   packetRate: 20,
   overruns: 0,
   uiScale: (() => {
@@ -764,6 +764,14 @@ export const useWorkstationStore = create<WorkstationState>((set, get) => ({
       enginePorts: ports.map((p) => ({ id: p.id, device: p.device })),
       bridges: bridges ?? state.bridges,
     }));
+    // The selection must be a port THIS session actually has: every port-targeted
+    // panel (TX, pins, faults, schema apply) sends `selectedPort`, and a stale
+    // serial name like `COM8` would be rejected by an engine session whose ports
+    // are workspace ids (`obc`, `esp`, …).
+    const engineIds = ports.map((p) => p.id);
+    if (engineIds.length > 0 && !engineIds.includes(get().selectedPort)) {
+      set({ selectedPort: engineIds[0] });
+    }
     const active = ports.find((p) => p.id === get().selectedPort) || ports[0];
     if (active) {
       set({

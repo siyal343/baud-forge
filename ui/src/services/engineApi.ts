@@ -410,7 +410,9 @@ export class EngineApiClient {
     };
   }
 
-  async sendBytes(port: string, hexBytes: string, paceMs?: number): Promise<boolean> {
+  /** Send raw hex on a port; the error text distinguishes a rejected send
+   * (wrong port, engine refused) from an unreachable engine. */
+  async sendBytes(port: string, hexBytes: string, paceMs?: number): Promise<{ ok: boolean; error?: string }> {
     try {
       const res = await this.fetchWithTimeout('/api/send', {
         method: 'POST',
@@ -421,9 +423,16 @@ export class EngineApiClient {
           pace_ms: paceMs,
         }),
       });
-      return res.ok;
+      if (!res.ok) {
+        // A 5xx through the dev proxy (or a dead engine's own 503) means the
+        // engine is unreachable, not that it rejected the frame.
+        if (res.status >= 500) return { ok: false, error: 'engine unreachable' };
+        const data = await res.json().catch(() => ({}));
+        return { ok: false, error: data?.error || `HTTP ${res.status}` };
+      }
+      return { ok: true };
     } catch {
-      return false;
+      return { ok: false, error: 'engine unreachable' };
     }
   }
 
