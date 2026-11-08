@@ -8,6 +8,8 @@ import {
 } from 'dockview-react';
 import { Maximize2, Minimize2, ExternalLink } from 'lucide-react';
 import { useWorkstationStore } from '../store/useWorkstationStore';
+import { useLayoutLibraryStore, readLayoutLibrarySnapshot } from '../store/useLayoutLibraryStore';
+import { useToastStore } from '../store/useToastStore';
 import { PacketStreamView } from './PacketStreamView';
 import { ProtocolDissector } from './ProtocolDissector';
 import { HexInspector } from './HexInspector';
@@ -340,8 +342,8 @@ const PanelHeaderActions: React.FC<IDockviewHeaderActionsProps> = (props) => {
         }
         className={`p-0.5 rounded transition-colors ${
           isFloating
-            ? 'text-[#00E5FF] bg-[#00E5FF]/10 hover:bg-[#00E5FF]/20'
-            : 'text-[#64748B] hover:text-[#00E5FF] hover:bg-[#161C28]'
+            ? 'text-bf-cyan bg-bf-cyan/10 hover:bg-bf-cyan/20'
+            : 'text-bf-faint hover:text-bf-cyan hover:bg-bf-subpanel'
         }`}
       >
         <ExternalLink className="w-3 h-3" />
@@ -353,10 +355,10 @@ const PanelHeaderActions: React.FC<IDockviewHeaderActionsProps> = (props) => {
             ? 'Restore panel to previous layout position'
             : 'Expand panel to full viewport'
         }
-        className="p-0.5 text-[#64748B] hover:text-[#00E5FF] hover:bg-[#161C28] rounded transition-colors"
+        className="p-0.5 text-bf-faint hover:text-bf-cyan hover:bg-bf-subpanel rounded transition-colors"
       >
         {isMaximized ? (
-          <Minimize2 className="w-3 h-3 text-[#00E5FF]" />
+          <Minimize2 className="w-3 h-3 text-bf-cyan" />
         ) : (
           <Maximize2 className="w-3 h-3" />
         )}
@@ -370,11 +372,12 @@ export const WorkstationDock: React.FC = () => {
     activePreset,
     openPanelId,
     resetLayoutTrigger,
-    saveLayoutTrigger,
-    restoreSavedLayoutTrigger,
     requestOpenPanel,
-    setHasSavedLayout,
   } = useWorkstationStore();
+  const saveRequest = useLayoutLibraryStore((s) => s.saveRequest);
+  const loadRequest = useLayoutLibraryStore((s) => s.loadRequest);
+  const commitSaveLayout = useLayoutLibraryStore((s) => s.commitSaveLayout);
+  const pushToast = useToastStore((s) => s.pushToast);
   const apiRef = useRef<DockviewApi | null>(null);
 
   // Helper: Setup Default CAD Layout
@@ -657,6 +660,7 @@ export const WorkstationDock: React.FC = () => {
   const onReady = useCallback(
     (event: DockviewReadyEvent) => {
       apiRef.current = event.api;
+      (window as any).__bforgeDockApi = event.api;
 
       // Listen for layout changes and save to localStorage
       event.api.onDidLayoutChange(() => {
@@ -665,6 +669,20 @@ export const WorkstationDock: React.FC = () => {
           localStorage.setItem('bforge_dock_layout', JSON.stringify(layout));
         } catch (_) {}
       });
+
+      // Startup precedence: starred default layout > last-session auto-save
+      // > active preset. The default must beat the auto-save or the star
+      // would be meaningless — the auto-save rewrites on every panel move.
+      const lib = readLayoutLibrarySnapshot();
+      const starred = lib.defaultLayout ? lib.layouts[lib.defaultLayout] : null;
+      if (starred) {
+        try {
+          event.api.fromJSON(starred.data as any);
+          return;
+        } catch (_) {
+          // Corrupt/incompatible default: fall through to the auto-save.
+        }
+      }
 
       // Restore layout from localStorage if exists
       const savedLayout = localStorage.getItem('bforge_dock_layout');
@@ -691,41 +709,43 @@ export const WorkstationDock: React.FC = () => {
     }
   }, [activePreset, applyPreset]);
 
-  // Listen to save layout triggers
+  // Named layout save: the menu asks via saveRequest, the dock (which owns
+  // the DockviewApi) serializes and commits to the library.
   useEffect(() => {
-    if (saveLayoutTrigger > 0 && apiRef.current) {
-      try {
-        const layout = apiRef.current.toJSON();
-        localStorage.setItem('bforge_user_saved_layout', JSON.stringify(layout));
-        localStorage.setItem('bforge_dock_layout', JSON.stringify(layout));
-        setHasSavedLayout(true);
-      } catch (_) {}
+    if (!saveRequest || !apiRef.current) return;
+    try {
+      commitSaveLayout(saveRequest.name, apiRef.current.toJSON());
+      pushToast('success', 'Layout saved', `“${saveRequest.name}” captured the panel arrangement.`);
+    } catch (_) {
+      pushToast('error', 'Layout save failed', 'The dock refused to serialize the current arrangement.');
     }
-  }, [saveLayoutTrigger, setHasSavedLayout]);
+  }, [saveRequest, commitSaveLayout, pushToast]);
 
-  // Listen to restore saved layout triggers
+  // Named layout load.
   useEffect(() => {
-    if (restoreSavedLayoutTrigger > 0 && apiRef.current) {
-      try {
-        const saved = localStorage.getItem('bforge_user_saved_layout');
-        if (saved) {
-          apiRef.current.fromJSON(JSON.parse(saved));
-        }
-      } catch (_) {}
+    if (!loadRequest || !apiRef.current) return;
+    const entry = useLayoutLibraryStore.getState().layouts[loadRequest.name];
+    if (!entry) {
+      pushToast('error', 'Layout missing', `No saved layout named “${loadRequest.name}”.`);
+      return;
     }
-  }, [restoreSavedLayoutTrigger]);
+    try {
+      apiRef.current.fromJSON(entry.data as any);
+      pushToast('success', 'Layout loaded', `“${loadRequest.name}” applied to the workbench.`);
+    } catch (_) {
+      pushToast('error', 'Layout load failed', 'The saved layout is corrupt or incompatible.');
+    }
+  }, [loadRequest, pushToast]);
 
-  // Listen to reset layout triggers (Set to Default)
+  // Listen to reset layout triggers (factory reset — saved layouts survive)
   useEffect(() => {
     if (resetLayoutTrigger > 0 && apiRef.current) {
       try {
         localStorage.removeItem('bforge_dock_layout');
-        localStorage.removeItem('bforge_user_saved_layout');
-        setHasSavedLayout(false);
       } catch (_) {}
       buildDefaultLayout(apiRef.current);
     }
-  }, [resetLayoutTrigger, buildDefaultLayout, setHasSavedLayout]);
+  }, [resetLayoutTrigger, buildDefaultLayout]);
 
   // Listen to open panel requests
   useEffect(() => {

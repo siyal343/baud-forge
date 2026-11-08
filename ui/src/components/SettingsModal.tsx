@@ -1,6 +1,6 @@
 import React, { useState, useEffect, useRef } from 'react';
 import { createPortal } from 'react-dom';
-import { Settings, X, Check, RotateCcw, Palette, Gauge, Database, Info } from 'lucide-react';
+import { Settings, X, Check, RotateCcw, Sliders, Palette, Gauge, Database, Info } from 'lucide-react';
 import {
   useSettingsStore,
   DEFAULT_SETTINGS,
@@ -11,21 +11,74 @@ import {
   MAX_SCOPE_SAMPLES_MIN,
   MAX_SCOPE_SAMPLES_MAX,
   BfSettings,
+  BfTheme,
 } from '../store/useSettingsStore';
 
-type SettingsSection = 'appearance' | 'performance' | 'data';
+type SettingsSection = 'general' | 'appearance' | 'performance' | 'data';
 
 const SECTIONS: Array<{ id: SettingsSection; label: string; icon: React.ComponentType<{ className?: string }> }> = [
+  { id: 'general', label: 'GENERAL', icon: Sliders },
   { id: 'appearance', label: 'APPEARANCE', icon: Palette },
   { id: 'performance', label: 'PERFORMANCE', icon: Gauge },
   { id: 'data', label: 'DATA & EXPORT', icon: Database },
 ];
 
+/**
+ * Theme identity swatches (canvas / subpanel / accent of each skin's dark
+ * variant) so the picker shows what you're choosing at a glance. The live
+ * colors come from index.css once applied — these mirror them statically.
+ */
+const THEME_META: Array<{ id: BfTheme; label: string; swatch: [string, string, string] }> = [
+  { id: 'obsidian', label: 'CLASSIC', swatch: ['#0A0D13', '#161C28', '#00E5FF'] },
+  { id: 'materials', label: 'MATERIAL', swatch: ['#131218', '#2B2930', '#D0BCFF'] },
+  { id: 'skeuomorph', label: 'SKEUO', swatch: ['#232120', '#33302D', '#D9A441'] },
+  { id: 'soft', label: 'SOFT', swatch: ['#23262E', '#2C3039', '#8B9CF5'] },
+];
+
+/** Theme picker: swatch triplet + label per skin. */
+const ThemeRow: React.FC<{ value: BfTheme; onChange: (t: BfTheme) => void }> = ({ value, onChange }) => (
+  <div className="flex items-center justify-between gap-2">
+    <span className="flex items-center gap-1 text-bf-faint text-[10px]">
+      Theme:
+      <InfoHint text="Visual skin for the whole workstation — CLASSIC (original engineering dark), MATERIAL (Material Design 3 tonal surfaces), SKEUO (textured leather, glossy candy fills), SOFT (neumorphic extruded panels). Each has a light and dark variant; the scope canvas repaints instantly. Applies on APPLY." />
+    </span>
+    <div className="flex items-center gap-1">
+      {THEME_META.map((t) => {
+        const active = value === t.id;
+        return (
+          <button
+            key={t.id}
+            type="button"
+            onClick={() => onChange(t.id)}
+            title={t.label}
+            className={`flex items-center gap-1.5 px-2 py-0.5 rounded text-[10px] font-semibold transition-colors border ${
+              active
+                ? 'bg-bf-cyan/15 border-bf-cyan text-bf-cyan'
+                : 'bg-bf-subpanel border-bf-line text-bf-mute hover:border-bf-sky/40'
+            }`}
+          >
+            <span className="flex -space-x-1">
+              {t.swatch.map((c, i) => (
+                <span
+                  key={i}
+                  className="w-2.5 h-2.5 rounded-full border border-bf-line-strong"
+                  style={{ backgroundColor: c }}
+                />
+              ))}
+            </span>
+            <span>{t.label}</span>
+          </button>
+        );
+      })}
+    </div>
+  </div>
+);
+
 /** Circled ⓘ next to a setting's label — the only hover target for its hint. */
 const InfoHint: React.FC<{ text: string }> = ({ text }) => (
   <span
     title={text}
-    className="inline-flex items-center justify-center w-3.5 h-3.5 rounded-full border border-[#2D3A4E] text-[#64748B] hover:text-[#00E5FF] hover:border-[#00E5FF]/60 cursor-help transition-colors shrink-0"
+    className="inline-flex items-center justify-center w-3.5 h-3.5 rounded-full border border-bf-line-strong text-bf-faint hover:text-bf-cyan hover:border-bf-cyan/60 cursor-help transition-colors shrink-0"
   >
     <Info className="w-2.5 h-2.5" />
   </span>
@@ -41,7 +94,7 @@ const BoolRow: React.FC<{
   offLabel?: string;
 }> = ({ label, tooltip, value, onChange, onLabel = 'ON', offLabel = 'OFF' }) => (
   <div className="flex items-center justify-between gap-2">
-    <span className="flex items-center gap-1 text-[#64748B] text-[10px]">
+    <span className="flex items-center gap-1 text-bf-faint text-[10px]">
       {label}
       <InfoHint text={tooltip} />
     </span>
@@ -53,8 +106,8 @@ const BoolRow: React.FC<{
           onClick={() => onChange(v)}
           className={`w-12 py-0.5 rounded text-[10px] font-semibold transition-colors border ${
             value === v
-              ? 'bg-[#00E5FF]/15 border-[#00E5FF] text-[#00E5FF]'
-              : 'bg-[#161C28] border-[#222D3D] text-[#94A3B8] hover:border-[#38BDF8]/40'
+              ? 'bg-bf-cyan/15 border-bf-cyan text-bf-cyan'
+              : 'bg-bf-subpanel border-bf-line text-bf-mute hover:border-bf-sky/40'
           }`}
         >
           {v ? onLabel : offLabel}
@@ -73,7 +126,7 @@ const SegRow: React.FC<{
   onChange: (v: any) => void;
 }> = ({ label, tooltip, value, options, onChange }) => (
   <div className="flex items-center justify-between gap-2">
-    <span className="flex items-center gap-1 text-[#64748B] text-[10px]">
+    <span className="flex items-center gap-1 text-bf-faint text-[10px]">
       {label}
       <InfoHint text={tooltip} />
     </span>
@@ -85,8 +138,8 @@ const SegRow: React.FC<{
           onClick={() => onChange(o.v)}
           className={`px-2 py-0.5 rounded text-[10px] font-semibold transition-colors border ${
             value === o.v
-              ? 'bg-[#00E5FF]/15 border-[#00E5FF] text-[#00E5FF]'
-              : 'bg-[#161C28] border-[#222D3D] text-[#94A3B8] hover:border-[#38BDF8]/40'
+              ? 'bg-bf-cyan/15 border-bf-cyan text-bf-cyan'
+              : 'bg-bf-subpanel border-bf-line text-bf-mute hover:border-bf-sky/40'
           }`}
         >
           {o.label}
@@ -107,7 +160,7 @@ const NumRow: React.FC<{
   onChange: (v: number) => void;
 }> = ({ label, tooltip, value, min, max, step, suffix, onChange }) => (
   <div className="flex items-center justify-between gap-2">
-    <span className="flex items-center gap-1 text-[#64748B] text-[10px]">
+    <span className="flex items-center gap-1 text-bf-faint text-[10px]">
       {label}
       <InfoHint text={tooltip} />
     </span>
@@ -122,9 +175,9 @@ const NumRow: React.FC<{
           const n = parseFloat(e.target.value);
           if (!isNaN(n)) onChange(n);
         }}
-        className="w-20 h-6 px-1.5 bg-[#0A0D13] border border-[#222D3D] rounded text-[#00E5FF] font-bold text-[10.5px] text-right focus:outline-none focus:border-[#00E5FF] font-mono"
+        className="w-20 h-6 px-1.5 bg-bf-onfill border border-bf-line rounded text-bf-cyan font-bold text-[10.5px] text-right focus:outline-none focus:border-bf-cyan font-mono"
       />
-      {suffix && <span className="text-[9px] text-[#64748B]">{suffix}</span>}
+      {suffix && <span className="text-[9px] text-bf-faint">{suffix}</span>}
     </div>
   </div>
 );
@@ -137,7 +190,7 @@ export const SettingsModal: React.FC = () => {
 
   // Draft state: staged locally, committed only on Apply (UartConfigModal idiom).
   const [draft, setDraft] = useState<BfSettings>(settings);
-  const [section, setSection] = useState<SettingsSection>('appearance');
+  const [section, setSection] = useState<SettingsSection>('general');
   const modalRef = useRef<HTMLDivElement>(null);
 
   const set = <K extends keyof BfSettings>(key: K, value: BfSettings[K]) =>
@@ -147,7 +200,7 @@ export const SettingsModal: React.FC = () => {
   useEffect(() => {
     if (isOpen) {
       setDraft(settings);
-      setSection('appearance');
+      setSection('general');
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [isOpen]);
@@ -196,18 +249,18 @@ export const SettingsModal: React.FC = () => {
           transform: 'translate(-50%, -50%)',
           zIndex: 999999,
         }}
-        className="w-[680px] bg-[#0E131F] border border-[#2D3A4E] shadow-[0_12px_36px_rgba(0,0,0,0.85)] rounded-lg text-[11px] font-mono text-[#CBD5E1] overflow-hidden flex flex-col"
+        className="w-[680px] bg-bf-surface border border-bf-line-strong shadow-[0_12px_36px_rgb(var(--bf-shadow-rgb)/0.85)] rounded-lg text-[11px] font-mono text-bf-dim overflow-hidden flex flex-col"
       >
         {/* Header */}
-        <div className="h-[32px] bg-[#141B29] border-b border-[#222D3D] px-3 flex items-center justify-between shrink-0">
-          <div className="flex items-center gap-1.5 text-[#00E5FF] font-semibold text-[11.5px]">
+        <div className="h-[32px] bg-bf-head border-b border-bf-line px-3 flex items-center justify-between shrink-0">
+          <div className="flex items-center gap-1.5 text-bf-cyan font-semibold text-[11.5px]">
             <Settings className="w-3.5 h-3.5" />
             <span>SETTINGS</span>
-            <span className="text-[9px] text-[#64748B] font-normal ml-1">applied on APPLY · stored locally</span>
+            <span className="text-[9px] text-bf-faint font-normal ml-1">applied on APPLY · stored locally</span>
           </div>
           <button
             onClick={() => setSettingsOpen(false)}
-            className="text-[#64748B] hover:text-[#EF4444] p-0.5 rounded transition-colors"
+            className="text-bf-faint hover:text-bf-fault p-0.5 rounded transition-colors"
           >
             <X className="w-3.5 h-3.5" />
           </button>
@@ -216,7 +269,7 @@ export const SettingsModal: React.FC = () => {
         {/* Body: section rail + content pane */}
         <div className="flex min-h-0">
           {/* Nav rail */}
-          <div className="w-[132px] shrink-0 bg-[#10151F] border-r border-[#222D3D] p-1.5 flex flex-col gap-1">
+          <div className="w-[132px] shrink-0 bg-bf-panel border-r border-bf-line p-1.5 flex flex-col gap-1">
             {SECTIONS.map((s) => {
               const Icon = s.icon;
               const active = section === s.id;
@@ -227,8 +280,8 @@ export const SettingsModal: React.FC = () => {
                   onClick={() => setSection(s.id)}
                   className={`flex items-center gap-1.5 px-2 py-1.5 rounded text-[10px] font-semibold tracking-wider transition-colors border text-left ${
                     active
-                      ? 'bg-[#00E5FF]/10 border-[#00E5FF]/40 text-[#00E5FF]'
-                      : 'bg-transparent border-transparent text-[#64748B] hover:text-[#94A3B8] hover:bg-[#161C28]'
+                      ? 'bg-bf-cyan/10 border-bf-cyan/40 text-bf-cyan'
+                      : 'bg-transparent border-transparent text-bf-faint hover:text-bf-mute hover:bg-bf-subpanel'
                   }`}
                 >
                   <Icon className="w-3 h-3" />
@@ -240,6 +293,27 @@ export const SettingsModal: React.FC = () => {
 
           {/* Content pane */}
           <div className="flex-1 p-3.5 space-y-3 max-h-[440px] overflow-y-auto">
+            {section === 'general' && (
+              <>
+                <ThemeRow value={draft.theme} onChange={(v) => set('theme', v)} />
+                <SegRow
+                  label="Mode:"
+                  tooltip="Light or dark variant of the selected theme."
+                  value={draft.themeMode}
+                  options={[
+                    { v: 'dark', label: 'DARK' },
+                    { v: 'light', label: 'LIGHT' },
+                  ]}
+                  onChange={(v) => set('themeMode', v)}
+                />
+                <div className="bg-bf-subpanel border border-bf-line px-2.5 py-1.5 rounded text-[9.5px] text-bf-faint leading-relaxed">
+                  The skin recolors the entire workstation — panels, docking chrome, scrollbars,
+                  tooltips, the oscilloscope canvas and every accent glow. The choice persists
+                  across restarts and is restored before the first paint.
+                </div>
+              </>
+            )}
+
             {section === 'appearance' && (
               <>
                 <BoolRow
@@ -258,8 +332,8 @@ export const SettingsModal: React.FC = () => {
                   ]}
                   onChange={(v) => set('timestampBase', v)}
                 />
-                <div className="border-t border-[#222D3D] pt-3 space-y-3">
-                  <div className="text-[10px] font-semibold text-[#94A3B8] uppercase tracking-wider">
+                <div className="border-t border-bf-line pt-3 space-y-3">
+                  <div className="text-[10px] font-semibold text-bf-mute uppercase tracking-wider">
                     Hex Inspector Display
                   </div>
                   <SegRow
@@ -296,7 +370,7 @@ export const SettingsModal: React.FC = () => {
 
             {section === 'performance' && (
               <>
-                <div className="bg-[#161C28] border border-[#222D3D] px-2.5 py-1.5 rounded text-[9.5px] text-[#64748B] leading-relaxed">
+                <div className="bg-bf-subpanel border border-bf-line px-2.5 py-1.5 rounded text-[9.5px] text-bf-faint leading-relaxed">
                   Buffer depths bound the rolling in-memory history. Changes apply to newly captured
                   data — the current session's existing frames are not truncated retroactively.
                 </div>
@@ -326,14 +400,14 @@ export const SettingsModal: React.FC = () => {
             {section === 'data' && (
               <>
                 <div className="flex items-center justify-between gap-2">
-                  <span className="flex items-center gap-1 text-[#64748B] text-[10px]">
+                  <span className="flex items-center gap-1 text-bf-faint text-[10px]">
                     Default Export Format:
                     <InfoHint text="Format preselected when the EXPORT dialog opens." />
                   </span>
                   <select
                     value={draft.defaultExportFormat}
                     onChange={(e) => set('defaultExportFormat', e.target.value as any)}
-                    className="bg-[#10141D] border border-[#222D3D] rounded px-1.5 py-0.5 text-[10px] text-[#E2E8F0] focus:outline-none focus:border-[#00E5FF]"
+                    className="bg-bf-panel border border-bf-line rounded px-1.5 py-0.5 text-[10px] text-bf-body focus:outline-none focus:border-bf-cyan"
                   >
                     {EXPORT_FORMATS.map((f) => (
                       <option key={f} value={f}>
@@ -344,7 +418,7 @@ export const SettingsModal: React.FC = () => {
                 </div>
                 <div className="space-y-1.5">
                   <div className="flex items-center justify-between gap-2">
-                    <span className="flex items-center gap-1 text-[#64748B] text-[10px]">
+                    <span className="flex items-center gap-1 text-bf-faint text-[10px]">
                       Vault Name Pattern:
                       <InfoHint text="REC file name template. <stamp> expands to the capture timestamp; .bflog and the vaults/ directory are always enforced." />
                     </span>
@@ -354,12 +428,12 @@ export const SettingsModal: React.FC = () => {
                       onChange={(e) => set('vaultNamePattern', e.target.value)}
                       placeholder="rec-<stamp>"
                       spellCheck={false}
-                      className="w-[220px] h-6 px-1.5 bg-[#0A0D13] border border-[#222D3D] rounded text-[#00E5FF] font-bold text-[10.5px] focus:outline-none focus:border-[#00E5FF] font-mono"
+                      className="w-[220px] h-6 px-1.5 bg-bf-onfill border border-bf-line rounded text-bf-cyan font-bold text-[10.5px] focus:outline-none focus:border-bf-cyan font-mono"
                     />
                   </div>
-                  <div className="flex items-center justify-end gap-1.5 text-[9px] text-[#64748B]">
+                  <div className="flex items-center justify-end gap-1.5 text-[9px] text-bf-faint">
                     <span>PREVIEW:</span>
-                    <span className="text-[#10B981]">{patternPreview}</span>
+                    <span className="text-bf-ok">{patternPreview}</span>
                   </div>
                 </div>
               </>
@@ -368,11 +442,11 @@ export const SettingsModal: React.FC = () => {
         </div>
 
         {/* Footer Actions */}
-        <div className="h-[36px] bg-[#141B29] border-t border-[#222D3D] px-3 flex items-center justify-between shrink-0">
+        <div className="h-[36px] bg-bf-head border-t border-bf-line px-3 flex items-center justify-between shrink-0">
           <button
             type="button"
             onClick={handleReset}
-            className="flex items-center gap-1 text-[10px] text-[#64748B] hover:text-[#94A3B8] transition-colors"
+            className="flex items-center gap-1 text-[10px] text-bf-faint hover:text-bf-mute transition-colors"
           >
             <RotateCcw className="w-2.5 h-2.5" />
             <span>Reset to defaults</span>
@@ -381,14 +455,14 @@ export const SettingsModal: React.FC = () => {
             <button
               type="button"
               onClick={() => setSettingsOpen(false)}
-              className="px-2.5 py-1 rounded bg-[#1E293B] hover:bg-[#334155] text-[#94A3B8] text-[10.5px] transition-colors"
+              className="px-2.5 py-1 rounded bg-bf-btn hover:bg-bf-btn-hi text-bf-mute text-[10.5px] transition-colors"
             >
               Cancel
             </button>
             <button
               type="button"
               onClick={handleApply}
-              className="flex items-center gap-1 px-3 py-1 rounded bg-[#00E5FF] hover:bg-[#00B4D8] text-[#0A0D13] font-semibold text-[10.5px] transition-colors shadow-[0_0_8px_rgba(0,229,255,0.4)]"
+              className="flex items-center gap-1 px-3 py-1 rounded bg-bf-cyan hover:bg-bf-cyan-hi text-bf-onfill font-semibold text-[10.5px] transition-colors shadow-[0_0_8px_rgb(var(--bf-cyan-rgb)/0.4)]"
             >
               <Check className="w-3 h-3" />
               <span>Apply</span>

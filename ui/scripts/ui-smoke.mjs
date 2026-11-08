@@ -522,6 +522,7 @@ try {
         const overlay = [...document.querySelectorAll('div')].find((d) =>
           d.className?.includes?.('z-[999998]')
         );
+        if (!overlay) return false; // dialog not open — report, don't crash
         const btn = [...overlay.querySelectorAll('button')].find(
           (b) => b.textContent.trim() === t && b.getBoundingClientRect().width > 0
         );
@@ -544,11 +545,16 @@ try {
       await sleep(400);
     };
 
-    // Gear opens the dialog
+    // Gear opens the dialog (lands on GENERAL)
     await openViaGear();
     check('gear opens settings dialog', await settingsOpen());
+    check('settings dialog lands on GENERAL section', await page.evaluate(() => {
+      const rail = [...document.querySelectorAll('button')].find((b) => b.textContent.trim() === 'GENERAL');
+      return !!rail && rail.className.includes('border-bf-cyan');
+    }));
 
     // Escape closes and DISCARDS the draft (no blob must be written)
+    await clickInSettings('APPEARANCE');
     await clickInSettings('SESSION'); // stage timestampBase=relative
     await page.keyboard.press('Escape');
     await sleep(300);
@@ -567,7 +573,9 @@ try {
     check('Ctrl+, opens settings dialog', await settingsOpen());
 
     // ⓘ hint: hovering a settings row body shows nothing; hovering the row's
-    // ⓘ icon shows the styled hint surface (TooltipOverlay portal)
+    // ⓘ icon shows the styled hint surface (TooltipOverlay portal).
+    // Ctrl+, above re-opened the dialog on GENERAL — go to APPEARANCE.
+    await clickInSettings('APPEARANCE');
     const hintViaIcon = await page.evaluate(async () => {
       const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
       const overlayVisible = () =>
@@ -594,7 +602,10 @@ try {
     });
     check('settings hint appears only via ⓘ icon', hintViaIcon === true, String(hintViaIcon));
 
-    // Apply persists (timestamp base SESSION) and survives a reload
+    // Apply persists (timestamp base SESSION) and survives a reload.
+    // The dialog lands on GENERAL now — navigate to APPEARANCE first.
+    await openViaGear();
+    await clickInSettings('APPEARANCE');
     await clickInSettings('SESSION');
     await clickInSettings('Apply');
     await sleep(300);
@@ -605,8 +616,59 @@ try {
     blob = JSON.parse(await page.evaluate(() => localStorage.getItem('bforge_settings_v1') || '{}'));
     check('settings survive reload', blob.timestampBase === 'relative', JSON.stringify(blob.timestampBase));
 
+    // Theme system: GENERAL section — pick SKEUO + LIGHT, Apply, verify the
+    // html attributes flip, the canvas surface repaints, and the blob records
+    // the choice; then reload and confirm the pre-paint restore.
+    await openViaGear();
+    const sawThemePicker =
+      (await clickInSettings('CLASSIC')) && (await clickInSettings('MATERIAL')) && (await clickInSettings('SKEUO'));
+    check('theme picker lists all skins', !!sawThemePicker);
+    await clickInSettings('SKEUO');
+    await clickInSettings('LIGHT');
+    await clickInSettings('Apply');
+    await sleep(400);
+    const themeAttrs = await page.evaluate(() => [
+      document.documentElement.getAttribute('data-bf-theme'),
+      document.documentElement.getAttribute('data-bf-mode'),
+    ]);
+    check(
+      'theme apply flips html attrs',
+      themeAttrs[0] === 'skeuomorph' && themeAttrs[1] === 'light',
+      JSON.stringify(themeAttrs)
+    );
+    const bodyBg = await page.evaluate(() => getComputedStyle(document.body).backgroundColor);
+    const darkCanvas = await page.evaluate(() => {
+      const el = document.documentElement;
+      const prev = [el.getAttribute('data-bf-theme'), el.getAttribute('data-bf-mode')];
+      el.setAttribute('data-bf-theme', 'obsidian');
+      el.setAttribute('data-bf-mode', 'dark');
+      const dark = getComputedStyle(document.body).backgroundColor;
+      el.setAttribute('data-bf-theme', prev[0]);
+      el.setAttribute('data-bf-mode', prev[1]);
+      return dark;
+    });
+    check('light theme repaints surfaces', bodyBg !== darkCanvas, `${bodyBg} vs dark ${darkCanvas}`);
+    // Put the theme back through the dialog (attrs above were set manually).
+    await openViaGear();
+    await clickInSettings('SKEUO');
+    await clickInSettings('LIGHT');
+    await clickInSettings('Apply');
+    await sleep(300);
+    await page.reload({ waitUntil: 'domcontentloaded' });
+    await sleep(2500);
+    const restoredAttrs = await page.evaluate(() => [
+      document.documentElement.getAttribute('data-bf-theme'),
+      document.documentElement.getAttribute('data-bf-mode'),
+    ]);
+    check(
+      'theme survives reload (pre-paint restore)',
+      restoredAttrs[0] === 'skeuomorph' && restoredAttrs[1] === 'light',
+      JSON.stringify(restoredAttrs)
+    );
+
     // Hex bytes/row setting reflows the Hex Inspector ruler (16 -> 32 cells)
     await openViaGear();
+    await clickInSettings('APPEARANCE');
     await clickInSettings('32');
     await clickInSettings('Apply');
     await sleep(300);
@@ -622,6 +684,7 @@ try {
 
     // Tooltip kill switch: hover with tooltips OFF shows nothing, ON shows the surface
     await openViaGear();
+    await clickInSettings('APPEARANCE');
     await clickInSettings('OFF'); // first OFF row is "Tooltips:"
     await clickInSettings('Apply');
     await sleep(300);
@@ -644,9 +707,129 @@ try {
         blob.hexBytesPerRow === 16 &&
         blob.tooltipsEnabled === true &&
         blob.maxPackets === 10000 &&
-        blob.defaultExportFormat === 'pcapng',
+        blob.defaultExportFormat === 'pcapng' &&
+        blob.theme === 'obsidian' &&
+        blob.themeMode === 'dark',
       JSON.stringify(blob)
     );
+  }
+
+  // T13: named layout library — save the boot arrangement under a name from
+  // the LAYOUTS & PANELS menu, load it on demand, star it as the startup
+  // default (which must beat the session auto-save on the next boot), and
+  // delete it via the two-click confirm.
+  {
+    const openLayoutsMenu = async () => {
+      await page.evaluate(() => {
+        const btn = [...document.querySelectorAll('button')].find((b) =>
+          b.textContent.includes('LAYOUTS & PANELS')
+        );
+        btn?.click();
+      });
+      await sleep(350);
+    };
+    const dockPanelIds = () =>
+      page.evaluate(() => Object.keys(window.__bforgeDockApi?.panels ?? {}).sort().join(','));
+
+    // Save Current Layout… -> name it -> Enter
+    await openLayoutsMenu();
+    await page.evaluate(() => {
+      const btn = [...document.querySelectorAll('button')].find((b) =>
+        b.textContent.includes('Save Current Layout')
+      );
+      btn?.click();
+    });
+    await sleep(250);
+    await page.evaluate(() => {
+      const input = [...document.querySelectorAll('input')].find((i) => i.placeholder === 'Layout name');
+      input?.focus();
+    });
+    await page.keyboard.type('Smoke Layout');
+    await page.keyboard.press('Enter');
+    await sleep(700);
+    let lib = await page.evaluate(() => JSON.parse(localStorage.getItem('bforge_layout_library_v1') || 'null'));
+    check(
+      'saving a named layout persists it to the library',
+      !!lib?.layouts?.['Smoke Layout'],
+      `layouts=${lib ? Object.keys(lib.layouts).join(',') : 'none'}`
+    );
+
+    // Load on demand: open a panel absent from the saved arrangement (MITM
+    // bridge is not in the default CAD preset), then watch loading the saved
+    // layout remove it again.
+    await page.evaluate(() => window.__bforgeStore.getState().requestOpenPanel('bridge'));
+    await sleep(800);
+    const withBridge = await dockPanelIds();
+    await openLayoutsMenu();
+    await page.evaluate(() => {
+      const row = [...document.querySelectorAll('button')].find((b) =>
+        (b.getAttribute('title') || '').startsWith('Load “Smoke Layout”')
+      );
+      row?.click();
+    });
+    await sleep(800);
+    const afterLoad = await dockPanelIds();
+    check(
+      'loading a saved layout restores its panel set on demand',
+      withBridge.includes('bridge') && !afterLoad.includes('bridge'),
+      `with=${withBridge} after=${afterLoad}`
+    );
+
+    // Star as startup default, dirty the session with the bridge again, then
+    // reload: the auto-save now holds the bridge, so only the starred default
+    // winning the boot proves the precedence chain.
+    await openLayoutsMenu();
+    await page.evaluate(() => {
+      const star = [...document.querySelectorAll('button')].find(
+        (b) => b.getAttribute('title') === 'Load this layout on startup'
+      );
+      star?.click();
+    });
+    await sleep(300);
+    lib = await page.evaluate(() => JSON.parse(localStorage.getItem('bforge_layout_library_v1') || 'null'));
+    check(
+      'saved layout can be starred as startup default',
+      lib?.defaultLayout === 'Smoke Layout',
+      `default=${String(lib?.defaultLayout)}`
+    );
+
+    await page.evaluate(() => window.__bforgeStore.getState().requestOpenPanel('bridge'));
+    await sleep(800);
+    await page.reload({ waitUntil: 'domcontentloaded' });
+    await sleep(2500);
+    const afterBoot = await dockPanelIds();
+    check(
+      'default layout wins the next boot over the session auto-save',
+      !afterBoot.includes('bridge') && afterBoot.includes('packetStream'),
+      `boot=${afterBoot}`
+    );
+
+    // Two-click delete; deleting the starred layout must clear the default too.
+    await openLayoutsMenu();
+    await page.evaluate(() => {
+      const trash = [...document.querySelectorAll('button')].find(
+        (b) => (b.getAttribute('title') || '') === 'Delete layout'
+      );
+      trash?.click();
+    });
+    await sleep(250);
+    await page.evaluate(() => {
+      const armed = [...document.querySelectorAll('button')].find((b) =>
+        (b.getAttribute('title') || '').startsWith('Click again to confirm')
+      );
+      armed?.click();
+    });
+    await sleep(400);
+    lib = await page.evaluate(() => JSON.parse(localStorage.getItem('bforge_layout_library_v1') || 'null'));
+    check(
+      'two-click delete removes the layout and clears the default',
+      !lib?.layouts?.['Smoke Layout'] && lib?.defaultLayout === null,
+      `layouts=${lib ? Object.keys(lib.layouts).length : 0} default=${String(lib?.defaultLayout)}`
+    );
+
+    // Dismiss the menu so later checks start from a neutral surface.
+    await page.mouse.click(5, 800);
+    await sleep(200);
   }
 } finally {
   await browser.close();

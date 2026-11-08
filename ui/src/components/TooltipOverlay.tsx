@@ -139,11 +139,11 @@ export const TooltipOverlay: React.FC = () => {
         top: `${coords.top}px`,
         zIndex: 1000000,
       }}
-      className="max-w-[420px] bg-[#0E131F]/95 backdrop-blur-md text-[#E2E8F0] border border-[#2D3A4E] rounded px-2.5 py-1.5 font-mono text-[9.5px] leading-tight shadow-[0_12px_28px_rgba(0,0,0,0.9)] pointer-events-none flex items-center gap-2 whitespace-normal break-words"
+      className="max-w-[420px] bg-bf-surface/95 backdrop-blur-md text-bf-body border border-bf-line-strong rounded px-2.5 py-1.5 font-mono text-[9.5px] leading-tight shadow-[0_12px_28px_rgb(var(--bf-shadow-rgb)/0.9)] pointer-events-none flex items-center gap-2 whitespace-normal break-words"
     >
-      <span className="text-[#E2E8F0] leading-snug">{tooltip.text}</span>
+      <span className="text-bf-body leading-snug">{tooltip.text}</span>
       {tooltip.shortcut && (
-        <span className="shrink-0 px-1 py-0.2 rounded bg-[#00E5FF]/15 text-[#00E5FF] border border-[#00E5FF]/30 font-bold text-[8.5px]">
+        <span className="shrink-0 px-1 py-0.2 rounded bg-bf-cyan/15 text-bf-cyan border border-bf-cyan/30 font-bold text-[8.5px]">
           {tooltip.shortcut}
         </span>
       )}

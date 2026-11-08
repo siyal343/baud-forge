@@ -105,17 +105,17 @@ export const UartConfigModal: React.FC<UartConfigModalProps> = ({ isOpen, onClos
       <div
         ref={modalRef}
         style={style}
-        className="w-[360px] bg-[#0E131F] border border-[#2D3A4E] shadow-[0_12px_36px_rgba(0,0,0,0.85)] rounded-lg text-[11px] font-mono text-[#CBD5E1] overflow-hidden flex flex-col"
+        className="w-[360px] bg-bf-surface border border-bf-line-strong shadow-[0_12px_36px_rgb(var(--bf-shadow-rgb)/0.85)] rounded-lg text-[11px] font-mono text-bf-dim overflow-hidden flex flex-col"
       >
         {/* Header */}
-        <div className="h-[32px] bg-[#141B29] border-b border-[#222D3D] px-3 flex items-center justify-between">
-          <div className="flex items-center gap-1.5 text-[#00E5FF] font-semibold text-[11.5px]">
+        <div className="h-[32px] bg-bf-head border-b border-bf-line px-3 flex items-center justify-between">
+          <div className="flex items-center gap-1.5 text-bf-cyan font-semibold text-[11.5px]">
             <Settings2 className="w-3.5 h-3.5" />
             <span>UART & DELIMITER CONFIGURATION</span>
           </div>
           <button
             onClick={onClose}
-            className="text-[#64748B] hover:text-[#EF4444] p-0.5 rounded transition-colors"
+            className="text-bf-faint hover:text-bf-fault p-0.5 rounded transition-colors"
           >
             <X className="w-3.5 h-3.5" />
           </button>
@@ -124,13 +124,13 @@ export const UartConfigModal: React.FC<UartConfigModalProps> = ({ isOpen, onClos
         {/* Content */}
         <div className="p-3.5 space-y-3.5 max-h-[460px] overflow-y-auto">
           {/* Active Shorthand Badge */}
-          <div className="flex items-center justify-between bg-[#161C28] border border-[#222D3D] px-2.5 py-1.5 rounded">
-            <span className="text-[#64748B] text-[10px]">FRAMING SHORTHAND</span>
+          <div className="flex items-center justify-between bg-bf-subpanel border border-bf-line px-2.5 py-1.5 rounded">
+            <span className="text-bf-faint text-[10px]">FRAMING SHORTHAND</span>
             <div className="flex items-center gap-2">
-              <span className="px-2 py-0.5 rounded bg-[#00E5FF]/10 text-[#00E5FF] font-bold border border-[#00E5FF]/30 text-[11px]">
+              <span className="px-2 py-0.5 rounded bg-bf-cyan/10 text-bf-cyan font-bold border border-bf-cyan/30 text-[11px]">
                 {shorthand}
               </span>
-              <span className="text-[10px] text-[#94A3B8]">
+              <span className="text-[10px] text-bf-mute">
                 {tempDataBits} Data · {tempParity.toUpperCase()} Parity · {tempStopBits} Stop
               </span>
             </div>
@@ -138,13 +138,13 @@ export const UartConfigModal: React.FC<UartConfigModalProps> = ({ isOpen, onClos
 
           {/* Section 1: UART Line Framing */}
           <div className="space-y-2">
-            <div className="text-[10px] font-semibold text-[#94A3B8] uppercase tracking-wider">
+            <div className="text-[10px] font-semibold text-bf-mute uppercase tracking-wider">
               1. Line Parameters (Data · Parity · Stop)
             </div>
 
             {/* Data Bits */}
             <div className="flex items-center justify-between gap-2">
-              <span className="text-[#64748B] text-[10px]">Data Bits:</span>
+              <span className="text-bf-faint text-[10px]">Data Bits:</span>
               <div className="flex items-center gap-1">
                 {[8, 7, 6, 5].map((bits) => (
                   <button
@@ -153,8 +153,8 @@ export const UartConfigModal: React.FC<UartConfigModalProps> = ({ isOpen, onClos
                     onClick={() => setTempDataBits(bits)}
                     className={`w-9 py-0.5 rounded text-[10.5px] font-semibold transition-colors border ${
                       tempDataBits === bits
-                        ? 'bg-[#00E5FF]/15 border-[#00E5FF] text-[#00E5FF]'
-                        : 'bg-[#161C28] border-[#222D3D] text-[#94A3B8] hover:border-[#38BDF8]/40'
+                        ? 'bg-bf-cyan/15 border-bf-cyan text-bf-cyan'
+                        : 'bg-bf-subpanel border-bf-line text-bf-mute hover:border-bf-sky/40'
                     }`}
                   >
                     {bits}
@@ -165,7 +165,7 @@ export const UartConfigModal: React.FC<UartConfigModalProps> = ({ isOpen, onClos
 
             {/* Parity */}
             <div className="flex items-center justify-between gap-2">
-              <span className="text-[#64748B] text-[10px]">Parity:</span>
+              <span className="text-bf-faint text-[10px]">Parity:</span>
               <div className="flex items-center gap-1">
                 {(['none', 'even', 'odd', 'mark', 'space'] as const).map((p) => (
                   <button
@@ -174,8 +174,8 @@ export const UartConfigModal: React.FC<UartConfigModalProps> = ({ isOpen, onClos
                     onClick={() => setTempParity(p)}
                     className={`px-1.5 py-0.5 rounded text-[10px] font-semibold uppercase transition-colors border ${
                       tempParity === p
-                        ? 'bg-[#00E5FF]/15 border-[#00E5FF] text-[#00E5FF]'
-                        : 'bg-[#161C28] border-[#222D3D] text-[#94A3B8] hover:border-[#38BDF8]/40'
+                        ? 'bg-bf-cyan/15 border-bf-cyan text-bf-cyan'
+                        : 'bg-bf-subpanel border-bf-line text-bf-mute hover:border-bf-sky/40'
                     }`}
                   >
                     {p === 'none' ? 'None (N)' : p === 'even' ? 'Even (E)' : p === 'odd' ? 'Odd (O)' : p.toUpperCase()}
@@ -186,7 +186,7 @@ export const UartConfigModal: React.FC<UartConfigModalProps> = ({ isOpen, onClos
 
             {/* Stop Bits */}
             <div className="flex items-center justify-between gap-2">
-              <span className="text-[#64748B] text-[10px]">Stop Bits:</span>
+              <span className="text-bf-faint text-[10px]">Stop Bits:</span>
               <div className="flex items-center gap-1">
                 {[1, 1.5, 2].map((sb) => (
                   <button
@@ -195,8 +195,8 @@ export const UartConfigModal: React.FC<UartConfigModalProps> = ({ isOpen, onClos
                     onClick={() => setTempStopBits(sb)}
                     className={`w-11 py-0.5 rounded text-[10.5px] font-semibold transition-colors border ${
                       tempStopBits === sb
-                        ? 'bg-[#00E5FF]/15 border-[#00E5FF] text-[#00E5FF]'
-                        : 'bg-[#161C28] border-[#222D3D] text-[#94A3B8] hover:border-[#38BDF8]/40'
+                        ? 'bg-bf-cyan/15 border-bf-cyan text-bf-cyan'
+                        : 'bg-bf-subpanel border-bf-line text-bf-mute hover:border-bf-sky/40'
                     }`}
                   >
                     {sb}
@@ -207,10 +207,10 @@ export const UartConfigModal: React.FC<UartConfigModalProps> = ({ isOpen, onClos
           </div>
 
           {/* Section 2: Delimiter / Frame Extraction */}
-          <div className="space-y-2 border-t border-[#222D3D] pt-3">
-            <div className="text-[10px] font-semibold text-[#94A3B8] uppercase tracking-wider flex items-center justify-between">
+          <div className="space-y-2 border-t border-bf-line pt-3">
+            <div className="text-[10px] font-semibold text-bf-mute uppercase tracking-wider flex items-center justify-between">
               <span>2. Frame Delimiter & Packet Slicer</span>
-              <span className="text-[#00E5FF] text-[9.5px]">{tempMode.toUpperCase()}</span>
+              <span className="text-bf-cyan text-[9.5px]">{tempMode.toUpperCase()}</span>
             </div>
 
             <div className="grid grid-cols-1 gap-1.5">
@@ -228,8 +228,8 @@ export const UartConfigModal: React.FC<UartConfigModalProps> = ({ isOpen, onClos
                   onClick={() => setTempMode(m.id as any)}
                   className={`flex items-start gap-2 p-1.5 rounded cursor-pointer border transition-colors ${
                     tempMode === m.id
-                      ? 'bg-[#00E5FF]/10 border-[#00E5FF]/60 text-[#E2E8F0]'
-                      : 'bg-[#141A26] border-[#1E293B] hover:border-[#334155] text-[#94A3B8]'
+                      ? 'bg-bf-cyan/10 border-bf-cyan/60 text-bf-body'
+                      : 'bg-bf-subpanel border-bf-btn hover:border-bf-btn-hi text-bf-mute'
                   }`}
                 >
                   <input
@@ -237,11 +237,11 @@ export const UartConfigModal: React.FC<UartConfigModalProps> = ({ isOpen, onClos
                     name="delimiterMode"
                     checked={tempMode === m.id}
                     onChange={() => setTempMode(m.id as any)}
-                    className="mt-0.5 accent-[#00E5FF] cursor-pointer"
+                    className="mt-0.5 accent-bf-cyan cursor-pointer"
                   />
                   <div className="flex-1">
                     <div className="text-[10.5px] font-semibold">{m.label}</div>
-                    <div className="text-[9px] text-[#64748B] leading-tight mt-0.5">{m.desc}</div>
+                    <div className="text-[9px] text-bf-faint leading-tight mt-0.5">{m.desc}</div>
                   </div>
                 </label>
               ))}
@@ -249,18 +249,18 @@ export const UartConfigModal: React.FC<UartConfigModalProps> = ({ isOpen, onClos
 
             {/* Custom byte input when Custom selected */}
             {tempMode === 'custom' && (
-              <div className="flex items-center gap-2 p-2 rounded bg-[#161C28] border border-[#2D3A4E]">
-                <span className="text-[#64748B] text-[10px]">HEX BYTE (00-FF):</span>
-                <span className="text-[#00E5FF] font-bold">0x</span>
+              <div className="flex items-center gap-2 p-2 rounded bg-bf-subpanel border border-bf-line-strong">
+                <span className="text-bf-faint text-[10px]">HEX BYTE (00-FF):</span>
+                <span className="text-bf-cyan font-bold">0x</span>
                 <input
                   type="text"
                   maxLength={2}
                   value={tempCustomHex}
                   onChange={(e) => setTempCustomHex(e.target.value.replace(/[^0-9a-fA-F]/g, '').toUpperCase())}
                   placeholder="7E"
-                  className="w-12 h-6 px-1.5 bg-[#0E131F] border border-[#00E5FF]/50 rounded text-center text-[#00E5FF] font-bold text-xs focus:outline-none font-mono"
+                  className="w-12 h-6 px-1.5 bg-bf-surface border border-bf-cyan/50 rounded text-center text-bf-cyan font-bold text-xs focus:outline-none font-mono"
                 />
-                <span className="text-[#64748B] text-[9.5px]">
+                <span className="text-bf-faint text-[9.5px]">
                   (Decimal: {parseInt(tempCustomHex || '0', 16) || 0})
                 </span>
               </div>
@@ -269,11 +269,11 @@ export const UartConfigModal: React.FC<UartConfigModalProps> = ({ isOpen, onClos
         </div>
 
         {/* Footer Actions */}
-        <div className="h-[36px] bg-[#141B29] border-t border-[#222D3D] px-3 flex items-center justify-between">
+        <div className="h-[36px] bg-bf-head border-t border-bf-line px-3 flex items-center justify-between">
           <button
             type="button"
             onClick={handleReset}
-            className="flex items-center gap-1 text-[10px] text-[#64748B] hover:text-[#94A3B8] transition-colors"
+            className="flex items-center gap-1 text-[10px] text-bf-faint hover:text-bf-mute transition-colors"
           >
             <RotateCcw className="w-2.5 h-2.5" />
             <span>Reset (8-N-1 · COBS)</span>
@@ -282,14 +282,14 @@ export const UartConfigModal: React.FC<UartConfigModalProps> = ({ isOpen, onClos
             <button
               type="button"
               onClick={onClose}
-              className="px-2.5 py-1 rounded bg-[#1E293B] hover:bg-[#334155] text-[#94A3B8] text-[10.5px] transition-colors"
+              className="px-2.5 py-1 rounded bg-bf-btn hover:bg-bf-btn-hi text-bf-mute text-[10.5px] transition-colors"
             >
               Cancel
             </button>
             <button
               type="button"
               onClick={handleApply}
-              className="flex items-center gap-1 px-3 py-1 rounded bg-[#00E5FF] hover:bg-[#00B4D8] text-[#0A0D13] font-semibold text-[10.5px] transition-colors shadow-[0_0_8px_rgba(0,229,255,0.4)]"
+              className="flex items-center gap-1 px-3 py-1 rounded bg-bf-cyan hover:bg-bf-cyan-hi text-bf-onfill font-semibold text-[10.5px] transition-colors shadow-[0_0_8px_rgb(var(--bf-cyan-rgb)/0.4)]"
             >
               <Check className="w-3 h-3" />
               <span>Apply Configuration</span>

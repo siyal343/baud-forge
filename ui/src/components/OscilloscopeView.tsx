@@ -25,6 +25,29 @@ const CH2_SCALE_PRESETS = [0.02, 0.05, 0.1, 0.2, 0.5, 1.0, 2.0, 5.0]; // rad/s /
 const MATH_OPERATIONS = ['CH1 - CH2', 'CH1 + CH2', 'CH1 * CH2', 'FFT', 'INV CH1'] as const;
 /** Lane colors for bound field traces (spec 5.4). */
 const TRACE_COLORS = ['#A855F7', '#F97316', '#38BDF8', '#F472B6', '#84CC16', '#FACC15'];
+
+/**
+ * Canvas has no CSS cascade — read the active theme's tokens straight from
+ * the document. Called once per frame inside the render loop, so a theme
+ * switch repaints the scope on the very next frame with zero re-wiring.
+ */
+const scopePalette = (): Record<string, string> => {
+  const cs = getComputedStyle(document.documentElement);
+  const v = (name: string, fb: string) => cs.getPropertyValue(name).trim() || fb;
+  return {
+    canvas: v('--color-bf-canvas', '#0A0D13'),
+    gridMinor: v('--color-bf-line-soft', '#161F2E'),
+    grid: v('--color-bf-line', '#222D3D'),
+    gridStrong: v('--color-bf-hover', '#1E2638'),
+    textMuted: v('--color-bf-faint', '#64748B'),
+    cyan: v('--color-bf-cyan', '#00E5FF'),
+    amber: v('--color-bf-amber', '#FBBF24'),
+    math: v('--color-bf-math', '#D946EF'),
+    ok: v('--color-bf-ok', '#10B981'),
+    sky: v('--color-bf-sky', '#38BDF8'),
+    fault: v('--color-bf-fault', '#EF4444'),
+  };
+};
 type MathOp = typeof MATH_OPERATIONS[number];
 type CursorMode = 'OFF' | 'TIME' | 'VOLT' | 'BOTH';
 type CursorChannel = 'CH1' | 'CH2' | 'MATH';
@@ -374,6 +397,7 @@ export const OscilloscopeView: React.FC = () => {
     if (!canvas) return;
     const ctx = canvas.getContext('2d');
     if (!ctx) return;
+    const C = scopePalette();
 
     // Handle high DPI display
     const dpr = window.devicePixelRatio || 1;
@@ -389,7 +413,7 @@ export const OscilloscopeView: React.FC = () => {
     const height = rect.height;
 
     // Background fill
-    ctx.fillStyle = '#0A0D13';
+    ctx.fillStyle = C.canvas;
     ctx.fillRect(0, 0, width, height);
 
     // Grid Dimensions (10 Horizontal divisions, 8 Vertical divisions)
@@ -399,7 +423,7 @@ export const OscilloscopeView: React.FC = () => {
     const colStep = width / gridCols;
 
     // Graticule Grid
-    ctx.strokeStyle = '#161F2E';
+    ctx.strokeStyle = C.gridMinor;
     ctx.lineWidth = 1;
     ctx.setLineDash([2, 4]);
 
@@ -421,7 +445,7 @@ export const OscilloscopeView: React.FC = () => {
     // Sub-graticule tick marks along center crosshairs
     const midX = width / 2;
     const midY = height / 2;
-    ctx.strokeStyle = '#222D3D';
+    ctx.strokeStyle = C.grid;
     for (let x = 0; x < width; x += colStep / 5) {
       ctx.beginPath();
       ctx.moveTo(x, midY - 2);
@@ -436,7 +460,7 @@ export const OscilloscopeView: React.FC = () => {
     }
 
     if (!displaySamples.length) {
-      ctx.fillStyle = '#64748B';
+      ctx.fillStyle = C.textMuted;
       ctx.font = '12px "JetBrains Mono", monospace';
       ctx.textAlign = 'center';
       ctx.fillText('Awaiting continuous telemetry samples...', width / 2, height / 2);
@@ -449,7 +473,7 @@ export const OscilloscopeView: React.FC = () => {
 
     // --- Channel 1: v_batt_mv with Channel Horizontal Offset (Amber) ---
     if (ch1Visible) {
-      ctx.strokeStyle = '#FBBF24';
+      ctx.strokeStyle = C.amber;
       ctx.lineWidth = 1.6;
       ctx.beginPath();
 
@@ -471,7 +495,7 @@ export const OscilloscopeView: React.FC = () => {
 
     // --- Channel 2: gyro_z with Channel Horizontal Offset (Cyan) ---
     if (ch2Visible) {
-      ctx.strokeStyle = '#00E5FF';
+      ctx.strokeStyle = C.cyan;
       ctx.lineWidth = 1.6;
       ctx.beginPath();
 
@@ -493,7 +517,7 @@ export const OscilloscopeView: React.FC = () => {
 
     // --- Channel Math: Operational Waveform with Channel Offset (Magenta) ---
     if (mathVisible) {
-      ctx.strokeStyle = '#D946EF';
+      ctx.strokeStyle = C.math;
       ctx.lineWidth = 1.8;
 
       if (mathOp === 'FFT') {
@@ -504,7 +528,7 @@ export const OscilloscopeView: React.FC = () => {
           const bins = Math.floor(N / 2);
           const binWidth = width / bins;
 
-          ctx.fillStyle = '#D946EF25';
+          ctx.fillStyle = `${C.math}25`;
           ctx.beginPath();
           ctx.moveTo(0, analogHeight - 10);
 
@@ -535,7 +559,7 @@ export const OscilloscopeView: React.FC = () => {
           ctx.fill();
           ctx.stroke();
 
-          ctx.fillStyle = '#D946EF';
+          ctx.fillStyle = C.math;
           ctx.font = 'bold 9.5px "JetBrains Mono", monospace';
           ctx.textAlign = 'left';
           ctx.fillText(`MATH FFT [Peak: ${stats.fftPeakFreq} Hz]`, 10, 22);
@@ -576,7 +600,7 @@ export const OscilloscopeView: React.FC = () => {
         });
         ctx.stroke();
 
-        ctx.fillStyle = '#D946EF';
+        ctx.fillStyle = C.math;
         ctx.font = 'bold 9.5px "JetBrains Mono", monospace';
         ctx.textAlign = 'left';
         ctx.fillText(`MATH (${mathOp}) · ${mathScale}x`, 10, 22);
@@ -586,7 +610,7 @@ export const OscilloscopeView: React.FC = () => {
     // --- Trigger Line & Marker ---
     const isCh1Trig = triggerSource === 'CH1';
     const trigY = isCh1Trig ? voltToY(triggerLevelCh1Mv) : gyroToY(triggerLevelCh2Rad);
-    const trigColor = isCh1Trig ? '#FBBF24' : '#00E5FF';
+    const trigColor = isCh1Trig ? C.amber : C.cyan;
     const trigLabel = isCh1Trig ? `T: ${(triggerLevelCh1Mv / 1000).toFixed(2)}V` : `T: ${triggerLevelCh2Rad.toFixed(2)}r/s`;
 
     if (trigY >= 0 && trigY <= analogHeight) {
@@ -663,20 +687,20 @@ export const OscilloscopeView: React.FC = () => {
       const railCount = 3;
       const railStep = logicHeight / railCount;
       const railLabels = ['D0: RUN', 'D1: ARMED', 'D2: FAULT'];
-      const railColors = ['#10B981', '#38BDF8', '#EF4444'];
+      const railColors = [C.ok, C.sky, C.fault];
 
       for (let r = 0; r < railCount; r++) {
         const baseY = analogHeight + (r + 1) * railStep - 4;
         const highY = baseY - (railStep - 8);
 
-        ctx.strokeStyle = '#1E2638';
+        ctx.strokeStyle = C.gridStrong;
         ctx.lineWidth = 1;
         ctx.beginPath();
         ctx.moveTo(0, baseY);
         ctx.lineTo(width, baseY);
         ctx.stroke();
 
-        ctx.fillStyle = '#64748B';
+        ctx.fillStyle = C.textMuted;
         ctx.font = '10px "JetBrains Mono", monospace';
         ctx.textAlign = 'left';
         ctx.fillText(railLabels[r], 6, baseY - 2);
@@ -709,7 +733,7 @@ export const OscilloscopeView: React.FC = () => {
     channelsToRender.forEach((ch) => {
       const cursors = channelCursors[ch];
       const isSelectedCh = ch === cursorTargetChannel;
-      const chColor = ch === 'CH1' ? '#FBBF24' : ch === 'CH2' ? '#00E5FF' : '#D946EF';
+      const chColor = ch === 'CH1' ? C.amber : ch === 'CH2' ? C.cyan : C.math;
 
       // Horizontal / Time Cursors (X1 & X2)
       if (cursorMode === 'TIME' || cursorMode === 'BOTH') {
@@ -732,7 +756,7 @@ export const OscilloscopeView: React.FC = () => {
           // Tag
           ctx.fillStyle = isHovered ? '#FFFFFF' : chColor;
           ctx.fillRect(x1 - 18, 2, 36, 14);
-          ctx.fillStyle = '#0A0D13';
+          ctx.fillStyle = C.canvas;
           ctx.font = 'bold 8.5px "JetBrains Mono", monospace';
           ctx.textAlign = 'center';
           ctx.fillText(`${ch}:X1`, x1, 12);
@@ -757,7 +781,7 @@ export const OscilloscopeView: React.FC = () => {
           // Tag
           ctx.fillStyle = isHovered ? '#FFFFFF' : chColor;
           ctx.fillRect(x2 - 18, 18, 36, 14);
-          ctx.fillStyle = '#0A0D13';
+          ctx.fillStyle = C.canvas;
           ctx.font = 'bold 8.5px "JetBrains Mono", monospace';
           ctx.textAlign = 'center';
           ctx.fillText(`${ch}:X2`, x2, 28);
@@ -794,7 +818,7 @@ export const OscilloscopeView: React.FC = () => {
             (hoveredMarker && typeof hoveredMarker === 'object' && hoveredMarker.ch === ch && hoveredMarker.marker === 'Y1') ||
             (draggedMarker && typeof draggedMarker === 'object' && draggedMarker.ch === ch && draggedMarker.marker === 'Y1');
 
-          ctx.strokeStyle = isHovered ? '#FFFFFF' : '#10B981';
+          ctx.strokeStyle = isHovered ? '#FFFFFF' : C.ok;
           ctx.lineWidth = isHovered ? 2.2 : isSelectedCh ? 1.6 : 1.0;
           ctx.setLineDash([4, 2]);
           ctx.beginPath();
@@ -803,9 +827,9 @@ export const OscilloscopeView: React.FC = () => {
           ctx.stroke();
           ctx.setLineDash([]);
 
-          ctx.fillStyle = isHovered ? '#FFFFFF' : '#10B981';
+          ctx.fillStyle = isHovered ? '#FFFFFF' : C.ok;
           ctx.fillRect(2, y1Pos - 8, 62, 16);
-          ctx.fillStyle = '#0A0D13';
+          ctx.fillStyle = C.canvas;
           ctx.font = 'bold 8px "JetBrains Mono", monospace';
           ctx.textAlign = 'center';
           ctx.fillText(y1Text, 33, y1Pos + 3);
@@ -828,7 +852,7 @@ export const OscilloscopeView: React.FC = () => {
 
           ctx.fillStyle = isHovered ? '#FFFFFF' : '#A855F7';
           ctx.fillRect(66, y2Pos - 8, 62, 16);
-          ctx.fillStyle = '#0A0D13';
+          ctx.fillStyle = C.canvas;
           ctx.font = 'bold 8px "JetBrains Mono", monospace';
           ctx.textAlign = 'center';
           ctx.fillText(y2Text, 97, y2Pos + 3);
@@ -838,13 +862,13 @@ export const OscilloscopeView: React.FC = () => {
 
     // --- Stopped / Single Indicator Badge ---
     if (!isRunning) {
-      ctx.fillStyle = '#EF444422';
-      ctx.strokeStyle = '#EF4444';
+      ctx.fillStyle = `${C.fault}22`;
+      ctx.strokeStyle = C.fault;
       ctx.lineWidth = 1;
       ctx.fillRect(width - 110, 8, 100, 22);
       ctx.strokeRect(width - 110, 8, 100, 22);
 
-      ctx.fillStyle = '#EF4444';
+      ctx.fillStyle = C.fault;
       ctx.font = 'bold 9.5px "JetBrains Mono", monospace';
       ctx.textAlign = 'center';
       ctx.fillText(singleArmed ? '● ARMED SINGLE' : '■ STOPPED', width - 60, 22);
@@ -1230,11 +1254,11 @@ export const OscilloscopeView: React.FC = () => {
   }, [deltaTUs, cursorTargetChannel, activeCursors]);
 
   return (
-    <div ref={containerRef} className="flex flex-col h-full bg-[#0E121B] select-none text-[11px] font-mono">
+    <div ref={containerRef} className="flex flex-col h-full bg-bf-deep select-none text-[11px] font-mono">
       {/* 2-ROW DSO CONTROLS RIBBON */}
-      <div className="flex flex-col bg-[#161C28] border-b border-[#222D3D] shrink-0">
+      <div className="flex flex-col bg-bf-subpanel border-b border-bf-line shrink-0">
         {/* ROW 1: Acquisition Engine & Per-Channel Stems (Timebase, Scale, Channel Offsets) */}
-        <div className="h-[30px] border-b border-[#222D3D]/60 px-2 flex items-center justify-between gap-2 overflow-x-auto">
+        <div className="h-[30px] border-b border-bf-line/60 px-2 flex items-center justify-between gap-2 overflow-x-auto">
           {/* Left: RUN/STOP, SINGLE, and Horizontal Timebase */}
           <div className="flex items-center gap-1.5 shrink-0">
             {/* RUN / STOP Trigger */}
@@ -1244,8 +1268,8 @@ export const OscilloscopeView: React.FC = () => {
               data-tooltip-shortcut="Space"
               className={`flex items-center gap-1.5 px-2.5 py-0.5 rounded text-[10px] font-bold transition-all shadow-sm ${
                 isRunning
-                  ? 'bg-[#10B981]/20 border border-[#10B981] text-[#10B981] hover:bg-[#10B981]/30'
-                  : 'bg-[#EF4444] text-white animate-pulse shadow-[0_0_8px_rgba(239,68,68,0.6)]'
+                  ? 'bg-bf-ok/20 border border-bf-ok text-bf-ok hover:bg-bf-ok/30'
+                  : 'bg-bf-fault text-white animate-pulse shadow-[0_0_8px_rgb(var(--bf-fault-rgb)/0.6)]'
               }`}
             >
               {isRunning ? <Play className="w-2.5 h-2.5 fill-current" /> : <Pause className="w-2.5 h-2.5 fill-current" />}
@@ -1258,20 +1282,20 @@ export const OscilloscopeView: React.FC = () => {
               data-tooltip="Arm Single Capture: Ingest one complete frame and freeze acquisition"
               className={`px-2 py-0.5 rounded text-[9.5px] font-bold border transition-colors ${
                 singleArmed
-                  ? 'bg-[#F59E0B] text-[#0A0D13] border-[#F59E0B] animate-pulse'
-                  : 'bg-[#10141D] text-[#94A3B8] border-[#222D3D] hover:text-white'
+                  ? 'bg-bf-warn text-bf-onfill border-bf-warn animate-pulse'
+                  : 'bg-bf-panel text-bf-mute border-bf-line hover:text-white'
               }`}
             >
               SINGLE
             </button>
 
             {/* Horizontal Timebase Stepper / Direct Input */}
-            <div className="flex items-center gap-0.5 bg-[#10141D] border border-[#222D3D] rounded px-1 py-0.5 text-[9.5px]">
-              <span className="text-[#64748B] pl-0.5 font-bold">TIME:</span>
+            <div className="flex items-center gap-0.5 bg-bf-panel border border-bf-line rounded px-1 py-0.5 text-[9.5px]">
+              <span className="text-bf-faint pl-0.5 font-bold">TIME:</span>
               <button
                 onClick={() => stepTimeDiv('down')}
                 data-tooltip="Step timebase faster (fewer ms/div)"
-                className="px-1 text-[#94A3B8] hover:text-[#00E5FF] hover:bg-[#1E2638] rounded"
+                className="px-1 text-bf-mute hover:text-bf-cyan hover:bg-bf-hover rounded"
               >
                 <Minus className="w-2.5 h-2.5" />
               </button>
@@ -1298,7 +1322,7 @@ export const OscilloscopeView: React.FC = () => {
                       setIsEditingTime(false);
                     }
                   }}
-                  className="w-12 bg-[#0A0D13] text-[#00E5FF] text-center font-bold px-0.5 rounded outline-none border border-[#00E5FF]"
+                  className="w-12 bg-bf-onfill text-bf-cyan text-center font-bold px-0.5 rounded outline-none border border-bf-cyan"
                 />
               ) : (
                 <span
@@ -1307,7 +1331,7 @@ export const OscilloscopeView: React.FC = () => {
                     setIsEditingTime(true);
                   }}
                   data-tooltip="Click to type custom Time/Div value (ms)"
-                  className="text-[#00E5FF] font-bold px-1 cursor-text hover:underline"
+                  className="text-bf-cyan font-bold px-1 cursor-text hover:underline"
                 >
                   {timeDivMs} ms/div
                 </span>
@@ -1316,25 +1340,25 @@ export const OscilloscopeView: React.FC = () => {
               <button
                 onClick={() => stepTimeDiv('up')}
                 data-tooltip="Step timebase slower (more ms/div)"
-                className="px-1 text-[#94A3B8] hover:text-[#00E5FF] hover:bg-[#1E2638] rounded"
+                className="px-1 text-bf-mute hover:text-bf-cyan hover:bg-bf-hover rounded"
               >
                 <Plus className="w-2.5 h-2.5" />
               </button>
-              <span className="text-[#64748B] text-[8.5px] pr-0.5">({timeDivMs * 10}ms)</span>
+              <span className="text-bf-faint text-[8.5px] pr-0.5">({timeDivMs * 10}ms)</span>
             </div>
           </div>
 
           {/* Right: Per-Channel Stems (CH1, CH2, MATH, LOGIC) with Vertical Scale & Horizontal Skew */}
           <div className="flex items-center gap-1.5 shrink-0">
             {/* CH1 Stem */}
-            <div className="flex items-center gap-1 bg-[#10141D] border border-[#222D3D] rounded px-1.5 py-0.5 text-[9.5px]">
+            <div className="flex items-center gap-1 bg-bf-panel border border-bf-line rounded px-1.5 py-0.5 text-[9.5px]">
               <button
                 onClick={() => toggleChannel('ch1')}
                 data-tooltip="Toggle Channel 1 (Battery Voltage Telemetry)"
                 className={`flex items-center gap-1 px-1 py-0.2 rounded font-bold transition-colors ${
                   ch1Visible
-                    ? 'bg-[#FBBF24]/20 border border-[#FBBF24]/60 text-[#FBBF24]'
-                    : 'text-[#64748B] hover:text-[#94A3B8]'
+                    ? 'bg-bf-amber/20 border border-bf-amber/60 text-bf-amber'
+                    : 'text-bf-faint hover:text-bf-mute'
                 }`}
               >
                 {ch1Visible ? <Eye className="w-2.5 h-2.5" /> : <EyeOff className="w-2.5 h-2.5" />}
@@ -1345,7 +1369,7 @@ export const OscilloscopeView: React.FC = () => {
               <button
                 onClick={() => stepCh1Scale('down')}
                 data-tooltip="Decrease CH1 Volts/Div scale"
-                className="px-0.5 text-[#94A3B8] hover:text-[#FBBF24]"
+                className="px-0.5 text-bf-mute hover:text-bf-amber"
               >
                 <Minus className="w-2 h-2" />
               </button>
@@ -1355,25 +1379,25 @@ export const OscilloscopeView: React.FC = () => {
                   setCh1ScaleMv(CH1_SCALE_PRESETS[idx]);
                 }}
                 data-tooltip="CH1 Scale: Click to cycle standard 1-2-5 decade presets"
-                className="text-[#FBBF24] font-bold hover:underline px-0.5"
+                className="text-bf-amber font-bold hover:underline px-0.5"
               >
                 {ch1ScaleMv >= 1000 ? `${ch1ScaleMv / 1000} V` : `${ch1ScaleMv} mV`}/div
               </button>
               <button
                 onClick={() => stepCh1Scale('up')}
                 data-tooltip="Increase CH1 Volts/Div scale"
-                className="px-0.5 text-[#94A3B8] hover:text-[#FBBF24]"
+                className="px-0.5 text-bf-mute hover:text-bf-amber"
               >
                 <Plus className="w-2 h-2" />
               </button>
 
               {/* CH1 Horizontal Skew / Offset */}
-              <div className="flex items-center border-l border-[#222D3D] pl-1 ml-0.5 text-[9px]">
-                <span className="text-[#64748B] pr-0.5">Δt:</span>
+              <div className="flex items-center border-l border-bf-line pl-1 ml-0.5 text-[9px]">
+                <span className="text-bf-faint pr-0.5">Δt:</span>
                 <button
                   onClick={() => setCh1TimeOffsetMs((prev) => prev - 5)}
                   data-tooltip="Shift CH1 waveform 5 ms earlier (negative delay)"
-                  className="px-0.5 text-[#64748B] hover:text-white"
+                  className="px-0.5 text-bf-faint hover:text-white"
                 >
                   -
                 </button>
@@ -1381,7 +1405,7 @@ export const OscilloscopeView: React.FC = () => {
                   onClick={() => setCh1TimeOffsetMs(0)}
                   data-tooltip="CH1 Horizontal Offset (Click to reset to 0ms)"
                   className={`cursor-pointer px-0.5 font-bold ${
-                    ch1TimeOffsetMs !== 0 ? 'text-[#FBBF24]' : 'text-[#64748B]'
+                    ch1TimeOffsetMs !== 0 ? 'text-bf-amber' : 'text-bf-faint'
                   }`}
                 >
                   {ch1TimeOffsetMs}ms
@@ -1389,7 +1413,7 @@ export const OscilloscopeView: React.FC = () => {
                 <button
                   onClick={() => setCh1TimeOffsetMs((prev) => prev + 5)}
                   data-tooltip="Shift CH1 waveform 5 ms later (positive delay)"
-                  className="px-0.5 text-[#64748B] hover:text-white"
+                  className="px-0.5 text-bf-faint hover:text-white"
                 >
                   +
                 </button>
@@ -1397,14 +1421,14 @@ export const OscilloscopeView: React.FC = () => {
             </div>
 
             {/* CH2 Stem */}
-            <div className="flex items-center gap-1 bg-[#10141D] border border-[#222D3D] rounded px-1.5 py-0.5 text-[9.5px]">
+            <div className="flex items-center gap-1 bg-bf-panel border border-bf-line rounded px-1.5 py-0.5 text-[9.5px]">
               <button
                 onClick={() => toggleChannel('ch2')}
                 data-tooltip="Toggle Channel 2 (Gyroscope Z Rate)"
                 className={`flex items-center gap-1 px-1 py-0.2 rounded font-bold transition-colors ${
                   ch2Visible
-                    ? 'bg-[#00E5FF]/20 border border-[#00E5FF]/60 text-[#00E5FF]'
-                    : 'text-[#64748B] hover:text-[#94A3B8]'
+                    ? 'bg-bf-cyan/20 border border-bf-cyan/60 text-bf-cyan'
+                    : 'text-bf-faint hover:text-bf-mute'
                 }`}
               >
                 {ch2Visible ? <Eye className="w-2.5 h-2.5" /> : <EyeOff className="w-2.5 h-2.5" />}
@@ -1415,7 +1439,7 @@ export const OscilloscopeView: React.FC = () => {
               <button
                 onClick={() => stepCh2Scale('down')}
                 data-tooltip="Decrease CH2 rad/s scale"
-                className="px-0.5 text-[#94A3B8] hover:text-[#00E5FF]"
+                className="px-0.5 text-bf-mute hover:text-bf-cyan"
               >
                 <Minus className="w-2 h-2" />
               </button>
@@ -1425,25 +1449,25 @@ export const OscilloscopeView: React.FC = () => {
                   setCh2ScaleRad(CH2_SCALE_PRESETS[idx]);
                 }}
                 data-tooltip="CH2 Scale: Click to cycle rad/s decade presets"
-                className="text-[#00E5FF] font-bold hover:underline px-0.5"
+                className="text-bf-cyan font-bold hover:underline px-0.5"
               >
                 {ch2ScaleRad} r/s/div
               </button>
               <button
                 onClick={() => stepCh2Scale('up')}
                 data-tooltip="Increase CH2 rad/s scale"
-                className="px-0.5 text-[#94A3B8] hover:text-[#00E5FF]"
+                className="px-0.5 text-bf-mute hover:text-bf-cyan"
               >
                 <Plus className="w-2 h-2" />
               </button>
 
               {/* CH2 Horizontal Skew / Offset */}
-              <div className="flex items-center border-l border-[#222D3D] pl-1 ml-0.5 text-[9px]">
-                <span className="text-[#64748B] pr-0.5">Δt:</span>
+              <div className="flex items-center border-l border-bf-line pl-1 ml-0.5 text-[9px]">
+                <span className="text-bf-faint pr-0.5">Δt:</span>
                 <button
                   onClick={() => setCh2TimeOffsetMs((prev) => prev - 5)}
                   data-tooltip="Shift CH2 waveform 5 ms earlier (negative delay)"
-                  className="px-0.5 text-[#64748B] hover:text-white"
+                  className="px-0.5 text-bf-faint hover:text-white"
                 >
                   -
                 </button>
@@ -1451,7 +1475,7 @@ export const OscilloscopeView: React.FC = () => {
                   onClick={() => setCh2TimeOffsetMs(0)}
                   data-tooltip="CH2 Horizontal Offset (Click to reset to 0ms)"
                   className={`cursor-pointer px-0.5 font-bold ${
-                    ch2TimeOffsetMs !== 0 ? 'text-[#00E5FF]' : 'text-[#64748B]'
+                    ch2TimeOffsetMs !== 0 ? 'text-bf-cyan' : 'text-bf-faint'
                   }`}
                 >
                   {ch2TimeOffsetMs}ms
@@ -1459,7 +1483,7 @@ export const OscilloscopeView: React.FC = () => {
                 <button
                   onClick={() => setCh2TimeOffsetMs((prev) => prev + 5)}
                   data-tooltip="Shift CH2 waveform 5 ms later (positive delay)"
-                  className="px-0.5 text-[#64748B] hover:text-white"
+                  className="px-0.5 text-bf-faint hover:text-white"
                 >
                   +
                 </button>
@@ -1467,14 +1491,14 @@ export const OscilloscopeView: React.FC = () => {
             </div>
 
             {/* MATH Stem */}
-            <div className="flex items-center gap-1 bg-[#10141D] border border-[#222D3D] rounded px-1.5 py-0.5 text-[9.5px]">
+            <div className="flex items-center gap-1 bg-bf-panel border border-bf-line rounded px-1.5 py-0.5 text-[9.5px]">
               <button
                 onClick={() => setMathVisible(!mathVisible)}
                 data-tooltip="Toggle Oscilloscope Math Channel (Differential, FFT, Inverted)"
                 className={`flex items-center gap-1 px-1 py-0.2 rounded font-bold transition-colors ${
                   mathVisible
-                    ? 'bg-[#D946EF]/20 border border-[#D946EF] text-[#D946EF]'
-                    : 'text-[#64748B] hover:text-[#D946EF]'
+                    ? 'bg-bf-math/20 border border-bf-math text-bf-math'
+                    : 'text-bf-faint hover:text-bf-math'
                 }`}
               >
                 <Activity className="w-2.5 h-2.5" />
@@ -1489,24 +1513,24 @@ export const OscilloscopeView: React.FC = () => {
                       setMathOp(MATH_OPERATIONS[idx]);
                     }}
                     data-tooltip="Cycle Math Operator: CH1-CH2, CH1+CH2, CH1*CH2, FFT, INV CH1"
-                    className="px-1 text-[#D946EF] font-bold hover:underline"
+                    className="px-1 text-bf-math font-bold hover:underline"
                   >
                     {mathOp}
                   </button>
                   <button
                     onClick={() => setMathScale((prev) => (prev === 0.5 ? 1.0 : prev === 1.0 ? 2.0 : 0.5))}
                     data-tooltip="Cycle Math Amplitude Scale Multiplier"
-                    className="px-1 text-[#94A3B8] text-[9px] hover:text-white border-l border-[#222D3D]"
+                    className="px-1 text-bf-mute text-[9px] hover:text-white border-l border-bf-line"
                   >
                     {mathScale}x
                   </button>
 
-                  <div className="flex items-center border-l border-[#222D3D] pl-1 ml-0.5 text-[9px]">
-                    <span className="text-[#64748B] pr-0.5">Δt:</span>
+                  <div className="flex items-center border-l border-bf-line pl-1 ml-0.5 text-[9px]">
+                    <span className="text-bf-faint pr-0.5">Δt:</span>
                     <button
                       onClick={() => setMathTimeOffsetMs((prev) => prev - 5)}
                       data-tooltip="Shift Math waveform 5 ms earlier"
-                      className="px-0.5 text-[#64748B] hover:text-white"
+                      className="px-0.5 text-bf-faint hover:text-white"
                     >
                       -
                     </button>
@@ -1514,7 +1538,7 @@ export const OscilloscopeView: React.FC = () => {
                       onClick={() => setMathTimeOffsetMs(0)}
                       data-tooltip="Math Horizontal Offset (Click to reset to 0ms)"
                       className={`cursor-pointer px-0.5 font-bold ${
-                        mathTimeOffsetMs !== 0 ? 'text-[#D946EF]' : 'text-[#64748B]'
+                        mathTimeOffsetMs !== 0 ? 'text-bf-math' : 'text-bf-faint'
                       }`}
                     >
                       {mathTimeOffsetMs}ms
@@ -1522,7 +1546,7 @@ export const OscilloscopeView: React.FC = () => {
                     <button
                       onClick={() => setMathTimeOffsetMs((prev) => prev + 5)}
                       data-tooltip="Shift Math waveform 5 ms later"
-                      className="px-0.5 text-[#64748B] hover:text-white"
+                      className="px-0.5 text-bf-faint hover:text-white"
                     >
                       +
                     </button>
@@ -1538,15 +1562,15 @@ export const OscilloscopeView: React.FC = () => {
               return (
                 <div
                   key={binding.id}
-                  className="flex items-center gap-1 border-l border-[#222D3D] pl-1 ml-0.5"
+                  className="flex items-center gap-1 border-l border-bf-line pl-1 ml-0.5"
                 >
                   <button
                     onClick={() => toggleTraceVisibility(binding.id)}
                     data-tooltip={`Toggle trace lane for bound field ${binding.name}`}
                     className={`flex items-center gap-1 px-1.5 py-0.5 rounded text-[9.5px] transition-colors border ${
                       hidden
-                        ? 'bg-[#10141D] border-[#222D3D] text-[#64748B] hover:text-[#94A3B8]'
-                        : 'bg-[#10141D] text-[#E2E8F0]'
+                        ? 'bg-bf-panel border-bf-line text-bf-faint hover:text-bf-mute'
+                        : 'bg-bf-panel text-bf-body'
                     }`}
                     style={hidden ? undefined : { borderColor: `${color}80` }}
                   >
@@ -1556,7 +1580,7 @@ export const OscilloscopeView: React.FC = () => {
                   <button
                     onClick={() => unbindScopeTrace(binding.id)}
                     data-tooltip={`Unbind ${binding.name} and remove its trace lane`}
-                    className="text-[#64748B] hover:text-[#EF4444] text-[10px] px-0.5"
+                    className="text-bf-faint hover:text-bf-fault text-[10px] px-0.5"
                   >
                     ×
                   </button>
@@ -1570,8 +1594,8 @@ export const OscilloscopeView: React.FC = () => {
               data-tooltip="Toggle Digital Logic State Rails (D0-D2: RUN, ARMED, FAULT)"
               className={`flex items-center gap-1 px-1.5 py-0.5 rounded text-[9.5px] transition-colors border ${
                 logicRailsVisible
-                  ? 'bg-[#10B981]/20 border-[#10B981]/60 text-[#10B981]'
-                  : 'bg-[#10141D] border-[#222D3D] text-[#64748B] hover:text-[#94A3B8]'
+                  ? 'bg-bf-ok/20 border-bf-ok/60 text-bf-ok'
+                  : 'bg-bf-panel border-bf-line text-bf-faint hover:text-bf-mute'
               }`}
             >
               {logicRailsVisible ? <Eye className="w-2.5 h-2.5" /> : <EyeOff className="w-2.5 h-2.5" />}
@@ -1584,8 +1608,8 @@ export const OscilloscopeView: React.FC = () => {
         <div className="h-[30px] px-2 flex items-center justify-between gap-2 overflow-x-auto text-[9.5px]">
           {/* Left: Trigger Engine */}
           <div className="flex items-center gap-1.5 shrink-0">
-            <div className="flex items-center gap-1 bg-[#10141D] border border-[#222D3D] rounded px-1.5 py-0.5">
-              <span className="text-[#64748B] font-bold">TRIG:</span>
+            <div className="flex items-center gap-1 bg-bf-panel border border-bf-line rounded px-1.5 py-0.5">
+              <span className="text-bf-faint font-bold">TRIG:</span>
 
               {/* Mode */}
               <button
@@ -1595,7 +1619,7 @@ export const OscilloscopeView: React.FC = () => {
                   setTriggerMode(modes[nextIdx]);
                 }}
                 data-tooltip="Trigger Mode: AUTO (continuous), NORM (threshold), SINGLE (freeze on event)"
-                className="text-[#E2E8F0] font-bold hover:text-[#00E5FF] px-0.5"
+                className="text-bf-body font-bold hover:text-bf-cyan px-0.5"
               >
                 {triggerMode}
               </button>
@@ -1605,7 +1629,7 @@ export const OscilloscopeView: React.FC = () => {
                 onClick={() => setTriggerSource((prev) => (prev === 'CH1' ? 'CH2' : 'CH1'))}
                 data-tooltip="Trigger Channel Source: Click to switch between CH1 and CH2"
                 className={`font-bold px-1 rounded transition-colors ${
-                  triggerSource === 'CH1' ? 'text-[#FBBF24] bg-[#FBBF24]/10' : 'text-[#00E5FF] bg-[#00E5FF]/10'
+                  triggerSource === 'CH1' ? 'text-bf-amber bg-bf-amber/10' : 'text-bf-cyan bg-bf-cyan/10'
                 }`}
               >
                 {triggerSource}
@@ -1625,7 +1649,7 @@ export const OscilloscopeView: React.FC = () => {
                   }
                 }}
                 data-tooltip="Trigger Threshold: Click to cycle presets, or drag arrow on canvas right border"
-                className="text-[#94A3B8] hover:text-white px-0.5 border-l border-[#222D3D]"
+                className="text-bf-mute hover:text-white px-0.5 border-l border-bf-line"
               >
                 {triggerSource === 'CH1' ? `${(triggerLevelCh1Mv / 1000).toFixed(2)}V` : `${triggerLevelCh2Rad.toFixed(2)}r/s`}
               </button>
@@ -1634,7 +1658,7 @@ export const OscilloscopeView: React.FC = () => {
               <button
                 onClick={() => setTriggerSlope(triggerSlope === 'RISING' ? 'FALLING' : 'RISING')}
                 data-tooltip={`Trigger Slope: ${triggerSlope} Edge`}
-                className="text-[#FBBF24] hover:text-white ml-0.5"
+                className="text-bf-amber hover:text-white ml-0.5"
               >
                 {triggerSlope === 'RISING' ? <ArrowUpRight className="w-3 h-3" /> : <ArrowDownRight className="w-3 h-3" />}
               </button>
@@ -1644,9 +1668,9 @@ export const OscilloscopeView: React.FC = () => {
           {/* Center: Independent Marker Cursors Per Channel */}
           <div className="flex items-center gap-1.5 shrink-0">
             {/* Target Channel Selector */}
-            <div className="flex items-center gap-1 bg-[#10141D] border border-[#222D3D] rounded px-1.5 py-0.5">
-              <Crosshair className="w-3 h-3 text-[#00E5FF]" />
-              <span className="text-[#64748B] font-bold">CURSORS FOR:</span>
+            <div className="flex items-center gap-1 bg-bf-panel border border-bf-line rounded px-1.5 py-0.5">
+              <Crosshair className="w-3 h-3 text-bf-cyan" />
+              <span className="text-bf-faint font-bold">CURSORS FOR:</span>
               {(['CH1', 'CH2', 'MATH'] as const).map((ch) => (
                 <button
                   key={ch}
@@ -1655,11 +1679,11 @@ export const OscilloscopeView: React.FC = () => {
                   className={`px-1.5 py-0.2 rounded font-bold transition-colors ${
                     cursorTargetChannel === ch
                       ? ch === 'CH1'
-                        ? 'bg-[#FBBF24] text-[#0A0D13]'
+                        ? 'bg-bf-amber text-bf-onfill'
                         : ch === 'CH2'
-                        ? 'bg-[#00E5FF] text-[#0A0D13]'
-                        : 'bg-[#D946EF] text-[#0A0D13]'
-                      : 'text-[#64748B] hover:text-white'
+                        ? 'bg-bf-cyan text-bf-onfill'
+                        : 'bg-bf-math text-bf-onfill'
+                      : 'text-bf-faint hover:text-white'
                   }`}
                 >
                   {ch}
@@ -1668,7 +1692,7 @@ export const OscilloscopeView: React.FC = () => {
             </div>
 
             {/* Cursor Mode for Target Channel */}
-            <div className="flex items-center gap-0.5 bg-[#10141D] border border-[#222D3D] rounded px-1 py-0.5">
+            <div className="flex items-center gap-0.5 bg-bf-panel border border-bf-line rounded px-1 py-0.5">
               {(['OFF', 'TIME', 'VOLT', 'BOTH'] as const).map((mode) => (
                 <button
                   key={mode}
@@ -1676,8 +1700,8 @@ export const OscilloscopeView: React.FC = () => {
                   data-tooltip={`Cursor Mode: ${mode === 'TIME' ? 'Time (X1, X2)' : mode === 'VOLT' ? 'Signal (Y1, Y2)' : mode === 'BOTH' ? 'Dual (X + Y)' : 'Disabled'}`}
                   className={`px-1 py-0.2 rounded font-bold transition-colors ${
                     cursorMode === mode
-                      ? 'bg-[#00E5FF] text-[#0A0D13]'
-                      : 'text-[#64748B] hover:text-[#E2E8F0]'
+                      ? 'bg-bf-cyan text-bf-onfill'
+                      : 'text-bf-faint hover:text-bf-body'
                   }`}
                 >
                   {mode === 'TIME' ? 'X' : mode === 'VOLT' ? 'Y' : mode === 'BOTH' ? 'X+Y' : 'OFF'}
@@ -1687,15 +1711,15 @@ export const OscilloscopeView: React.FC = () => {
 
             {/* Marker Set & Alignment Controls */}
             {cursorMode !== 'OFF' && (
-              <div className="flex items-center gap-0.5 bg-[#10141D] border border-[#222D3D] rounded px-1 py-0.5">
-                <span className="text-[#64748B] px-0.5">SET:</span>
+              <div className="flex items-center gap-0.5 bg-bf-panel border border-bf-line rounded px-1 py-0.5">
+                <span className="text-bf-faint px-0.5">SET:</span>
                 {(cursorMode === 'TIME' || cursorMode === 'BOTH') && (
                   <>
                     <button
                       onClick={() => setActiveMarker('X1')}
                       data-tooltip={`Active: ${cursorTargetChannel}:X1 (Click canvas to place)`}
                       className={`px-1 py-0.2 rounded font-bold ${
-                        activeMarker === 'X1' ? 'bg-[#00E5FF] text-[#0A0D13]' : 'text-[#00E5FF] hover:bg-[#00E5FF]/20'
+                        activeMarker === 'X1' ? 'bg-bf-cyan text-bf-onfill' : 'text-bf-cyan hover:bg-bf-cyan/20'
                       }`}
                     >
                       X1
@@ -1704,7 +1728,7 @@ export const OscilloscopeView: React.FC = () => {
                       onClick={() => setActiveMarker('X2')}
                       data-tooltip={`Active: ${cursorTargetChannel}:X2 (Click canvas to place)`}
                       className={`px-1 py-0.2 rounded font-bold ${
-                        activeMarker === 'X2' ? 'bg-[#FBBF24] text-[#0A0D13]' : 'text-[#FBBF24] hover:bg-[#FBBF24]/20'
+                        activeMarker === 'X2' ? 'bg-bf-amber text-bf-onfill' : 'text-bf-amber hover:bg-bf-amber/20'
                       }`}
                     >
                       X2
@@ -1717,7 +1741,7 @@ export const OscilloscopeView: React.FC = () => {
                       onClick={() => setActiveMarker('Y1')}
                       data-tooltip={`Active: ${cursorTargetChannel}:Y1 (Click canvas to place)`}
                       className={`px-1 py-0.2 rounded font-bold ${
-                        activeMarker === 'Y1' ? 'bg-[#10B981] text-[#0A0D13]' : 'text-[#10B981] hover:bg-[#10B981]/20'
+                        activeMarker === 'Y1' ? 'bg-bf-ok text-bf-onfill' : 'text-bf-ok hover:bg-bf-ok/20'
                       }`}
                     >
                       Y1
@@ -1726,7 +1750,7 @@ export const OscilloscopeView: React.FC = () => {
                       onClick={() => setActiveMarker('Y2')}
                       data-tooltip={`Active: ${cursorTargetChannel}:Y2 (Click canvas to place)`}
                       className={`px-1 py-0.2 rounded font-bold ${
-                        activeMarker === 'Y2' ? 'bg-[#A855F7] text-[#0A0D13]' : 'text-[#A855F7] hover:bg-[#A855F7]/20'
+                        activeMarker === 'Y2' ? 'bg-bf-purple text-bf-onfill' : 'text-bf-purple hover:bg-bf-purple/20'
                       }`}
                     >
                       Y2
@@ -1736,21 +1760,21 @@ export const OscilloscopeView: React.FC = () => {
                 <button
                   onClick={handleCenterCursors}
                   data-tooltip={`Center active ${cursorTargetChannel} cursors symmetrically in view`}
-                  className="px-1 py-0.2 text-[#64748B] hover:text-[#00E5FF] ml-0.5 border-l border-[#222D3D]"
+                  className="px-1 py-0.2 text-bf-faint hover:text-bf-cyan ml-0.5 border-l border-bf-line"
                 >
                   CTR
                 </button>
                 <button
                   onClick={handleSnapToPeaks}
                   data-tooltip={`Snap ${cursorTargetChannel} Y cursors to min/max waveform peaks`}
-                  className="px-1 py-0.2 text-[#64748B] hover:text-[#FBBF24]"
+                  className="px-1 py-0.2 text-bf-faint hover:text-bf-amber"
                 >
                   SNAP
                 </button>
                 <button
                   onClick={handleClearCursors}
                   data-tooltip={`Clear cursors for ${cursorTargetChannel}`}
-                  className="px-1 py-0.2 text-[#64748B] hover:text-[#EF4444]"
+                  className="px-1 py-0.2 text-bf-faint hover:text-bf-fault"
                 >
                   CLR
                 </button>
@@ -1761,20 +1785,20 @@ export const OscilloscopeView: React.FC = () => {
           {/* Right: Display Zoom, Fit & HUD Toggle */}
           <div className="flex items-center gap-1.5 shrink-0">
             {/* Zoom Stepper */}
-            <div className="flex items-center gap-1 bg-[#10141D] border border-[#222D3D] rounded px-1.5 py-0.5">
-              <ZoomIn className="w-3 h-3 text-[#64748B]" />
+            <div className="flex items-center gap-1 bg-bf-panel border border-bf-line rounded px-1.5 py-0.5">
+              <ZoomIn className="w-3 h-3 text-bf-faint" />
               <button
                 onClick={() => setZoomLevel((prev) => Math.max(0.2, Math.round((prev * 0.8) * 100) / 100))}
                 data-tooltip="Zoom out waveform view"
-                className="px-0.5 text-[#64748B] hover:text-white"
+                className="px-0.5 text-bf-faint hover:text-white"
               >
                 -
               </button>
-              <span className="text-[#00E5FF] font-bold px-0.5">{zoomLevel.toFixed(1)}x</span>
+              <span className="text-bf-cyan font-bold px-0.5">{zoomLevel.toFixed(1)}x</span>
               <button
                 onClick={() => setZoomLevel((prev) => Math.min(10.0, Math.round((prev * 1.25) * 100) / 100))}
                 data-tooltip="Zoom in waveform view"
-                className="px-0.5 text-[#64748B] hover:text-white"
+                className="px-0.5 text-bf-faint hover:text-white"
               >
                 +
               </button>
@@ -1785,7 +1809,7 @@ export const OscilloscopeView: React.FC = () => {
                     setPanOffsetUs(0);
                   }}
                   data-tooltip="Reset waveform zoom and pan to 1.0x"
-                  className="text-[#FBBF24] hover:text-white ml-0.5 border-l border-[#222D3D] pl-1"
+                  className="text-bf-amber hover:text-white ml-0.5 border-l border-bf-line pl-1"
                 >
                   FIT
                 </button>
@@ -1798,8 +1822,8 @@ export const OscilloscopeView: React.FC = () => {
               data-tooltip="Toggle on-screen draggable measurement HUD card"
               className={`px-1.5 py-0.5 rounded border transition-colors ${
                 isHudVisible
-                  ? 'bg-[#00E5FF]/15 border-[#00E5FF]/40 text-[#00E5FF]'
-                  : 'bg-[#10141D] border-[#222D3D] text-[#64748B] hover:text-white'
+                  ? 'bg-bf-cyan/15 border-bf-cyan/40 text-bf-cyan'
+                  : 'bg-bf-panel border-bf-line text-bf-faint hover:text-white'
               }`}
             >
               HUD {isHudVisible ? 'ON' : 'OFF'}
@@ -1833,18 +1857,18 @@ export const OscilloscopeView: React.FC = () => {
             style={{
               transform: `translate(${hudPos.x}px, ${hudPos.y}px)`,
             }}
-            className={`absolute top-0 left-0 bg-[#0E131F]/90 border border-[#2D3A4E] backdrop-blur-md rounded-lg shadow-[0_8px_24px_rgba(0,0,0,0.7)] text-[10.5px] transition-shadow z-20 ${
-              isDraggingHud ? 'shadow-[0_0_16px_rgba(0,229,255,0.4)] border-[#00E5FF]/70' : ''
+            className={`absolute top-0 left-0 bg-bf-surface/90 border border-bf-line-strong backdrop-blur-md rounded-lg shadow-[0_8px_24px_rgb(var(--bf-shadow-rgb)/0.7)] text-[10.5px] transition-shadow z-20 ${
+              isDraggingHud ? 'shadow-[0_0_16px_rgb(var(--bf-cyan-rgb)/0.4)] border-bf-cyan/70' : ''
             }`}
           >
             {/* Drag Handle & HUD Header */}
             <div
               onMouseDown={handleHudMouseDown}
-              className="h-[26px] bg-[#141B29] border-b border-[#222D3D] px-2 flex items-center justify-between cursor-grab active:cursor-grabbing select-none rounded-t-lg gap-2"
+              className="h-[26px] bg-bf-head border-b border-bf-line px-2 flex items-center justify-between cursor-grab active:cursor-grabbing select-none rounded-t-lg gap-2"
             >
-              <div className="flex items-center gap-1.5 text-[#94A3B8] font-semibold text-[10px]">
-                <GripHorizontal className="w-3 h-3 text-[#64748B]" />
-                <span className="tracking-wider uppercase text-[#CBD5E1]">
+              <div className="flex items-center gap-1.5 text-bf-mute font-semibold text-[10px]">
+                <GripHorizontal className="w-3 h-3 text-bf-faint" />
+                <span className="tracking-wider uppercase text-bf-dim">
                   MEASUREMENTS [{cursorTargetChannel}]
                 </span>
               </div>
@@ -1855,7 +1879,7 @@ export const OscilloscopeView: React.FC = () => {
                     e.stopPropagation();
                     setIsHudCollapsed(!isHudCollapsed);
                   }}
-                  className="text-[#64748B] hover:text-[#E2E8F0] p-0.5 rounded transition-colors"
+                  className="text-bf-faint hover:text-bf-body p-0.5 rounded transition-colors"
                 >
                   {isHudCollapsed ? <ChevronDown className="w-3 h-3" /> : <ChevronUp className="w-3 h-3" />}
                 </button>
@@ -1868,106 +1892,106 @@ export const OscilloscopeView: React.FC = () => {
                 {/* Section 1: Time Cursors */}
                 {(cursorMode === 'TIME' || cursorMode === 'BOTH') && (
                   <div className="space-y-1">
-                    <div className="text-[9px] text-[#64748B] uppercase tracking-wider font-bold">
+                    <div className="text-[9px] text-bf-faint uppercase tracking-wider font-bold">
                       TIME CURSORS (X) · {cursorTargetChannel}
                     </div>
                     {deltaTUs !== null ? (
                       <>
                         <div className="flex items-center justify-between gap-3 text-[10px]">
-                          <span className="text-[#94A3B8]">Δt (X2 - X1):</span>
-                          <span className="text-[#00E5FF] font-bold">{deltaTUs.toLocaleString()} μs</span>
+                          <span className="text-bf-mute">Δt (X2 - X1):</span>
+                          <span className="text-bf-cyan font-bold">{deltaTUs.toLocaleString()} μs</span>
                         </div>
                         <div className="flex items-center justify-between gap-3 text-[10px]">
-                          <span className="text-[#94A3B8]">1/Δt (Freq):</span>
-                          <span className="text-[#FBBF24] font-bold">{freqHz} Hz</span>
+                          <span className="text-bf-mute">1/Δt (Freq):</span>
+                          <span className="text-bf-amber font-bold">{freqHz} Hz</span>
                         </div>
                       </>
                     ) : (
-                      <div className="text-[#64748B] text-[9.5px]">Drag X1/X2 markers on screen</div>
+                      <div className="text-bf-faint text-[9.5px]">Drag X1/X2 markers on screen</div>
                     )}
                   </div>
                 )}
 
                 {/* Section 2: Voltage/Signal Cursors */}
                 {(cursorMode === 'VOLT' || cursorMode === 'BOTH') && (
-                  <div className="space-y-1 border-t border-[#222D3D] pt-1">
-                    <div className="flex items-center justify-between text-[9px] text-[#64748B] uppercase tracking-wider font-bold">
+                  <div className="space-y-1 border-t border-bf-line pt-1">
+                    <div className="flex items-center justify-between text-[9px] text-bf-faint uppercase tracking-wider font-bold">
                       <span>SIGNAL CURSORS (Y)</span>
-                      <span className={cursorTargetChannel === 'CH1' ? 'text-[#FBBF24]' : cursorTargetChannel === 'CH2' ? 'text-[#00E5FF]' : 'text-[#D946EF]'}>
+                      <span className={cursorTargetChannel === 'CH1' ? 'text-bf-amber' : cursorTargetChannel === 'CH2' ? 'text-bf-cyan' : 'text-bf-math'}>
                         [{cursorTargetChannel}]
                       </span>
                     </div>
                     <div className="flex items-center justify-between gap-3 text-[10px]">
-                      <span className="text-[#10B981]">
+                      <span className="text-bf-ok">
                         Y1: {cursorTargetChannel === 'CH1' ? `${(activeCursors.y1 / 1000).toFixed(2)} V` : cursorTargetChannel === 'CH2' ? `${activeCursors.y1.toFixed(2)} r/s` : activeCursors.y1.toFixed(2)}
                       </span>
-                      <span className="text-[#A855F7]">
+                      <span className="text-bf-purple">
                         Y2: {cursorTargetChannel === 'CH1' ? `${(activeCursors.y2 / 1000).toFixed(2)} V` : cursorTargetChannel === 'CH2' ? `${activeCursors.y2.toFixed(2)} r/s` : activeCursors.y2.toFixed(2)}
                       </span>
                     </div>
                     <div className="flex items-center justify-between gap-3 text-[10px]">
-                      <span className="text-[#94A3B8]">ΔY (|Y2 - Y1|):</span>
-                      <span className="text-[#10B981] font-bold">{deltaY}</span>
+                      <span className="text-bf-mute">ΔY (|Y2 - Y1|):</span>
+                      <span className="text-bf-ok font-bold">{deltaY}</span>
                     </div>
                     {slewRate && (
                       <div className="flex items-center justify-between gap-3 text-[10px]">
-                        <span className="text-[#94A3B8]">Slew / Rate:</span>
-                        <span className="text-[#E2E8F0]">{slewRate}</span>
+                        <span className="text-bf-mute">Slew / Rate:</span>
+                        <span className="text-bf-body">{slewRate}</span>
                       </div>
                     )}
                   </div>
                 )}
 
                 {/* Section 3: Telemetry Channel Stats */}
-                <div className="space-y-1 border-t border-[#222D3D] pt-1">
-                  <div className="text-[9px] text-[#64748B] uppercase tracking-wider font-bold">
+                <div className="space-y-1 border-t border-bf-line pt-1">
+                  <div className="text-[9px] text-bf-faint uppercase tracking-wider font-bold">
                     WAVEFORM METRICS
                   </div>
                   <div className="flex items-center justify-between gap-3 text-[9.5px]">
-                    <span className="text-[#FBBF24]">CH1 Vpp:</span>
-                    <span className="text-[#E2E8F0] font-semibold">{stats.pkPkV} mV</span>
+                    <span className="text-bf-amber">CH1 Vpp:</span>
+                    <span className="text-bf-body font-semibold">{stats.pkPkV} mV</span>
                   </div>
                   <div className="flex items-center justify-between gap-3 text-[9.5px]">
-                    <span className="text-[#FBBF24]">CH1 Vmean:</span>
-                    <span className="text-[#E2E8F0]">{stats.meanV} mV</span>
+                    <span className="text-bf-amber">CH1 Vmean:</span>
+                    <span className="text-bf-body">{stats.meanV} mV</span>
                   </div>
                   <div className="flex items-center justify-between gap-3 text-[9.5px]">
-                    <span className="text-[#FBBF24]">CH1 Min/Max:</span>
-                    <span className="text-[#E2E8F0]">
+                    <span className="text-bf-amber">CH1 Min/Max:</span>
+                    <span className="text-bf-body">
                       {stats.minV} / {stats.maxV} mV
                     </span>
                   </div>
                   <div className="flex items-center justify-between gap-3 text-[9.5px]">
-                    <span className="text-[#FBBF24]">CH1 RMS:</span>
-                    <span className="text-[#E2E8F0]">{stats.rmsV} mV</span>
+                    <span className="text-bf-amber">CH1 RMS:</span>
+                    <span className="text-bf-body">{stats.rmsV} mV</span>
                   </div>
                   <div className="flex items-center justify-between gap-3 text-[9.5px]">
-                    <span className="text-[#00E5FF]">CH2 Gyro Pk-Pk:</span>
-                    <span className="text-[#E2E8F0] font-semibold">{stats.gyroPkPk} rad/s</span>
+                    <span className="text-bf-cyan">CH2 Gyro Pk-Pk:</span>
+                    <span className="text-bf-body font-semibold">{stats.gyroPkPk} rad/s</span>
                   </div>
                 </div>
 
                 {/* Section 4: Math Channel Output */}
                 {mathVisible && (
-                  <div className="space-y-1 border-t border-[#222D3D] pt-1">
-                    <div className="text-[9px] text-[#D946EF] uppercase tracking-wider font-bold">
+                  <div className="space-y-1 border-t border-bf-line pt-1">
+                    <div className="text-[9px] text-bf-math uppercase tracking-wider font-bold">
                       MATH: {mathOp}
                     </div>
                     {mathOp === 'FFT' ? (
                       <div className="flex items-center justify-between gap-3 text-[9.5px]">
-                        <span className="text-[#64748B]">Dominant Peak:</span>
-                        <span className="text-[#D946EF] font-bold">{stats.fftPeakFreq} Hz</span>
+                        <span className="text-bf-faint">Dominant Peak:</span>
+                        <span className="text-bf-math font-bold">{stats.fftPeakFreq} Hz</span>
                       </div>
                     ) : (
                       <div className="flex items-center justify-between gap-3 text-[9.5px]">
-                        <span className="text-[#64748B]">Scale:</span>
-                        <span className="text-[#D946EF] font-bold">{mathScale}x Multiplier</span>
+                        <span className="text-bf-faint">Scale:</span>
+                        <span className="text-bf-math font-bold">{mathScale}x Multiplier</span>
                       </div>
                     )}
                   </div>
                 )}
 
-                <div className="text-[8.5px] text-[#475569] pt-0.5 border-t border-[#1E293B]">
+                <div className="text-[8.5px] text-bf-ghost pt-0.5 border-t border-bf-btn">
                   Drag card to reposition · Click & drag markers
                 </div>
               </div>
@@ -1975,10 +1999,10 @@ export const OscilloscopeView: React.FC = () => {
               // Collapsed HUD pill view
               <div className="px-2 py-1 flex items-center gap-3 text-[10px]">
                 {deltaTUs !== null && (
-                  <span className="text-[#00E5FF] font-bold">Δt: {deltaTUs.toLocaleString()} μs</span>
+                  <span className="text-bf-cyan font-bold">Δt: {deltaTUs.toLocaleString()} μs</span>
                 )}
-                <span className="text-[#FBBF24]">Vpp: {stats.pkPkV} mV</span>
-                <span className="text-[#00E5FF]">Gyro: {stats.gyroPkPk} r/s</span>
+                <span className="text-bf-amber">Vpp: {stats.pkPkV} mV</span>
+                <span className="text-bf-cyan">Gyro: {stats.gyroPkPk} r/s</span>
               </div>
             )}
           </div>

@@ -271,7 +271,7 @@ export const PacketStreamView: React.FC = () => {
   const getDirBadge = (dir: string, isFault?: boolean) => {
     if (isFault || dir === 'FAULT') {
       return (
-        <span className="px-1 py-0.2 bg-[#EF4444]/20 border border-[#EF4444] text-[#EF4444] rounded text-[9px] font-bold">
+        <span className="px-1 py-0.2 bg-bf-fault/20 border border-bf-fault text-bf-fault rounded text-[9px] font-bold">
           FAULT
         </span>
       );
@@ -279,26 +279,26 @@ export const PacketStreamView: React.FC = () => {
     switch (dir) {
       case 'RX':
         return (
-          <span className="px-1 py-0.2 bg-[#10B981]/20 border border-[#10B981]/60 text-[#10B981] rounded text-[9px] font-bold">
+          <span className="px-1 py-0.2 bg-bf-ok/20 border border-bf-ok/60 text-bf-ok rounded text-[9px] font-bold">
             RX
           </span>
         );
       case 'TX':
         return (
-          <span className="px-1 py-0.2 bg-[#38BDF8]/20 border border-[#38BDF8]/60 text-[#38BDF8] rounded text-[9px] font-bold">
+          <span className="px-1 py-0.2 bg-bf-sky/20 border border-bf-sky/60 text-bf-sky rounded text-[9px] font-bold">
             TX
           </span>
         );
       case 'A->B':
       case 'B->A':
         return (
-          <span className="px-1 py-0.2 bg-[#F59E0B]/20 border border-[#F59E0B]/60 text-[#F59E0B] rounded text-[9px] font-bold">
+          <span className="px-1 py-0.2 bg-bf-warn/20 border border-bf-warn/60 text-bf-warn rounded text-[9px] font-bold">
             {dir}
           </span>
         );
       default:
         return (
-          <span className="px-1 py-0.2 bg-[#161C28] text-[#94A3B8] rounded text-[9px]">
+          <span className="px-1 py-0.2 bg-bf-subpanel text-bf-mute rounded text-[9px]">
             {dir}
           </span>
         );
@@ -314,14 +314,14 @@ export const PacketStreamView: React.FC = () => {
 
 
   return (
-    <div className="relative flex flex-col h-full bg-[#10141D] select-none text-[11px] overflow-hidden">
+    <div className="relative flex flex-col h-full bg-bf-panel select-none text-[11px] overflow-hidden">
       {/* Sub-Header & Controls */}
-      <div className="h-[24px] bg-[#161C28] border-b border-[#222D3D] px-2.5 flex items-center justify-between shrink-0 gap-2">
+      <div className="h-[24px] bg-bf-subpanel border-b border-bf-line px-2.5 flex items-center justify-between shrink-0 gap-2">
         <div className="flex items-center gap-2">
-          <span className="font-mono font-semibold text-[#E2E8F0] tracking-wide text-[10.5px]">
+          <span className="font-mono font-semibold text-bf-body tracking-wide text-[10.5px]">
             PACKET STREAM
           </span>
-          <span className="text-[9.5px] text-[#64748B] font-mono hidden sm:inline">
+          <span className="text-[9.5px] text-bf-faint font-mono hidden sm:inline">
             {totalRows > 0 ? `ROWS ${startIndex + 1}–${endIndex} OF ${totalRows}` : '0 FRAMES'}
           </span>
         </div>
@@ -331,7 +331,7 @@ export const PacketStreamView: React.FC = () => {
               ribbon's settings chip. A second trigger here duplicated it. */}
 
           {/* Direction filter chips (spec 2.3: All/RX/TX/FAULT) */}
-          <div className="flex items-center rounded border border-[#222D3D] overflow-hidden shrink-0">
+          <div className="flex items-center rounded border border-bf-line overflow-hidden shrink-0">
             {(['all', 'rx', 'tx', 'fault'] as const).map((dir) => (
               <button
                 key={dir}
@@ -339,8 +339,8 @@ export const PacketStreamView: React.FC = () => {
                 title={`Show only ${dir.toUpperCase()} frames`}
                 className={`px-1.5 py-0.5 text-[9px] font-mono transition-colors ${
                   directionFilter === dir
-                    ? 'bg-[#00E5FF]/20 text-[#00E5FF] font-bold'
-                    : 'text-[#64748B] hover:text-[#94A3B8] hover:bg-[#1E2638]'
+                    ? 'bg-bf-cyan/20 text-bf-cyan font-bold'
+                    : 'text-bf-faint hover:text-bf-mute hover:bg-bf-hover'
                 }`}
               >
                 {dir.toUpperCase()}
@@ -354,7 +354,7 @@ export const PacketStreamView: React.FC = () => {
               value={portFilter}
               onChange={(e) => setPortFilter(e.target.value)}
               title="Show only frames from one port"
-              className="bg-[#10141D] border border-[#222D3D] rounded px-1 py-0.5 text-[9px] font-mono text-[#94A3B8] focus:outline-none focus:border-[#00E5FF] max-w-[90px] shrink-0"
+              className="bg-bf-panel border border-bf-line rounded px-1 py-0.5 text-[9px] font-mono text-bf-mute focus:outline-none focus:border-bf-cyan max-w-[90px] shrink-0"
             >
               <option value="all">ALL PORTS</option>
               {ports.map((p) => (
@@ -371,8 +371,8 @@ export const PacketStreamView: React.FC = () => {
             title="Show only frames with CRC/decode errors"
             className={`px-1.5 py-0.5 rounded text-[9px] font-mono transition-colors border shrink-0 ${
               errorsOnly
-                ? 'bg-[#EF4444]/20 text-[#EF4444] border-[#EF4444]/50 font-bold'
-                : 'text-[#64748B] border-[#222D3D] hover:text-[#94A3B8]'
+                ? 'bg-bf-fault/20 text-bf-fault border-bf-fault/50 font-bold'
+                : 'text-bf-faint border-bf-line hover:text-bf-mute'
             }`}
           >
             ERRORS
@@ -380,7 +380,7 @@ export const PacketStreamView: React.FC = () => {
 
           {/* Stream Search / Filter Input */}
           <div className="relative flex items-center min-w-[120px] max-w-[220px] flex-1">
-            <Search className="w-3 h-3 absolute left-1.5 text-[#64748B] pointer-events-none" />
+            <Search className="w-3 h-3 absolute left-1.5 text-bf-faint pointer-events-none" />
             <input
               type="text"
               id="bforge-stream-filter"
@@ -388,13 +388,13 @@ export const PacketStreamView: React.FC = () => {
               value={filterText}
               onChange={(e) => setFilterText(e.target.value)}
               title="Filter packet stream by protocol, hex bytes, direction (RX/TX/FAULT), or decoded summary"
-              className="w-full h-[20px] bg-[#161C28] border border-[#222D3D] rounded pl-5 pr-4 text-[9.5px] text-[#E2E8F0] placeholder-[#64748B] focus:border-[#00E5FF] focus:outline-none font-mono"
+              className="w-full h-[20px] bg-bf-subpanel border border-bf-line rounded pl-5 pr-4 text-[9.5px] text-bf-body placeholder-bf-faint focus:border-bf-cyan focus:outline-none font-mono"
             />
             {filterText && (
               <button
                 onClick={() => setFilterText('')}
                 title="Clear filter (Esc)"
-                className="absolute right-1 text-[#64748B] hover:text-[#E2E8F0] text-[10px]"
+                className="absolute right-1 text-bf-faint hover:text-bf-body text-[10px]"
               >
                 ×
               </button>
@@ -402,7 +402,7 @@ export const PacketStreamView: React.FC = () => {
           </div>
 
           {filterText && (
-            <span className="text-[9px] px-1 py-0.2 rounded bg-[#00E5FF]/10 text-[#00E5FF] border border-[#00E5FF]/30 font-mono shrink-0">
+            <span className="text-[9px] px-1 py-0.2 rounded bg-bf-cyan/10 text-bf-cyan border border-bf-cyan/30 font-mono shrink-0">
               {filteredPackets.length} MATCH{filteredPackets.length === 1 ? '' : 'ES'}
             </span>
           )}
@@ -415,8 +415,8 @@ export const PacketStreamView: React.FC = () => {
             }}
             className={`flex items-center gap-1 px-1.5 py-0.2 rounded text-[9.5px] font-mono transition-colors ${
               autoScroll
-                ? 'bg-[#26324A] text-[#00E5FF] border border-[#00E5FF]/40'
-                : 'text-[#64748B] hover:text-[#94A3B8]'
+                ? 'bg-bf-active text-bf-cyan border border-bf-cyan/40'
+                : 'text-bf-faint hover:text-bf-mute'
             }`}
           >
             <ArrowDownCircle className="w-2.5 h-2.5" />
@@ -427,7 +427,7 @@ export const PacketStreamView: React.FC = () => {
           <button
             onClick={clearStream}
             title="Clear view buffer (preserves disk vault)"
-            className="flex items-center gap-1 text-[#64748B] hover:text-[#EF4444] px-1 py-0.2 rounded text-[9.5px] font-mono transition-colors"
+            className="flex items-center gap-1 text-bf-faint hover:text-bf-fault px-1 py-0.2 rounded text-[9.5px] font-mono transition-colors"
           >
             <Trash2 className="w-2.5 h-2.5" />
             CLEAR
@@ -438,19 +438,19 @@ export const PacketStreamView: React.FC = () => {
       {/* Table Column Headers (Centered text, proper separators, draggable resize) */}
       <div
         ref={headerRef}
-        className="h-[22px] bg-[#121722] border-b border-[#222D3D] overflow-x-hidden overflow-y-hidden shrink-0 select-none"
+        className="h-[22px] bg-bf-head border-b border-bf-line overflow-x-hidden overflow-y-hidden shrink-0 select-none"
       >
         <div
           style={{
             minWidth: `${totalMinWidth}px`,
             gridTemplateColumns,
           }}
-          className="grid h-full text-[9.5px] font-mono text-[#64748B] uppercase tracking-wider items-center"
+          className="grid h-full text-[9.5px] font-mono text-bf-faint uppercase tracking-wider items-center"
         >
           {STREAM_COLUMNS.map((col) => (
             <div
               key={col.id}
-              className="relative h-full flex items-center justify-center text-center px-1 border-r border-[#222D3D] font-semibold select-none group"
+              className="relative h-full flex items-center justify-center text-center px-1 border-r border-bf-line font-semibold select-none group"
             >
               <span className="truncate">{col.label}</span>
               {/* Draggable resize handle */}
@@ -458,7 +458,7 @@ export const PacketStreamView: React.FC = () => {
                 onMouseDown={(e) => startColResize(col.id, e)}
                 onDoubleClick={() => resetColWidth(col.id)}
                 title="Drag separator to resize column (Double-click to reset)"
-                className="absolute right-0 top-0 bottom-0 w-2 -mr-1 cursor-col-resize z-20 group-hover:bg-[#00E5FF]/50 active:bg-[#00E5FF] transition-colors"
+                className="absolute right-0 top-0 bottom-0 w-2 -mr-1 cursor-col-resize z-20 group-hover:bg-bf-cyan/50 active:bg-bf-cyan transition-colors"
               />
             </div>
           ))}
@@ -472,14 +472,14 @@ export const PacketStreamView: React.FC = () => {
         className="flex-1 overflow-y-auto overflow-x-auto font-mono"
       >
         {totalRows === 0 ? (
-          <div className="h-full flex flex-col items-center justify-center text-center p-4 text-[#64748B]">
-            <p className="text-xs font-semibold text-[#94A3B8] mb-1">Awaiting Packet Stream</p>
+          <div className="h-full flex flex-col items-center justify-center text-center p-4 text-bf-faint">
+            <p className="text-xs font-semibold text-bf-mute mb-1">Awaiting Packet Stream</p>
             <p className="text-[10px] max-w-sm mb-3">
               Incoming serial frames with microsecond timestamps will stream here automatically.
             </p>
             <button
               onClick={() => useWorkstationStore.getState().loadSampleCapture()}
-              className="px-2.5 py-1 bg-[#161C28] hover:bg-[#26324A] border border-[#00E5FF]/40 text-[#00E5FF] rounded text-[11px] font-mono font-medium transition-colors"
+              className="px-2.5 py-1 bg-bf-subpanel hover:bg-bf-active border border-bf-cyan/40 text-bf-cyan rounded text-[11px] font-mono font-medium transition-colors"
             >
               Load Sample Capture Stream
             </button>
@@ -490,7 +490,7 @@ export const PacketStreamView: React.FC = () => {
             <div style={{ height: `${topSpacerHeight}px` }} />
 
             {/* Rendered Visible Rows */}
-            <div className="divide-y divide-[#1A2230]/40">
+            <div className="divide-y divide-bf-line-soft/40">
               {visiblePackets.map((pkt) => {
                 const isSelected = selectedPacket?.seqId === pkt.seqId;
                 return (
@@ -503,60 +503,60 @@ export const PacketStreamView: React.FC = () => {
                     }}
                     className={`grid text-[11px] items-center cursor-pointer transition-colors ${
                       isSelected
-                        ? 'bg-[#26324A] text-white'
+                        ? 'bg-bf-active text-white'
                         : pkt.isFaultInjected
-                        ? 'bg-[#EF4444]/10 hover:bg-[#EF4444]/15 text-[#FCA5A5]'
-                        : 'hover:bg-[#161C28] text-[#CBD5E1]'
+                        ? 'bg-bf-fault/10 hover:bg-bf-fault/15 text-bf-fault-soft'
+                        : 'hover:bg-bf-subpanel text-bf-dim'
                     }`}
                   >
                     {/* Seq ID - Centered */}
-                    <div className="h-full flex items-center justify-center text-center font-semibold text-[#94A3B8] border-r border-[#1E293B]/40 px-1 truncate">
+                    <div className="h-full flex items-center justify-center text-center font-semibold text-bf-mute border-r border-bf-btn/40 px-1 truncate">
                       #{String(pkt.seqId).padStart(5, '0')}
                     </div>
 
                     {/* Delta Time - Centered */}
-                    <div className="h-full flex items-center justify-center text-center text-[#64748B] text-[10px] border-r border-[#1E293B]/40 px-1 truncate">
+                    <div className="h-full flex items-center justify-center text-center text-bf-faint text-[10px] border-r border-bf-btn/40 px-1 truncate">
                       {formatDelta(pkt.deltaUs)}
                     </div>
 
                     {/* Absolute Time - Centered */}
-                    <div className="h-full flex items-center justify-center text-center text-[#94A3B8] text-[10px] border-r border-[#1E293B]/40 px-1 truncate">
+                    <div className="h-full flex items-center justify-center text-center text-bf-mute text-[10px] border-r border-bf-btn/40 px-1 truncate">
                       {pkt.timeStr}
                     </div>
 
                     {/* Direction - Centered */}
-                    <div className="h-full flex items-center justify-center border-r border-[#1E293B]/40 px-1">
+                    <div className="h-full flex items-center justify-center border-r border-bf-btn/40 px-1">
                       {getDirBadge(pkt.direction, pkt.isFaultInjected)}
                     </div>
 
                     {/* Port - Centered */}
-                    <div className="h-full flex items-center justify-center text-center text-[#64748B] text-[10px] border-r border-[#1E293B]/40 px-1 truncate">
+                    <div className="h-full flex items-center justify-center text-center text-bf-faint text-[10px] border-r border-bf-btn/40 px-1 truncate">
                       {pkt.port}
                     </div>
 
                     {/* Length - Centered */}
-                    <div className="h-full flex items-center justify-center text-center text-[#94A3B8] text-[10px] border-r border-[#1E293B]/40 px-1 truncate">
+                    <div className="h-full flex items-center justify-center text-center text-bf-mute text-[10px] border-r border-bf-btn/40 px-1 truncate">
                       {pkt.length}B
                     </div>
 
                     {/* Protocol Tag - Centered */}
-                    <div className="h-full flex items-center justify-center text-center font-semibold text-[#00E5FF] text-[10.5px] border-r border-[#1E293B]/40 px-1 truncate">
+                    <div className="h-full flex items-center justify-center text-center font-semibold text-bf-cyan text-[10.5px] border-r border-bf-btn/40 px-1 truncate">
                       {pkt.protocol}
                     </div>
 
                     {/* Summary / Error Info */}
-                    <div className="h-full flex items-center gap-2 truncate px-2 border-r border-[#1E293B]/40">
+                    <div className="h-full flex items-center gap-2 truncate px-2 border-r border-bf-btn/40">
                       {pkt.hasError ? (
-                        <span className="flex items-center gap-1 text-[#EF4444] font-semibold text-[10px] shrink-0">
+                        <span className="flex items-center gap-1 text-bf-fault font-semibold text-[10px] shrink-0">
                           <AlertTriangle className="w-2.5 h-2.5 shrink-0" />
                           {pkt.errorMsg || 'CRC ERROR'}
                         </span>
                       ) : (
-                        <span className="flex items-center gap-1 text-[#10B981] text-[10px] shrink-0">
+                        <span className="flex items-center gap-1 text-bf-ok text-[10px] shrink-0">
                           <CheckCircle2 className="w-2.5 h-2.5 shrink-0" />
                         </span>
                       )}
-                      <span className="truncate text-[#94A3B8]">{pkt.summary}</span>
+                      <span className="truncate text-bf-mute">{pkt.summary}</span>
                     </div>
                   </div>
                 );
@@ -573,7 +573,7 @@ export const PacketStreamView: React.FC = () => {
       {isUserScrolledUp && (
         <button
           onClick={handleJumpToLive}
-          className="absolute bottom-3 right-4 flex items-center gap-1.5 px-3 py-1 bg-[#00E5FF] text-[#0A0D13] font-bold text-[10px] rounded-full shadow-[0_2px_10px_rgba(0,229,255,0.4)] hover:bg-[#00B4D8] transition-all z-20 cursor-pointer animate-pulse"
+          className="absolute bottom-3 right-4 flex items-center gap-1.5 px-3 py-1 bg-bf-cyan text-bf-onfill font-bold text-[10px] rounded-full shadow-[0_2px_10px_rgb(var(--bf-cyan-rgb)/0.4)] hover:bg-bf-cyan-hi transition-all z-20 cursor-pointer animate-pulse"
         >
           <ArrowDown className="w-3 h-3" />
           <span>JUMP TO LIVE {newFramesCount > 0 ? `(${newFramesCount} NEW)` : ''}</span>

@@ -14,6 +14,7 @@ import { Launcher, isDesktopShell, hasEngineParam } from './components/Launcher'
 import { generateSampleImuPacket } from './services/simulationEngine';
 import { engineApi } from './services/engineApi';
 import { formatPacketTime } from './utils/format';
+import { applyTheme } from './utils/theme';
 import { PacketDirection } from './types';
 
 export const App: React.FC = () => {
@@ -44,6 +45,16 @@ export const App: React.FC = () => {
       })
       .catch(() => setLauncherState('show'));
   }, [launcherState]);
+
+  // Theme system: mirror the persisted skin onto <html> so index.css swaps
+  // the --color-bf-* token set. Sits before the early returns so the
+  // Launcher screen is themed too.
+  const theme = useSettingsStore((s) => s.settings.theme);
+  const themeMode = useSettingsStore((s) => s.settings.themeMode);
+  useEffect(() => {
+    applyTheme(theme, themeMode);
+  }, [theme, themeMode]);
+
   if (launcherState === 'checking') return null;
   if (launcherState === 'show') return <Launcher />;
   const {
@@ -310,7 +321,7 @@ export const App: React.FC = () => {
   }, [setDvrPaused, stepFrame, triggerFlashYield, setFilterText, clearStream]);
 
   return (
-    <div className="w-full h-screen flex flex-col bg-[#0A0D13] overflow-hidden select-none">
+    <div className="w-full h-screen flex flex-col bg-bf-onfill overflow-hidden select-none">
       {/* 1. Global Toolbar / Quick-Action Ribbon */}
       <GlobalRibbon />
 

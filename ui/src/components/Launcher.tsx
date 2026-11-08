@@ -117,20 +117,20 @@ const DEFAULT_CONFIG: ConfigState = {
 };
 
 const inputCls =
-  'w-full bg-[#0A0D13] border border-[#222D3D] rounded px-2 py-1.5 text-[11px] text-[#E2E8F0] font-mono focus:outline-none focus:border-[#00E5FF]';
-const labelCls = 'text-[9.5px] text-[#64748B] block mb-1 font-bold uppercase tracking-wider';
+  'w-full bg-bf-onfill border border-bf-line rounded px-2 py-1.5 text-[11px] text-bf-body font-mono focus:outline-none focus:border-bf-cyan';
+const labelCls = 'text-[9.5px] text-bf-faint block mb-1 font-bold uppercase tracking-wider';
 const chipCls = (active: boolean) =>
   `px-1.5 py-0.5 rounded border text-[9.5px] font-mono transition-colors ${
     active
-      ? 'bg-[#00E5FF]/15 text-[#00E5FF] border-[#00E5FF]/50'
-      : 'bg-[#10141D] text-[#94A3B8] border-[#222D3D] hover:text-[#E2E8F0]'
+      ? 'bg-bf-cyan/15 text-bf-cyan border-bf-cyan/50'
+      : 'bg-bf-panel text-bf-mute border-bf-line hover:text-bf-body'
   }`;
 const navButton =
-  'w-full px-3 py-2 rounded text-left font-mono text-[11px] transition-colors bg-[#121722] border border-[#222D3D] text-[#E2E8F0] hover:border-[#00E5FF]/60 hover:text-[#00E5FF] disabled:opacity-40 disabled:hover:border-[#222D3D]';
+  'w-full px-3 py-2 rounded text-left font-mono text-[11px] transition-colors bg-bf-head border border-bf-line text-bf-body hover:border-bf-cyan/60 hover:text-bf-cyan disabled:opacity-40 disabled:hover:border-bf-line';
 const killButton =
-  'shrink-0 self-stretch px-2 rounded border border-[#222D3D] text-[#64748B] hover:text-[#EF4444] hover:border-[#EF4444]/50 text-[10px] font-mono transition-colors disabled:opacity-40';
-const sectionCls = 'rounded-md bg-[#0C111B] border border-[#1E2836] p-3';
-const sectionTitleCls = 'text-[9px] text-[#00E5FF]/70 uppercase tracking-wider font-bold';
+  'shrink-0 self-stretch px-2 rounded border border-bf-line text-bf-faint hover:text-bf-fault hover:border-bf-fault/50 text-[10px] font-mono transition-colors disabled:opacity-40';
+const sectionCls = 'rounded-md bg-bf-deep border border-bf-line p-3';
+const sectionTitleCls = 'text-[9px] text-bf-cyan/70 uppercase tracking-wider font-bold';
 
 /** A titled, bordered group inside a launcher column. */
 const Card: React.FC<{ title: string; right?: React.ReactNode; children: React.ReactNode; className?: string }> = ({
@@ -149,12 +149,12 @@ const Card: React.FC<{ title: string; right?: React.ReactNode; children: React.R
 );
 
 const errorBox = (message: string) => (
-  <div className="mt-2 p-1.5 rounded bg-[#EF4444]/15 border border-[#EF4444]/30 text-[#EF4444] text-[10px] font-mono break-all">
+  <div className="mt-2 p-1.5 rounded bg-bf-fault/15 border border-bf-fault/30 text-bf-fault text-[10px] font-mono break-all">
     {message}
   </div>
 );
 
-const emptyHint = (text: string) => <p className="text-[9.5px] text-[#64748B] font-mono py-1">{text}</p>;
+const emptyHint = (text: string) => <p className="text-[9.5px] text-bf-faint font-mono py-1">{text}</p>;
 
 /* ------------------------------------------------------------------ */
 /* LEFT COLUMN — configure a session from scratch                      */
@@ -356,7 +356,7 @@ const ConfigureSession: React.FC<{ core: TauriCore; onSaved: () => void }> = ({ 
         <div className="flex gap-1.5">
           <button
             onClick={pickHeader}
-            className="flex-1 px-2 py-1.5 rounded text-[10.5px] font-mono bg-[#10141D] border border-[#222D3D] hover:border-[#00E5FF]/50 text-[#94A3B8] hover:text-[#00E5FF] transition-colors"
+            className="flex-1 px-2 py-1.5 rounded text-[10.5px] font-mono bg-bf-panel border border-bf-line hover:border-bf-cyan/50 text-bf-mute hover:text-bf-cyan transition-colors"
           >
             {headerPath ? `📄 ${headerPath.split(/[\\/]/).pop()}` : 'Pick C header (.h)…'}
           </button>
@@ -378,14 +378,14 @@ const ConfigureSession: React.FC<{ core: TauriCore; onSaved: () => void }> = ({ 
         <button
           onClick={() => startOrSave('start')}
           disabled={busy !== null || !portPath}
-          className="flex-1 px-2 py-2 bg-[#00E5FF] hover:bg-[#00B4D8] text-[#0A0D13] font-bold rounded text-[10.5px] disabled:opacity-40"
+          className="flex-1 px-2 py-2 bg-bf-cyan hover:bg-bf-cyan-hi text-bf-onfill font-bold rounded text-[10.5px] disabled:opacity-40"
         >
           {busy === 'start' ? 'STARTING…' : 'START SESSION'}
         </button>
         <button
           onClick={() => startOrSave('save')}
           disabled={busy !== null || !portPath}
-          className="px-3 py-2 bg-[#161C28] hover:bg-[#1E2638] border border-[#222D3D] hover:border-[#00E5FF]/50 text-[#94A3B8] hover:text-[#00E5FF] rounded text-[10.5px] font-mono disabled:opacity-40"
+          className="px-3 py-2 bg-bf-subpanel hover:bg-bf-hover border border-bf-line hover:border-bf-cyan/50 text-bf-mute hover:text-bf-cyan rounded text-[10.5px] font-mono disabled:opacity-40"
         >
           {busy === 'save' ? 'SAVING…' : 'SAVE PROFILE'}
         </button>
@@ -469,7 +469,7 @@ const RecentWorkspaces: React.FC<{
           <button
             onClick={clearAll}
             title="Remove every entry from this list — the workspace files are kept"
-            className="px-1.5 py-0.5 rounded border text-[9px] font-mono uppercase tracking-wider transition-colors border-[#222D3D] text-[#64748B] hover:text-[#EF4444] hover:border-[#EF4444]/50"
+            className="px-1.5 py-0.5 rounded border text-[9px] font-mono uppercase tracking-wider transition-colors border-bf-line text-bf-faint hover:text-bf-fault hover:border-bf-fault/50"
           >
             {clearLabel}
           </button>
@@ -490,7 +490,7 @@ const RecentWorkspaces: React.FC<{
               removeTitle="Remove from this list — the workspace file is kept"
             >
               <span className="block truncate">{path.split(/[\\/]/).pop()}</span>
-              <span className="block truncate text-[8.5px] text-[#64748B]">{path}</span>
+              <span className="block truncate text-[8.5px] text-bf-faint">{path}</span>
             </OpenRow>
           ))}
         </div>
@@ -557,7 +557,7 @@ const SavedProfiles: React.FC<{
           ))}
         </div>
       )}
-      {error && <p className="mt-1.5 text-[10px] text-[#EF4444] font-mono break-all">{error}</p>}
+      {error && <p className="mt-1.5 text-[10px] text-bf-fault font-mono break-all">{error}</p>}
     </Card>
   );
 };
@@ -698,17 +698,17 @@ export const Launcher: React.FC = () => {
   }, []);
 
   return (
-    <div className="w-full h-screen bg-[#0A0D13] flex flex-col select-none overflow-hidden">
-      <header className="shrink-0 flex items-baseline gap-2 px-5 pt-4 pb-3 bg-[#10141D] border-b border-[#222D3D]">
-        <span className="text-[#00E5FF] font-mono font-bold text-sm tracking-widest">BAUDFORGE</span>
-        <span className="text-[9px] px-1 py-0.2 rounded bg-[#1E2638] text-[#94A3B8] border border-[#222D3D]">v1.0</span>
-        <span className="ml-auto text-[10px] text-[#64748B] font-mono truncate">
+    <div className="w-full h-screen bg-bf-onfill flex flex-col select-none overflow-hidden">
+      <header className="shrink-0 flex items-baseline gap-2 px-5 pt-4 pb-3 bg-bf-panel border-b border-bf-line">
+        <span className="text-bf-cyan font-mono font-bold text-sm tracking-widest">BAUDFORGE</span>
+        <span className="text-[9px] px-1 py-0.2 rounded bg-bf-hover text-bf-mute border border-bf-line">v1.0</span>
+        <span className="ml-auto text-[10px] text-bf-faint font-mono truncate">
           Hardware engineering workstation — configure a session on the left, or open one from the right.
         </span>
         <button
           onClick={() => useSettingsStore.getState().setSettingsOpen(true)}
           title="Application settings: appearance, performance & export defaults (Ctrl+,)"
-          className="shrink-0 self-center flex items-center px-1.5 py-0.5 bg-[#0A0D13] hover:bg-[#1E2638] text-[#94A3B8] hover:text-[#00E5FF] border border-[#222D3D] hover:border-[#00E5FF]/40 rounded transition-colors"
+          className="shrink-0 self-center flex items-center px-1.5 py-0.5 bg-bf-onfill hover:bg-bf-hover text-bf-mute hover:text-bf-cyan border border-bf-line hover:border-bf-cyan/40 rounded transition-colors"
         >
           <Settings className="w-3 h-3" />
         </button>
@@ -716,10 +716,10 @@ export const Launcher: React.FC = () => {
 
       <div className="flex-1 min-h-0 flex gap-3 p-3">
         {/* LEFT — configure session */}
-        <section className="w-[620px] shrink-0 flex flex-col bg-[#10141D] border border-[#222D3D] rounded-lg shadow-[0_0_40px_rgba(0,0,0,0.6)] overflow-hidden">
-          <div className="shrink-0 px-4 pt-3.5 pb-2.5 border-b border-[#222D3D]">
-            <h1 className="text-[10px] text-[#E2E8F0] uppercase tracking-wider font-bold">
-              Configure session <span className="text-[#64748B] font-normal normal-case tracking-normal">— every parameter, no TOML needed</span>
+        <section className="w-[620px] shrink-0 flex flex-col bg-bf-panel border border-bf-line rounded-lg shadow-[0_0_40px_rgb(var(--bf-shadow-rgb)/0.6)] overflow-hidden">
+          <div className="shrink-0 px-4 pt-3.5 pb-2.5 border-b border-bf-line">
+            <h1 className="text-[10px] text-bf-body uppercase tracking-wider font-bold">
+              Configure session <span className="text-bf-faint font-normal normal-case tracking-normal">— every parameter, no TOML needed</span>
             </h1>
           </div>
           <div className="flex-1 min-h-0 overflow-y-auto px-4 py-3">
@@ -728,16 +728,16 @@ export const Launcher: React.FC = () => {
         </section>
 
         {/* RIGHT — quick open */}
-        <section className="flex-1 min-w-0 flex flex-col bg-[#10141D] border border-[#222D3D] rounded-lg shadow-[0_0_40px_rgba(0,0,0,0.6)] overflow-y-auto p-4">
-          <h1 className="text-[10px] text-[#E2E8F0] uppercase tracking-wider font-bold mb-3">
-            Quick open <span className="text-[#64748B] font-normal normal-case tracking-normal">— one click back into a session</span>
+        <section className="flex-1 min-w-0 flex flex-col bg-bf-panel border border-bf-line rounded-lg shadow-[0_0_40px_rgb(var(--bf-shadow-rgb)/0.6)] overflow-y-auto p-4">
+          <h1 className="text-[10px] text-bf-body uppercase tracking-wider font-bold mb-3">
+            Quick open <span className="text-bf-faint font-normal normal-case tracking-normal">— one click back into a session</span>
           </h1>
 
           <div className="flex gap-1.5">
             <button
               onClick={openPicker}
               disabled={busy !== null}
-              className={navButton + ' font-bold border-[#00E5FF]/40 text-[#00E5FF]'}
+              className={navButton + ' font-bold border-bf-cyan/40 text-bf-cyan'}
             >
               {startingPath ? 'STARTING…' : 'OPEN WORKSPACE…'}
             </button>
@@ -774,7 +774,7 @@ export const Launcher: React.FC = () => {
                 <select
                   value={pickedPort}
                   onChange={(e) => setPickedPort(e.target.value)}
-                  className="flex-1 bg-[#0A0D13] border border-[#222D3D] rounded px-2 py-1.5 text-[10.5px] text-[#E2E8F0] font-mono focus:outline-none focus:border-[#00E5FF]"
+                  className="flex-1 bg-bf-onfill border border-bf-line rounded px-2 py-1.5 text-[10.5px] text-bf-body font-mono focus:outline-none focus:border-bf-cyan"
                 >
                   {ports.map((p) => (
                     <option key={p.device_path} value={p.device_path}>
@@ -785,7 +785,7 @@ export const Launcher: React.FC = () => {
                 <button
                   onClick={quickConnect}
                   disabled={busy !== null || !pickedPort}
-                  className="px-3 py-1.5 bg-[#00E5FF] hover:bg-[#00B4D8] text-[#0A0D13] font-bold rounded text-[10px] disabled:opacity-40"
+                  className="px-3 py-1.5 bg-bf-cyan hover:bg-bf-cyan-hi text-bf-onfill font-bold rounded text-[10px] disabled:opacity-40"
                 >
                   {busy === `qc-${pickedPort}` ? '…' : 'CONNECT'}
                 </button>

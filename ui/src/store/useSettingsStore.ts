@@ -12,8 +12,19 @@ import { create } from 'zustand';
 export type ExportFormat = 'pcapng' | 'csv' | 'saleae' | 'jsonl' | 'parquet';
 export type TimestampBase = 'wall' | 'relative';
 
+/** Visual skin. `obsidian` is the classic engineering dark (the default). */
+export type BfTheme = 'obsidian' | 'materials' | 'skeuomorph' | 'soft';
+export type BfMode = 'dark' | 'light';
+
+export const BF_THEMES: BfTheme[] = ['obsidian', 'materials', 'skeuomorph', 'soft'];
+export const BF_MODES: BfMode[] = ['dark', 'light'];
+
 export interface BfSettings {
   // Appearance
+  /** Theme skin — indexes the --color-bf-* token sets in index.css. */
+  theme: BfTheme;
+  /** Light/dark variant of the selected theme. */
+  themeMode: BfMode;
   tooltipsEnabled: boolean;
   /** Stream Time column: wall clock vs elapsed since first formatted frame. */
   timestampBase: TimestampBase;
@@ -35,6 +46,8 @@ export interface BfSettings {
 export const EXPORT_FORMATS: ExportFormat[] = ['pcapng', 'saleae', 'csv', 'jsonl', 'parquet'];
 
 export const DEFAULT_SETTINGS: BfSettings = {
+  theme: 'obsidian',
+  themeMode: 'dark',
   tooltipsEnabled: true,
   timestampBase: 'wall',
   hexBytesPerRow: 16,
@@ -59,39 +72,45 @@ const clampInt = (v: unknown, lo: number, hi: number, fallback: number): number 
 };
 
 /**
- * Build the persisted layer: defaults → saved blob. Unknown keys in an older
- * blob (e.g. the removed `uiScale`) are simply ignored.
+ * Pure merge: defaults → saved blob. Unknown keys in an older blob (e.g. the
+ * removed `uiScale`) are simply ignored; every field is type/enum validated
+ * so a corrupted blob can never poison the app. Exported for unit tests.
  */
-const loadSettings = (): BfSettings => {
+export const mergeSettings = (saved: unknown): BfSettings => {
   const merged: BfSettings = { ...DEFAULT_SETTINGS };
+  if (saved && typeof saved === 'object') {
+    const s = saved as Record<string, unknown>;
+    if (BF_THEMES.includes(s.theme as BfTheme)) merged.theme = s.theme as BfTheme;
+    if (BF_MODES.includes(s.themeMode as BfMode)) merged.themeMode = s.themeMode as BfMode;
+    if (typeof s.tooltipsEnabled === 'boolean') merged.tooltipsEnabled = s.tooltipsEnabled;
+    if (s.timestampBase === 'wall' || s.timestampBase === 'relative')
+      merged.timestampBase = s.timestampBase;
+    if (s.hexBytesPerRow === 8 || s.hexBytesPerRow === 16 || s.hexBytesPerRow === 32)
+      merged.hexBytesPerRow = s.hexBytesPerRow;
+    if (s.hexGrouping === 1 || s.hexGrouping === 2 || s.hexGrouping === 4)
+      merged.hexGrouping = s.hexGrouping;
+    if (typeof s.hexShowAscii === 'boolean') merged.hexShowAscii = s.hexShowAscii;
+    merged.maxPackets = clampInt(s.maxPackets, MAX_PACKETS_MIN, MAX_PACKETS_MAX, merged.maxPackets);
+    merged.maxScopeSamples = clampInt(
+      s.maxScopeSamples,
+      MAX_SCOPE_SAMPLES_MIN,
+      MAX_SCOPE_SAMPLES_MAX,
+      merged.maxScopeSamples
+    );
+    if (EXPORT_FORMATS.includes(s.defaultExportFormat as ExportFormat))
+      merged.defaultExportFormat = s.defaultExportFormat as ExportFormat;
+    if (typeof s.vaultNamePattern === 'string' && s.vaultNamePattern.trim())
+      merged.vaultNamePattern = s.vaultNamePattern.trim();
+  }
+  return merged;
+};
+
+const loadSettings = (): BfSettings => {
   try {
     const raw = localStorage.getItem(STORAGE_KEY);
-    if (raw) {
-      const saved = JSON.parse(raw);
-      if (saved && typeof saved === 'object') {
-        if (typeof saved.tooltipsEnabled === 'boolean') merged.tooltipsEnabled = saved.tooltipsEnabled;
-        if (saved.timestampBase === 'wall' || saved.timestampBase === 'relative')
-          merged.timestampBase = saved.timestampBase;
-        if (saved.hexBytesPerRow === 8 || saved.hexBytesPerRow === 16 || saved.hexBytesPerRow === 32)
-          merged.hexBytesPerRow = saved.hexBytesPerRow;
-        if (saved.hexGrouping === 1 || saved.hexGrouping === 2 || saved.hexGrouping === 4)
-          merged.hexGrouping = saved.hexGrouping;
-        if (typeof saved.hexShowAscii === 'boolean') merged.hexShowAscii = saved.hexShowAscii;
-        merged.maxPackets = clampInt(saved.maxPackets, MAX_PACKETS_MIN, MAX_PACKETS_MAX, merged.maxPackets);
-        merged.maxScopeSamples = clampInt(
-          saved.maxScopeSamples,
-          MAX_SCOPE_SAMPLES_MIN,
-          MAX_SCOPE_SAMPLES_MAX,
-          merged.maxScopeSamples
-        );
-        if (EXPORT_FORMATS.includes(saved.defaultExportFormat))
-          merged.defaultExportFormat = saved.defaultExportFormat;
-        if (typeof saved.vaultNamePattern === 'string' && saved.vaultNamePattern.trim())
-          merged.vaultNamePattern = saved.vaultNamePattern.trim();
-      }
-    }
+    if (raw) return mergeSettings(JSON.parse(raw));
   } catch (_) {}
-  return merged;
+  return { ...DEFAULT_SETTINGS };
 };
 
 interface SettingsState {

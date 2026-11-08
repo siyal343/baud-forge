@@ -56,7 +56,7 @@ export const DvrTimelineBar: React.FC = () => {
   const speedOptions = [0.25, 0.5, 1.0, 2.0];
 
   return (
-    <div className="h-[26px] bg-[#10141D] border-t border-[#222D3D] px-2.5 flex items-center justify-between shrink-0 select-none text-[11px]">
+    <div className="h-[26px] bg-bf-panel border-t border-bf-line px-2.5 flex items-center justify-between shrink-0 select-none text-[11px]">
       {/* Transport Controls */}
       <div className="flex items-center gap-1.5">
         {/* Play / Pause / Replay Toggle (spec 2.6: historical replay vs live) */}
@@ -68,10 +68,10 @@ export const DvrTimelineBar: React.FC = () => {
           }}
           className={`p-1 rounded transition-colors ${
             isReplaying
-              ? 'bg-[#00E5FF] text-[#0A0D13] font-bold'
+              ? 'bg-bf-cyan text-bf-onfill font-bold'
               : isPaused
-              ? 'bg-[#F59E0B] text-[#0A0D13] font-bold'
-              : 'bg-[#161C28] text-[#E2E8F0] hover:bg-[#26324A]'
+              ? 'bg-bf-warn text-bf-onfill font-bold'
+              : 'bg-bf-subpanel text-bf-body hover:bg-bf-active'
           }`}
           title={
             isReplaying
@@ -91,7 +91,7 @@ export const DvrTimelineBar: React.FC = () => {
         {/* Step Back 1 Frame */}
         <button
           onClick={() => stepFrame('back')}
-          className="p-1 bg-[#161C28] hover:bg-[#26324A] text-[#94A3B8] hover:text-[#E2E8F0] rounded transition-colors"
+          className="p-1 bg-bf-subpanel hover:bg-bf-active text-bf-mute hover:text-bf-body rounded transition-colors"
           title="Step 1 Frame Back (Left Arrow)"
         >
           <ChevronLeft className="w-2.5 h-2.5" />
@@ -100,14 +100,14 @@ export const DvrTimelineBar: React.FC = () => {
         {/* Step Forward 1 Frame */}
         <button
           onClick={() => stepFrame('forward')}
-          className="p-1 bg-[#161C28] hover:bg-[#26324A] text-[#94A3B8] hover:text-[#E2E8F0] rounded transition-colors"
+          className="p-1 bg-bf-subpanel hover:bg-bf-active text-bf-mute hover:text-bf-body rounded transition-colors"
           title="Step 1 Frame Forward (Right Arrow)"
         >
           <ChevronRight className="w-2.5 h-2.5" />
         </button>
 
         {/* Speed Chips — live controls for the replay loop */}
-        <div className="flex items-center gap-0.5 bg-[#161C28] border border-[#222D3D] rounded px-1 py-0.2 font-mono text-[9px]">
+        <div className="flex items-center gap-0.5 bg-bf-subpanel border border-bf-line rounded px-1 py-0.2 font-mono text-[9px]">
           {speedOptions.map((s) => (
             <button
               key={s}
@@ -115,8 +115,8 @@ export const DvrTimelineBar: React.FC = () => {
               title={`Replay speed ×${s}`}
               className={`px-1 py-0.2 rounded transition-colors ${
                 playbackSpeed === s
-                  ? 'bg-[#26324A] text-[#00E5FF] font-semibold border border-[#00E5FF]/40'
-                  : 'text-[#64748B] hover:text-[#94A3B8]'
+                  ? 'bg-bf-active text-bf-cyan font-semibold border border-bf-cyan/40'
+                  : 'text-bf-faint hover:text-bf-mute'
               }`}
             >
               {s}x
@@ -127,7 +127,7 @@ export const DvrTimelineBar: React.FC = () => {
 
       {/* Center: Full-width Scrubber Bar */}
       <div className="flex-1 mx-4 flex items-center gap-3">
-        <span className="text-[10px] font-mono text-[#64748B] w-12 text-right">
+        <span className="text-[10px] font-mono text-bf-faint w-12 text-right">
           #{Math.max(0, currentIdx + 1)}
         </span>
         <input
@@ -137,9 +137,9 @@ export const DvrTimelineBar: React.FC = () => {
           value={Math.max(0, currentIdx)}
           onChange={handleSliderChange}
           disabled={totalPackets <= 1}
-          className="flex-1 h-1.5 bg-[#222D3D] rounded-lg appearance-none cursor-pointer accent-[#00E5FF]"
+          className="flex-1 h-1.5 bg-bf-line rounded-lg appearance-none cursor-pointer accent-bf-cyan"
         />
-        <span className="text-[10px] font-mono text-[#64748B] w-12">
+        <span className="text-[10px] font-mono text-bf-faint w-12">
           #{totalPackets}
         </span>
       </div>
@@ -147,12 +147,12 @@ export const DvrTimelineBar: React.FC = () => {
       {/* Right: Mode Status & Live Snap */}
       <div className="flex items-center gap-2">
         {isReplaying ? (
-          <div className="flex items-center gap-1.5 px-2 py-0.5 bg-[#00E5FF]/20 border border-[#00E5FF]/50 text-[#00E5FF] rounded text-[10px] font-mono font-bold animate-pulse">
+          <div className="flex items-center gap-1.5 px-2 py-0.5 bg-bf-cyan/20 border border-bf-cyan/50 text-bf-cyan rounded text-[10px] font-mono font-bold animate-pulse">
             <Play className="w-3 h-3" />
             <span>REPLAYING ×{playbackSpeed}</span>
           </div>
         ) : isPaused ? (
-          <div className="flex items-center gap-1.5 px-2 py-0.5 bg-[#F59E0B]/20 border border-[#F59E0B]/50 text-[#F59E0B] rounded text-[10px] font-mono font-bold animate-pulse">
+          <div className="flex items-center gap-1.5 px-2 py-0.5 bg-bf-warn/20 border border-bf-warn/50 text-bf-warn rounded text-[10px] font-mono font-bold animate-pulse">
             <AlertCircle className="w-3 h-3" />
             <span>
               PAUSED AT T-
@@ -167,7 +167,7 @@ export const DvrTimelineBar: React.FC = () => {
             </span>
           </div>
         ) : (
-          <div className="flex items-center gap-1.5 px-2 py-0.5 bg-[#10B981]/20 border border-[#10B981]/50 text-[#10B981] rounded text-[10px] font-mono font-bold">
+          <div className="flex items-center gap-1.5 px-2 py-0.5 bg-bf-ok/20 border border-bf-ok/50 text-bf-ok rounded text-[10px] font-mono font-bold">
             <Radio className="w-3 h-3 animate-pulse" />
             <span>STREAMING LIVE</span>
           </div>
@@ -179,8 +179,8 @@ export const DvrTimelineBar: React.FC = () => {
           disabled={isLive}
           className={`px-2.5 py-1 rounded font-mono text-[11px] font-semibold transition-colors ${
             !isLive
-              ? 'bg-[#00E5FF] text-[#0A0D13] hover:bg-[#38BDF8] shadow-[0_0_8px_rgba(0,229,255,0.4)]'
-              : 'bg-[#161C28] text-[#64748B] cursor-default'
+              ? 'bg-bf-cyan text-bf-onfill hover:bg-bf-sky shadow-[0_0_8px_rgb(var(--bf-cyan-rgb)/0.4)]'
+              : 'bg-bf-subpanel text-bf-faint cursor-default'
           }`}
         >
           ● LIVE SNAP

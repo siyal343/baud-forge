@@ -4,6 +4,7 @@ import { useShallow } from 'zustand/react/shallow';
 import { useWorkstationStore } from '../store/useWorkstationStore';
 import { useSettingsStore, buildVaultPath } from '../store/useSettingsStore';
 import { useToastStore } from '../store/useToastStore';
+import { useLayoutLibraryStore } from '../store/useLayoutLibraryStore';
 import { engineApi } from '../services/engineApi';
 import {
   Zap,
@@ -22,7 +23,9 @@ import {
   Settings2,
   Settings,
   Save,
-  Bookmark,
+  Star,
+  Trash2,
+  X,
 } from 'lucide-react';
 import { UartConfigModal } from './UartConfigModal';
 
@@ -75,9 +78,6 @@ export const GlobalRibbon: React.FC = () => {
     setActivePreset,
     requestOpenPanel,
     requestResetLayout,
-    requestSaveLayout,
-    requestRestoreSavedLayout,
-    hasSavedLayout,
   } = useWorkstationStore(
     useShallow((s) => ({
       isConnected: s.isConnected,
@@ -111,13 +111,19 @@ export const GlobalRibbon: React.FC = () => {
       setActivePreset: s.setActivePreset,
       requestOpenPanel: s.requestOpenPanel,
       requestResetLayout: s.requestResetLayout,
-      requestSaveLayout: s.requestSaveLayout,
-      requestRestoreSavedLayout: s.requestRestoreSavedLayout,
-      hasSavedLayout: s.hasSavedLayout,
     }))
   );
 
-  const [saveSuccessMsg, setSaveSuccessMsg] = useState(false);
+  // Named layout library (see useLayoutLibraryStore): the menu drives the
+  // requests, the dock — which owns the DockviewApi — performs save/load.
+  const layouts = useLayoutLibraryStore((s) => s.layouts);
+  const defaultLayout = useLayoutLibraryStore((s) => s.defaultLayout);
+  const lastLayoutName = useLayoutLibraryStore((s) => s.lastLayoutName);
+  const requestSaveLayoutAs = useLayoutLibraryStore((s) => s.requestSaveLayoutAs);
+  const requestLoadLayout = useLayoutLibraryStore((s) => s.requestLoadLayout);
+  const deleteLayout = useLayoutLibraryStore((s) => s.deleteLayout);
+  const setDefaultLayout = useLayoutLibraryStore((s) => s.setDefaultLayout);
+
   const [recPending, setRecPending] = useState(false);
   const [isCustomBaud, setIsCustomBaud] = useState(false);
   const [customBaudDraft, setCustomBaudDraft] = useState('115200');
@@ -133,9 +139,38 @@ export const GlobalRibbon: React.FC = () => {
   const [menuPos, setMenuPos] = useState<{ top: number; left: number } | null>(null);
   const [isUartModalOpen, setIsUartModalOpen] = useState(false);
   const [uartAnchorRect, setUartAnchorRect] = useState<DOMRect | null>(null);
+  const [isSaveNameOpen, setIsSaveNameOpen] = useState(false);
+  const [saveNameDraft, setSaveNameDraft] = useState('');
+  // Two-click delete: first click arms, second within the window confirms.
+  const [deleteArm, setDeleteArm] = useState<string | null>(null);
   const layoutMenuRef = useRef<HTMLDivElement>(null);
   const portalMenuRef = useRef<HTMLDivElement>(null);
   const uartButtonRef = useRef<HTMLButtonElement>(null);
+
+  const savedLayoutRows = Object.entries(layouts).sort((a, b) => b[1].savedAt - a[1].savedAt);
+
+  const formatLayoutDate = (ts: number) =>
+    new Date(ts).toLocaleDateString(undefined, { month: 'short', day: 'numeric' });
+
+  const submitLayoutSave = () => {
+    if (!requestSaveLayoutAs(saveNameDraft)) {
+      pushToast('error', 'Layout name required', 'Enter a name for the saved layout.');
+      return;
+    }
+    setIsSaveNameOpen(false);
+    setIsLayoutMenuOpen(false);
+  };
+
+  const handleDeleteLayout = (name: string) => {
+    if (deleteArm === name) {
+      deleteLayout(name);
+      setDeleteArm(null);
+      pushToast('info', 'Layout deleted', `“${name}” removed from the library.`);
+    } else {
+      setDeleteArm(name);
+      setTimeout(() => setDeleteArm((cur) => (cur === name ? null : cur)), 2500);
+    }
+  };
 
   // Close dropdown on outside click
   useEffect(() => {
@@ -158,6 +193,7 @@ export const GlobalRibbon: React.FC = () => {
     if (!isLayoutMenuOpen && layoutMenuRef.current) {
       const rect = layoutMenuRef.current.getBoundingClientRect();
       setMenuPos({ top: rect.bottom + 4, left: rect.left });
+      setIsSaveNameOpen(false);
       setIsLayoutMenuOpen(true);
     } else {
       setIsLayoutMenuOpen(false);
@@ -175,16 +211,16 @@ export const GlobalRibbon: React.FC = () => {
   };
 
   return (
-    <header className="h-[34px] bg-[#10141D] border-b border-[#222D3D] flex items-center justify-between px-2.5 shrink-0 select-none text-[11px] gap-2 relative z-30">
+    <header className="h-[34px] bg-bf-panel border-b border-bf-line flex items-center justify-between px-2.5 shrink-0 select-none text-[11px] gap-2 relative z-30">
       {/* Left: Brand, Port, Baud & Master Connect */}
       <div className="flex items-center gap-2 shrink-0">
         {/* Brand */}
-        <div className="flex items-center gap-1.5 pr-2 border-r border-[#222D3D]">
-          <div className="w-2 h-2 rounded-full bg-[#00E5FF] animate-pulse" />
-          <span className="font-mono font-bold tracking-wider text-[#00E5FF] text-[12px]">
+        <div className="flex items-center gap-1.5 pr-2 border-r border-bf-line">
+          <div className="w-2 h-2 rounded-full bg-bf-cyan animate-pulse" />
+          <span className="font-mono font-bold tracking-wider text-bf-cyan text-[12px]">
             BAUDFORGE
           </span>
-          <span className="hidden xl:inline text-[9px] text-[#64748B] font-mono px-1 py-0.2 bg-[#161C28] rounded border border-[#222D3D]">
+          <span className="hidden xl:inline text-[9px] text-bf-faint font-mono px-1 py-0.2 bg-bf-subpanel rounded border border-bf-line">
             v1.0
           </span>
         </div>
@@ -192,16 +228,16 @@ export const GlobalRibbon: React.FC = () => {
         {/* Port Selector */}
         <div
           title="Hardware serial port device (e.g. COM8, /dev/ttyUSB0)"
-          className="flex items-center gap-1 bg-[#161C28] border border-[#2D3A4E] rounded px-1.5 py-0.5"
+          className="flex items-center gap-1 bg-bf-subpanel border border-bf-line-strong rounded px-1.5 py-0.5"
         >
-          <Cpu className="w-3 h-3 text-[#94A3B8]" />
+          <Cpu className="w-3 h-3 text-bf-mute" />
           <select
             value={selectedPort}
             onChange={(e) => setSelectedPort(e.target.value)}
-            className="bg-transparent text-[#E2E8F0] font-mono text-[11px] focus:outline-none cursor-pointer max-w-[110px] truncate"
+            className="bg-transparent text-bf-body font-mono text-[11px] focus:outline-none cursor-pointer max-w-[110px] truncate"
           >
             {availablePorts.map((p) => (
-              <option key={p.id} value={p.id} className="bg-[#10141D] text-[#E2E8F0]">
+              <option key={p.id} value={p.id} className="bg-bf-panel text-bf-body">
                 {p.id} ({p.device})
               </option>
             ))}
@@ -214,8 +250,8 @@ export const GlobalRibbon: React.FC = () => {
             disabled={isScanningPorts}
             className={`transition-colors p-0.5 ${
               isScanningPorts
-                ? 'text-[#00E5FF] animate-spin'
-                : 'text-[#64748B] hover:text-[#00E5FF]'
+                ? 'text-bf-cyan animate-spin'
+                : 'text-bf-faint hover:text-bf-cyan'
             }`}
           >
             <RefreshCw className="w-2.5 h-2.5" />
@@ -225,9 +261,9 @@ export const GlobalRibbon: React.FC = () => {
         {/* Baud Rate Compact Dropdown */}
         <div
           title="UART baud rate in bits/second (Standard 115.2k up to 12 Mbps)"
-          className="flex items-center gap-1 bg-[#161C28] border border-[#222D3D] rounded px-1.5 py-0.5 font-mono text-[11px]"
+          className="flex items-center gap-1 bg-bf-subpanel border border-bf-line rounded px-1.5 py-0.5 font-mono text-[11px]"
         >
-          <span className="text-[#64748B] text-[10px]">BAUD:</span>
+          <span className="text-bf-faint text-[10px]">BAUD:</span>
           {isCustomBaud ? (
             <input
               autoFocus
@@ -250,7 +286,7 @@ export const GlobalRibbon: React.FC = () => {
                 if (e.key === 'Escape') setIsCustomBaud(false);
               }}
               title="Custom baud rate: 110 to 12,000,000 (Enter to apply, Esc to cancel)"
-              className="w-[70px] bg-[#10141D] border border-[#00E5FF]/60 rounded px-1 text-[#00E5FF] font-semibold focus:outline-none"
+              className="w-[70px] bg-bf-panel border border-bf-cyan/60 rounded px-1 text-bf-cyan font-semibold focus:outline-none"
             />
           ) : (
             <select
@@ -263,14 +299,14 @@ export const GlobalRibbon: React.FC = () => {
                   setBaudRate(Number(e.target.value));
                 }
               }}
-              className="bg-transparent text-[#00E5FF] font-semibold focus:outline-none cursor-pointer"
+              className="bg-transparent text-bf-cyan font-semibold focus:outline-none cursor-pointer"
             >
               {allBaudRates.map((b) => (
-                <option key={b} value={b} className="bg-[#10141D] text-[#E2E8F0]">
+                <option key={b} value={b} className="bg-bf-panel text-bf-body">
                   {formatBaud(b)} ({b.toLocaleString()})
                 </option>
               ))}
-              <option value="custom" className="bg-[#10141D] text-[#E2E8F0]">
+              <option value="custom" className="bg-bf-panel text-bf-body">
                 Custom…
               </option>
             </select>
@@ -287,14 +323,14 @@ export const GlobalRibbon: React.FC = () => {
             setIsUartModalOpen(true);
           }}
           data-tooltip="Configure UART Line Framing (Data, Parity, Stop bits) and Delimiter / Packet Slicer"
-          className="flex items-center gap-1 bg-[#161C28] hover:bg-[#1E293B] border border-[#222D3D] hover:border-[#00E5FF]/40 rounded px-1.5 py-0.5 font-mono text-[11px] text-[#94A3B8] hover:text-[#00E5FF] transition-colors"
+          className="flex items-center gap-1 bg-bf-subpanel hover:bg-bf-btn border border-bf-line hover:border-bf-cyan/40 rounded px-1.5 py-0.5 font-mono text-[11px] text-bf-mute hover:text-bf-cyan transition-colors"
         >
-          <Settings2 className="w-2.5 h-2.5 text-[#00E5FF]" />
-          <span className="font-bold text-[#E2E8F0]">
+          <Settings2 className="w-2.5 h-2.5 text-bf-cyan" />
+          <span className="font-bold text-bf-body">
             {dataBits}{parity.charAt(0).toUpperCase()}{stopBits}
           </span>
-          <span className="text-[#64748B] text-[9.5px]">·</span>
-          <span className="text-[#00E5FF] uppercase font-semibold text-[10px]">
+          <span className="text-bf-faint text-[9.5px]">·</span>
+          <span className="text-bf-cyan uppercase font-semibold text-[10px]">
             {delimiterMode}
           </span>
         </button>
@@ -309,8 +345,8 @@ export const GlobalRibbon: React.FC = () => {
           }
           className={`flex items-center gap-1 px-2.5 py-0.5 rounded text-[11px] font-semibold transition-all ${
             isConnected
-              ? 'bg-[#EF4444]/20 border border-[#EF4444] text-[#EF4444] hover:bg-[#EF4444]/30'
-              : 'bg-[#10B981] text-[#0A0D13] hover:bg-[#059669]'
+              ? 'bg-bf-fault/20 border border-bf-fault text-bf-fault hover:bg-bf-fault/30'
+              : 'bg-bf-ok text-bf-onfill hover:bg-bf-ok-hi'
           }`}
         >
           {isConnected ? (
@@ -331,12 +367,12 @@ export const GlobalRibbon: React.FC = () => {
       <div className="relative flex items-center" ref={layoutMenuRef}>
         <button
           onClick={toggleLayoutMenu}
-          data-tooltip="Switch workbench layout presets or re-open closed docked panels"
-          className="flex items-center gap-1.5 px-2 py-0.5 bg-[#161C28] hover:bg-[#1E2638] border border-[#222D3D] hover:border-[#00E5FF] rounded text-[10.5px] font-mono text-[#E2E8F0] transition-colors"
+          data-tooltip="Switch workbench layout presets, re-open closed panels, or manage saved layouts"
+          className="flex items-center gap-1.5 px-2 py-0.5 bg-bf-subpanel hover:bg-bf-hover border border-bf-line hover:border-bf-cyan rounded text-[10.5px] font-mono text-bf-body transition-colors"
         >
-          <LayoutGrid className="w-3 h-3 text-[#00E5FF]" />
+          <LayoutGrid className="w-3 h-3 text-bf-cyan" />
           <span className="font-semibold">LAYOUTS & PANELS</span>
-          <ChevronDown className="w-2.5 h-2.5 text-[#64748B]" />
+          <ChevronDown className="w-2.5 h-2.5 text-bf-faint" />
         </button>
 
         {isLayoutMenuOpen &&
@@ -350,9 +386,9 @@ export const GlobalRibbon: React.FC = () => {
                 left: `${menuPos.left}px`,
                 zIndex: 999999,
               }}
-              className="w-72 bg-[#0E131F] border border-[#222D3D] rounded-lg shadow-[0_16px_48px_rgba(0,0,0,0.95)] p-2.5 font-mono text-[10.5px] text-[#E2E8F0] flex flex-col gap-1"
+              className="w-72 bg-bf-surface border border-bf-line rounded-lg shadow-[0_16px_48px_rgb(var(--bf-shadow-rgb)/0.95)] p-2.5 font-mono text-[10.5px] text-bf-body flex flex-col gap-1"
             >
-              <div className="text-[9.5px] uppercase tracking-wider text-[#64748B] px-2 py-0.5 font-bold">
+              <div className="text-[9.5px] uppercase tracking-wider text-bf-faint px-2 py-0.5 font-bold">
                 Layout Presets
               </div>
 
@@ -370,21 +406,21 @@ export const GlobalRibbon: React.FC = () => {
                   }}
                   className={`flex items-start justify-between gap-1 px-2 py-1 rounded text-left transition-colors ${
                     activePreset === p.id
-                      ? 'bg-[#00E5FF]/15 text-[#00E5FF] font-bold'
-                      : 'hover:bg-[#161C28] text-[#94A3B8] hover:text-[#E2E8F0]'
+                      ? 'bg-bf-cyan/15 text-bf-cyan font-bold'
+                      : 'hover:bg-bf-subpanel text-bf-mute hover:text-bf-body'
                   }`}
                 >
                   <div>
-                    <div className="text-[10px] text-[#F8FAFC]">{p.name}</div>
-                    <div className="text-[8.5px] text-[#64748B]">{p.desc}</div>
+                    <div className="text-[10px] text-bf-bright">{p.name}</div>
+                    <div className="text-[8.5px] text-bf-faint">{p.desc}</div>
                   </div>
-                  {activePreset === p.id && <Check className="w-3 h-3 text-[#00E5FF] mt-0.5 shrink-0" />}
+                  {activePreset === p.id && <Check className="w-3 h-3 text-bf-cyan mt-0.5 shrink-0" />}
                 </button>
               ))}
 
-              <div className="border-t border-[#222D3D] my-1" />
+              <div className="border-t border-bf-line my-1" />
 
-              <div className="text-[9.5px] uppercase tracking-wider text-[#64748B] px-2 py-0.5 font-bold">
+              <div className="text-[9.5px] uppercase tracking-wider text-bf-faint px-2 py-0.5 font-bold">
                 Re-open Closed Panel
               </div>
 
@@ -396,52 +432,138 @@ export const GlobalRibbon: React.FC = () => {
                       requestOpenPanel(panel.id);
                       setIsLayoutMenuOpen(false);
                     }}
-                    className="w-full flex items-center justify-between px-2 py-1 rounded text-left text-[10px] text-[#94A3B8] hover:text-[#00E5FF] hover:bg-[#161C28] transition-colors"
+                    className="w-full flex items-center justify-between px-2 py-1 rounded text-left text-[10px] text-bf-mute hover:text-bf-cyan hover:bg-bf-subpanel transition-colors"
                   >
                     <span>{panel.name}</span>
-                    <span className="text-[9px] text-[#64748B] font-mono">OPEN</span>
+                    <span className="text-[9px] text-bf-faint font-mono">OPEN</span>
                   </button>
                 ))}
               </div>
 
-              <div className="border-t border-[#222D3D] my-1" />
+              <div className="border-t border-bf-line my-1" />
 
-              <div className="text-[9.5px] uppercase tracking-wider text-[#64748B] px-2 py-0.5 font-bold">
+              <div className="text-[9.5px] uppercase tracking-wider text-bf-faint px-2 py-0.5 font-bold">
                 Layout Management
               </div>
 
               <div className="flex flex-col gap-1">
-                <button
-                  onClick={() => {
-                    requestSaveLayout();
-                    setSaveSuccessMsg(true);
-                    setTimeout(() => setSaveSuccessMsg(false), 2200);
-                  }}
-                  data-tooltip="Save current workstation panel layout, tab order, and sizes"
-                  className="w-full flex items-center justify-between px-2 py-1 bg-[#161C28] hover:bg-[#1E2638] text-[#00E5FF] rounded text-[10px] transition-colors font-bold"
-                >
-                  <div className="flex items-center gap-1.5">
-                    <Save className="w-3 h-3" />
-                    <span>{saveSuccessMsg ? '✓ Layout Saved!' : 'Save Current Layout'}</span>
-                  </div>
-                  <span className="text-[8.5px] text-[#64748B]">CUSTOM</span>
-                </button>
-
-                {hasSavedLayout && (
+                {!isSaveNameOpen ? (
                   <button
                     onClick={() => {
-                      requestRestoreSavedLayout();
-                      setIsLayoutMenuOpen(false);
+                      setSaveNameDraft(lastLayoutName);
+                      setIsSaveNameOpen(true);
                     }}
-                    data-tooltip="Restore previously saved custom workstation layout"
-                    className="w-full flex items-center justify-between px-2 py-1 bg-[#161C28] hover:bg-[#1E2638] text-[#94A3B8] hover:text-[#E2E8F0] rounded text-[10px] transition-colors"
+                    data-tooltip="Save the current panel arrangement, tab order, and sizes under a name"
+                    className="w-full flex items-center justify-between px-2 py-1 bg-bf-subpanel hover:bg-bf-hover text-bf-cyan rounded text-[10px] transition-colors font-bold"
                   >
                     <div className="flex items-center gap-1.5">
-                      <Bookmark className="w-3 h-3 text-[#00E5FF]" />
-                      <span>Restore Saved Layout</span>
+                      <Save className="w-3 h-3" />
+                      <span>Save Current Layout…</span>
                     </div>
-                    <span className="text-[8.5px] text-[#64748B]">SAVED</span>
+                    <span className="text-[8.5px] text-bf-faint">CUSTOM</span>
                   </button>
+                ) : (
+                  <div className="flex items-center gap-1 bg-bf-panel border border-bf-cyan/60 rounded px-1.5 py-1">
+                    <input
+                      autoFocus
+                      value={saveNameDraft}
+                      maxLength={40}
+                      placeholder="Layout name"
+                      onChange={(e) => setSaveNameDraft(e.target.value)}
+                      onKeyDown={(e) => {
+                        if (e.key === 'Enter') submitLayoutSave();
+                        if (e.key === 'Escape') setIsSaveNameOpen(false);
+                      }}
+                      title="Name for this saved layout (Enter to save, Esc to cancel)"
+                      className="flex-1 min-w-0 bg-transparent text-bf-cyan font-mono text-[10px] placeholder-bf-faint focus:outline-none"
+                    />
+                    <button
+                      onClick={submitLayoutSave}
+                      title="Save layout"
+                      className="px-1.5 py-0.5 bg-bf-cyan text-bf-onfill font-bold text-[9px] rounded hover:bg-bf-sky shrink-0"
+                    >
+                      SAVE
+                    </button>
+                    <button
+                      onClick={() => setIsSaveNameOpen(false)}
+                      title="Cancel"
+                      className="text-bf-faint hover:text-bf-fault shrink-0"
+                    >
+                      <X className="w-3 h-3" />
+                    </button>
+                  </div>
+                )}
+
+                {savedLayoutRows.length > 0 && (
+                  <div className="max-h-40 overflow-y-auto space-y-0.5">
+                    {savedLayoutRows.map(([name, entry]) => {
+                      const isDefault = defaultLayout === name;
+                      return (
+                        <div
+                          key={name}
+                          className={`flex items-center gap-1 px-1.5 py-1 rounded transition-colors ${
+                            isDefault ? 'bg-bf-cyan/10' : 'bg-bf-subpanel hover:bg-bf-hover'
+                          }`}
+                        >
+                          <button
+                            onClick={() => {
+                              requestLoadLayout(name);
+                              setIsLayoutMenuOpen(false);
+                            }}
+                            title={`Load “${name}”`}
+                            className="flex-1 min-w-0 text-left"
+                          >
+                            <div
+                              className={`flex items-center gap-1 text-[10px] ${
+                                isDefault ? 'text-bf-cyan font-bold' : 'text-bf-body'
+                              }`}
+                            >
+                              <span className="truncate">{name}</span>
+                              {isDefault && (
+                                <span className="text-[7.5px] px-1 rounded bg-bf-cyan text-bf-onfill font-bold shrink-0">
+                                  DEFAULT
+                                </span>
+                              )}
+                            </div>
+                            <div className="text-[8px] text-bf-faint">
+                              {formatLayoutDate(entry.savedAt)} ·{' '}
+                              {Object.keys((entry.data as any)?.panels ?? {}).length} panels
+                            </div>
+                          </button>
+                          <button
+                            onClick={() => {
+                              const next = isDefault ? null : name;
+                              setDefaultLayout(next);
+                              pushToast(
+                                next ? 'success' : 'info',
+                                next ? 'Startup default set' : 'Startup default cleared',
+                                next
+                                  ? `“${name}” loads every time BaudForge starts.`
+                                  : 'Startup reverts to the last session arrangement.'
+                              );
+                            }}
+                            title={isDefault ? 'Clear startup default' : 'Load this layout on startup'}
+                            className={`p-0.5 rounded transition-colors shrink-0 ${
+                              isDefault ? 'text-bf-cyan' : 'text-bf-ghost hover:text-bf-cyan'
+                            }`}
+                          >
+                            <Star className="w-3 h-3" fill={isDefault ? 'currentColor' : 'none'} />
+                          </button>
+                          <button
+                            onClick={() => handleDeleteLayout(name)}
+                            title={deleteArm === name ? 'Click again to confirm delete' : 'Delete layout'}
+                            className={`p-0.5 rounded transition-colors shrink-0 ${
+                              deleteArm === name
+                                ? 'text-bf-fault bg-bf-fault/15'
+                                : 'text-bf-ghost hover:text-bf-fault'
+                            }`}
+                          >
+                            <Trash2 className="w-3 h-3" />
+                          </button>
+                        </div>
+                      );
+                    })}
+                  </div>
                 )}
 
                 <button
@@ -449,14 +571,14 @@ export const GlobalRibbon: React.FC = () => {
                     requestResetLayout();
                     setIsLayoutMenuOpen(false);
                   }}
-                  data-tooltip="Reset workstation layout to canonical factory default"
-                  className="w-full flex items-center justify-between px-2 py-1 bg-[#161C28] hover:bg-[#1E2638] text-[#F59E0B] rounded text-[10px] transition-colors font-bold"
+                  data-tooltip="Rebuild the canonical factory layout — your named saved layouts are kept"
+                  className="w-full flex items-center justify-between px-2 py-1 bg-bf-subpanel hover:bg-bf-hover text-bf-warn rounded text-[10px] transition-colors font-bold"
                 >
                   <div className="flex items-center gap-1.5">
                     <RotateCcw className="w-3 h-3" />
-                    <span>Set to Default Layout</span>
+                    <span>Reset to Factory Layout</span>
                   </div>
-                  <span className="text-[8.5px] text-[#F59E0B]/70">FACTORY</span>
+                  <span className="text-[8.5px] text-bf-warn/70">FACTORY</span>
                 </button>
               </div>
             </div>,
@@ -468,7 +590,7 @@ export const GlobalRibbon: React.FC = () => {
       <div className="flex items-center gap-1.5 shrink-0">
         {/* Flash-Yield Button / Countdown Banner */}
         {isYielded ? (
-          <div className="flex items-center gap-1.5 bg-[#F59E0B]/20 border border-[#F59E0B] text-[#F59E0B] px-2 py-0.5 rounded animate-pulse">
+          <div className="flex items-center gap-1.5 bg-bf-warn/20 border border-bf-warn text-bf-warn px-2 py-0.5 rounded animate-pulse">
             <Clock className="w-3 h-3" />
             <span className="font-mono font-bold text-[10px]">
               YIELD ({yieldRemainingSecs}s)
@@ -476,7 +598,7 @@ export const GlobalRibbon: React.FC = () => {
             <button
               onClick={reclaimPort}
               title="Reclaim serial handle immediately"
-              className="px-1 py-0.2 bg-[#F59E0B] text-[#0A0D13] font-bold text-[9px] rounded hover:bg-[#D97706]"
+              className="px-1 py-0.2 bg-bf-warn text-bf-onfill font-bold text-[9px] rounded hover:bg-bf-warn-hi"
             >
               RECLAIM
             </button>
@@ -485,7 +607,7 @@ export const GlobalRibbon: React.FC = () => {
           <button
             onClick={() => triggerFlashYield(30)}
             title="Surrender COM port handle for external programmer/IDE (Ctrl+Shift+Y). Does not drop session capture history."
-            className="flex items-center gap-1 px-2 py-0.5 bg-[#161C28] border border-[#F59E0B]/40 text-[#F59E0B] rounded hover:bg-[#F59E0B]/10 transition-colors"
+            className="flex items-center gap-1 px-2 py-0.5 bg-bf-subpanel border border-bf-warn/40 text-bf-warn rounded hover:bg-bf-warn/10 transition-colors"
           >
             <Zap className="w-3 h-3" />
             <span className="font-mono text-[10px] hidden md:inline">YIELD</span>
@@ -502,8 +624,8 @@ export const GlobalRibbon: React.FC = () => {
           }
           className={`flex items-center gap-1 px-2 py-0.5 rounded font-mono text-[10px] transition-all ${
             isFaultArmed
-              ? 'bg-[#EF4444] text-white font-bold animate-pulse shadow-[0_0_8px_rgba(239,68,68,0.5)]'
-              : 'bg-[#161C28] border border-[#EF4444]/50 text-[#EF4444] hover:bg-[#EF4444]/10'
+              ? 'bg-bf-fault text-white font-bold animate-pulse shadow-[0_0_8px_rgb(var(--bf-fault-rgb)/0.5)]'
+              : 'bg-bf-subpanel border border-bf-fault/50 text-bf-fault hover:bg-bf-fault/10'
           }`}
         >
           <ShieldAlert className="w-3 h-3" />
@@ -520,8 +642,8 @@ export const GlobalRibbon: React.FC = () => {
           }
           className={`flex items-center gap-1 px-2 py-0.5 rounded font-mono text-[10px] transition-colors ${
             isSimulated
-              ? 'bg-[#26324A] border border-[#00E5FF] text-[#00E5FF]'
-              : 'bg-[#161C28] border border-[#222D3D] text-[#64748B] hover:text-[#94A3B8]'
+              ? 'bg-bf-active border border-bf-cyan text-bf-cyan'
+              : 'bg-bf-subpanel border border-bf-line text-bf-faint hover:text-bf-mute'
           }`}
         >
           <Radio className="w-3 h-3" />
@@ -532,7 +654,7 @@ export const GlobalRibbon: React.FC = () => {
         <button
           onClick={loadSampleCapture}
           title="Load demonstration telemetry capture stream (50 sample frames)"
-          className="hidden xl:inline-block px-1.5 py-0.5 bg-[#161C28] hover:bg-[#1E2638] text-[#94A3B8] hover:text-[#E2E8F0] border border-[#222D3D] rounded text-[10px] font-mono"
+          className="hidden xl:inline-block px-1.5 py-0.5 bg-bf-subpanel hover:bg-bf-hover text-bf-mute hover:text-bf-body border border-bf-line rounded text-[10px] font-mono"
         >
           DEMO
         </button>
@@ -575,13 +697,13 @@ export const GlobalRibbon: React.FC = () => {
           }
           className={`flex items-center gap-1 px-2 py-0.5 rounded font-mono text-[10px] transition-colors ${
             engineRecording
-              ? 'bg-[#EF4444] text-white font-bold animate-pulse'
-              : 'bg-[#161C28] border border-[#222D3D] text-[#94A3B8] hover:text-[#E2E8F0]'
+              ? 'bg-bf-fault text-white font-bold animate-pulse'
+              : 'bg-bf-subpanel border border-bf-line text-bf-mute hover:text-bf-body'
           }`}
         >
           <div
             className={`w-1.5 h-1.5 rounded-full ${
-              engineRecording ? 'bg-white' : 'bg-[#EF4444]'
+              engineRecording ? 'bg-white' : 'bg-bf-fault'
             }`}
           />
           <span className="hidden sm:inline">
@@ -593,7 +715,7 @@ export const GlobalRibbon: React.FC = () => {
         <button
           onClick={() => setExportModalOpen(true)}
           title="Export session vault to Wireshark PCAP-NG, Saleae Logic CSV, or Streaming NDJSON"
-          className="flex items-center gap-1 px-2 py-0.5 bg-[#161C28] hover:bg-[#1E2638] text-[#00E5FF] hover:text-[#38BDF8] border border-[#00E5FF]/40 rounded font-mono text-[10px] transition-colors shadow-[0_0_8px_rgba(0,229,255,0.15)]"
+          className="flex items-center gap-1 px-2 py-0.5 bg-bf-subpanel hover:bg-bf-hover text-bf-cyan hover:text-bf-sky border border-bf-cyan/40 rounded font-mono text-[10px] transition-colors shadow-[0_0_8px_rgb(var(--bf-cyan-rgb)/0.15)]"
         >
           <Download className="w-3 h-3" />
           <span className="hidden sm:inline font-bold">EXPORT</span>
@@ -603,7 +725,7 @@ export const GlobalRibbon: React.FC = () => {
         <button
           onClick={() => useSettingsStore.getState().setSettingsOpen(true)}
           title="Application settings: appearance, performance & export defaults (Ctrl+,)"
-          className="flex items-center px-1.5 py-0.5 bg-[#161C28] hover:bg-[#1E2638] text-[#94A3B8] hover:text-[#00E5FF] border border-[#222D3D] hover:border-[#00E5FF]/40 rounded transition-colors"
+          className="flex items-center px-1.5 py-0.5 bg-bf-subpanel hover:bg-bf-hover text-bf-mute hover:text-bf-cyan border border-bf-line hover:border-bf-cyan/40 rounded transition-colors"
         >
           <Settings className="w-3 h-3" />
         </button>

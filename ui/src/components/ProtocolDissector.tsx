@@ -24,16 +24,16 @@ export const ProtocolDissector: React.FC = () => {
   const hasCrcError = selectedPacket?.hasError;
 
   return (
-    <div className="flex flex-col h-full bg-[#10141D] select-none text-[11px]">
+    <div className="flex flex-col h-full bg-bf-panel select-none text-[11px]">
       {/* Header */}
-      <div className="h-[24px] bg-[#161C28] border-b border-[#222D3D] px-2.5 flex items-center justify-between shrink-0">
+      <div className="h-[24px] bg-bf-subpanel border-b border-bf-line px-2.5 flex items-center justify-between shrink-0">
         <div className="flex items-center gap-1.5">
-          <Layers className="w-3 h-3 text-[#00E5FF]" />
-          <span className="font-mono font-semibold text-[#E2E8F0] tracking-wide text-[10.5px]">
+          <Layers className="w-3 h-3 text-bf-cyan" />
+          <span className="font-mono font-semibold text-bf-body tracking-wide text-[10.5px]">
             DISSECTOR
           </span>
           {selectedPacket && (
-            <span className="text-[9.5px] text-[#00E5FF] font-mono px-1 py-0.2 bg-[#26324A] rounded border border-[#00E5FF]/40">
+            <span className="text-[9.5px] text-bf-cyan font-mono px-1 py-0.2 bg-bf-active rounded border border-bf-cyan/40">
               {selectedPacket.protocol} ({selectedPacket.length}B)
             </span>
           )}
@@ -42,12 +42,12 @@ export const ProtocolDissector: React.FC = () => {
         {selectedPacket && (
           <div>
             {hasCrcError ? (
-              <span className="flex items-center gap-1 px-1.5 py-0.2 bg-[#EF4444]/20 border border-[#EF4444] text-[#EF4444] rounded text-[9.5px] font-mono font-bold">
+              <span className="flex items-center gap-1 px-1.5 py-0.2 bg-bf-fault/20 border border-bf-fault text-bf-fault rounded text-[9.5px] font-mono font-bold">
                 <AlertTriangle className="w-2.5 h-2.5" />
                 CRC ERROR
               </span>
             ) : (
-              <span className="flex items-center gap-1 px-1.5 py-0.2 bg-[#10B981]/20 border border-[#10B981]/60 text-[#10B981] rounded text-[9.5px] font-mono font-bold">
+              <span className="flex items-center gap-1 px-1.5 py-0.2 bg-bf-ok/20 border border-bf-ok/60 text-bf-ok rounded text-[9.5px] font-mono font-bold">
                 <CheckCircle2 className="w-2.5 h-2.5" />
                 CRC OK
               </span>
@@ -57,7 +57,7 @@ export const ProtocolDissector: React.FC = () => {
       </div>
 
       {/* Column Headers */}
-      <div className="h-[22px] bg-[#121722] border-b border-[#222D3D] grid grid-cols-[105px_60px_65px_1fr_40px] px-2 text-[9.5px] font-mono text-[#64748B] uppercase tracking-wider items-center shrink-0">
+      <div className="h-[22px] bg-bf-head border-b border-bf-line grid grid-cols-[105px_60px_65px_1fr_40px] px-2 text-[9.5px] font-mono text-bf-faint uppercase tracking-wider items-center shrink-0">
         <div>Field</div>
         <div>Type</div>
         <div>Raw Hex</div>
@@ -66,11 +66,11 @@ export const ProtocolDissector: React.FC = () => {
       </div>
 
       {/* Field Tree List */}
-      <div className="flex-1 overflow-y-auto font-mono divide-y divide-[#1A2230]/40">
+      <div className="flex-1 overflow-y-auto font-mono divide-y divide-bf-line-soft/40">
         {!selectedPacket ? (
-          <div className="h-full flex flex-col items-center justify-center text-center p-4 text-[#64748B]">
-            <Layers className="w-5 h-5 mb-1.5 text-[#64748B]" />
-            <p className="text-xs font-semibold text-[#94A3B8] mb-0.5">No Frame Selected</p>
+          <div className="h-full flex flex-col items-center justify-center text-center p-4 text-bf-faint">
+            <Layers className="w-5 h-5 mb-1.5 text-bf-faint" />
+            <p className="text-xs font-semibold text-bf-mute mb-0.5">No Frame Selected</p>
             <p className="text-[10px] max-w-xs">
               Select a packet in the packet stream to dissect its binary struct fields.
             </p>
@@ -86,43 +86,43 @@ export const ProtocolDissector: React.FC = () => {
                 onMouseLeave={() => setHoveredField(null)}
                 className={`grid grid-cols-[105px_60px_65px_1fr_40px] px-2 py-0.5 text-[11px] items-center cursor-pointer transition-colors ${
                   isSelected
-                    ? 'bg-[#26324A] text-white border-l-2 border-[#00E5FF]'
+                    ? 'bg-bf-active text-white border-l-2 border-bf-cyan'
                     : f.isMutated
-                    ? 'bg-[#EF4444]/10 text-[#FCA5A5] hover:bg-[#EF4444]/20'
-                    : 'hover:bg-[#161C28] text-[#CBD5E1]'
+                    ? 'bg-bf-fault/10 text-bf-fault-soft hover:bg-bf-fault/20'
+                    : 'hover:bg-bf-subpanel text-bf-dim'
                 }`}
               >
                 {/* Field Name */}
                 <div className="flex items-center gap-1 font-semibold truncate">
-                  <span className="text-[#00E5FF] text-[9px]">▸</span>
-                  <span className={`truncate ${isSelected ? 'text-[#00E5FF]' : 'text-[#E2E8F0]'}`}>
+                  <span className="text-bf-cyan text-[9px]">▸</span>
+                  <span className={`truncate ${isSelected ? 'text-bf-cyan' : 'text-bf-body'}`}>
                     {f.name}
                   </span>
                 </div>
 
                 {/* Type */}
-                <div className="text-[#64748B] text-[10px] truncate">{f.type}</div>
+                <div className="text-bf-faint text-[10px] truncate">{f.type}</div>
 
                 {/* Raw Hex */}
-                <div className="text-[#94A3B8] text-[10.5px] truncate">{f.rawHex}</div>
+                <div className="text-bf-mute text-[10.5px] truncate">{f.rawHex}</div>
 
                 {/* Decoded Value */}
                 <div className="flex items-center gap-2 truncate">
                   {f.isMutated && f.originalValue ? (
                     <div className="flex items-center gap-1 text-xs">
-                      <span className="line-through text-[#64748B]">{f.originalValue}</span>
-                      <span className="text-[#EF4444] font-bold">{String(f.decodedValue)}</span>
-                      <span className="text-[10px] bg-[#EF4444]/20 text-[#EF4444] px-1 rounded">
+                      <span className="line-through text-bf-faint">{f.originalValue}</span>
+                      <span className="text-bf-fault font-bold">{String(f.decodedValue)}</span>
+                      <span className="text-[10px] bg-bf-fault/20 text-bf-fault px-1 rounded">
                         MUTATED
                       </span>
                     </div>
                   ) : (
-                    <span className="text-[#E2E8F0] font-medium">{String(f.decodedValue)}</span>
+                    <span className="text-bf-body font-medium">{String(f.decodedValue)}</span>
                   )}
                 </div>
 
                 {/* Units & Quick Plot Action */}
-                <div className="flex items-center justify-between text-[#64748B] text-[11px]">
+                <div className="flex items-center justify-between text-bf-faint text-[11px]">
                   <span>{f.unit || '-'}</span>
                   {typeof f.decodedValue === 'number' && (
                     <button
@@ -136,7 +136,7 @@ export const ProtocolDissector: React.FC = () => {
                           `${f.name} now plots as a trace lane (open the Telemetry Oscilloscope).`
                         );
                       }}
-                      className="text-[#64748B] hover:text-[#00E5FF] p-0.5"
+                      className="text-bf-faint hover:text-bf-cyan p-0.5"
                     >
                       <LineChart className="w-3 h-3" />
                     </button>
@@ -150,8 +150,8 @@ export const ProtocolDissector: React.FC = () => {
 
       {/* Field Offset Callout Info Banner */}
       {activeField && (
-        <div className="h-[24px] bg-[#121722] border-t border-[#222D3D] px-3 flex items-center justify-between text-[11px] font-mono text-[#94A3B8]">
-          <span className="text-[#00E5FF]">
+        <div className="h-[24px] bg-bf-head border-t border-bf-line px-3 flex items-center justify-between text-[11px] font-mono text-bf-mute">
+          <span className="text-bf-cyan">
             Selected: <span className="font-semibold">{activeField.name}</span>
           </span>
           <span>

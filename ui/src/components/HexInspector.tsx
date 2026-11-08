@@ -72,32 +72,32 @@ export const HexInspector: React.FC = () => {
   };
 
   return (
-    <div className="flex flex-col h-full bg-[#0D111A] select-none text-[11px] overflow-hidden">
+    <div className="flex flex-col h-full bg-bf-deep select-none text-[11px] overflow-hidden">
       {/* Header */}
-      <div className="h-[24px] bg-[#161C28] border-b border-[#222D3D] px-2.5 flex items-center justify-between shrink-0">
+      <div className="h-[24px] bg-bf-subpanel border-b border-bf-line px-2.5 flex items-center justify-between shrink-0">
         <div className="flex items-center gap-1.5">
-          <Binary className="w-3 h-3 text-[#00E5FF]" />
-          <span className="font-mono font-semibold text-[#E2E8F0] tracking-wide text-[10.5px]">
+          <Binary className="w-3 h-3 text-bf-cyan" />
+          <span className="font-mono font-semibold text-bf-body tracking-wide text-[10.5px]">
             HEX INSPECTOR
           </span>
-          <span className="text-[9.5px] text-[#64748B] font-mono">
+          <span className="text-[9.5px] text-bf-faint font-mono">
             {rawBytes.length} BYTES {totalPages > 1 ? `(PG ${page + 1}/${totalPages})` : ''}
           </span>
         </div>
 
         {/* Page navigation controls if frame > 512 bytes */}
         {totalPages > 1 && (
-          <div className="flex items-center gap-1 bg-[#10141D] border border-[#222D3D] rounded px-1 py-0.2 font-mono text-[9px]">
+          <div className="flex items-center gap-1 bg-bf-panel border border-bf-line rounded px-1 py-0.2 font-mono text-[9px]">
             <button
               onClick={() => setPage((p) => Math.max(0, p - 1))}
               disabled={page === 0}
               className={`p-0.5 rounded ${
-                page === 0 ? 'text-[#64748B] cursor-not-allowed' : 'text-[#E2E8F0] hover:text-[#00E5FF]'
+                page === 0 ? 'text-bf-faint cursor-not-allowed' : 'text-bf-body hover:text-bf-cyan'
               }`}
             >
               <ChevronLeft className="w-2.5 h-2.5" />
             </button>
-            <span className="text-[#94A3B8] px-0.5">
+            <span className="text-bf-mute px-0.5">
               {pageStart}–{pageEnd}
             </span>
             <button
@@ -105,8 +105,8 @@ export const HexInspector: React.FC = () => {
               disabled={page >= totalPages - 1}
               className={`p-0.5 rounded ${
                 page >= totalPages - 1
-                  ? 'text-[#64748B] cursor-not-allowed'
-                  : 'text-[#E2E8F0] hover:text-[#00E5FF]'
+                  ? 'text-bf-faint cursor-not-allowed'
+                  : 'text-bf-body hover:text-bf-cyan'
               }`}
             >
               <ChevronRight className="w-2.5 h-2.5" />
@@ -117,9 +117,9 @@ export const HexInspector: React.FC = () => {
         {activeField && (
           <div
             data-tooltip={`Offset: 0x${activeField.offset.toString(16).padStart(2, '0').toUpperCase()}..0x${(activeField.offset + activeField.length - 1).toString(16).padStart(2, '0').toUpperCase()} | Value: ${String(activeField.decodedValue)}${activeField.unit ? ` ${activeField.unit}` : ''}`}
-            className="flex items-center gap-1.5 text-[9.5px] font-mono text-[#00E5FF] truncate cursor-help"
+            className="flex items-center gap-1.5 text-[9.5px] font-mono text-bf-cyan truncate cursor-help"
           >
-            <span className="w-1.5 h-1.5 rounded-full bg-[#00E5FF] animate-pulse" />
+            <span className="w-1.5 h-1.5 rounded-full bg-bf-cyan animate-pulse" />
             <span className="truncate">
               HL: {activeField.name} · 0x{activeField.offset.toString(16).padStart(2, '0').toUpperCase()}..0x{(activeField.offset + activeField.length - 1).toString(16).padStart(2, '0').toUpperCase()} · {String(activeField.decodedValue)}
             </span>
@@ -128,7 +128,7 @@ export const HexInspector: React.FC = () => {
       </div>
 
       {/* Hex Table Header */}
-      <div className={`h-[22px] bg-[#121722] border-b border-[#222D3D] px-2 grid ${gridCols} text-[9.5px] font-mono text-[#64748B] uppercase tracking-wider items-center shrink-0 min-w-[380px]`}>
+      <div className={`h-[22px] bg-bf-head border-b border-bf-line px-2 grid ${gridCols} text-[9.5px] font-mono text-bf-faint uppercase tracking-wider items-center shrink-0 min-w-[380px]`}>
         <div>Offset</div>
         <div className="tracking-widest">
           {headerCells.map((c, i) => (
@@ -143,11 +143,11 @@ export const HexInspector: React.FC = () => {
       </div>
 
       {/* Hex & ASCII Viewport */}
-      <div className="flex-1 overflow-auto font-mono p-2 divide-y divide-[#1A2230]/30 min-w-0">
+      <div className="flex-1 overflow-auto font-mono p-2 divide-y divide-bf-line-soft/30 min-w-0">
         {!selectedPacket ? (
-          <div className="h-full flex flex-col items-center justify-center text-center p-4 text-[#64748B]">
-            <Binary className="w-5 h-5 mb-1.5 text-[#64748B]" />
-            <p className="text-xs font-semibold text-[#94A3B8] mb-0.5">Awaiting Frame Selection</p>
+          <div className="h-full flex flex-col items-center justify-center text-center p-4 text-bf-faint">
+            <Binary className="w-5 h-5 mb-1.5 text-bf-faint" />
+            <p className="text-xs font-semibold text-bf-mute mb-0.5">Awaiting Frame Selection</p>
             <p className="text-[10px] max-w-xs">
               Raw hexadecimal bytes and ASCII characters will display here.
             </p>
@@ -156,10 +156,10 @@ export const HexInspector: React.FC = () => {
           rows.map((row) => (
             <div
               key={row.offset}
-              className={`grid ${gridCols} py-0.5 text-[11px] items-center hover:bg-[#161C28]/50 min-w-[380px]`}
+              className={`grid ${gridCols} py-0.5 text-[11px] items-center hover:bg-bf-subpanel/50 min-w-[380px]`}
             >
               {/* Offset in Hex */}
-              <div className="text-[#64748B] text-[10px]">
+              <div className="text-bf-faint text-[10px]">
                 {row.offset.toString(16).padStart(6, '0').toUpperCase()}
               </div>
 
@@ -187,8 +187,8 @@ export const HexInspector: React.FC = () => {
                       key={colIdx}
                       className={`w-5 text-center px-0.5 rounded transition-colors ${extraMargin} ${
                         highlighted
-                          ? 'bg-[#00E5FF] text-[#0A0D13] font-bold shadow-[0_0_6px_rgba(0,229,255,0.6)]'
-                          : 'text-[#CBD5E1] hover:bg-[#26324A] hover:text-white'
+                          ? 'bg-bf-cyan text-bf-onfill font-bold shadow-[0_0_6px_rgb(var(--bf-cyan-rgb)/0.6)]'
+                          : 'text-bf-dim hover:bg-bf-active hover:text-white'
                       }`}
                     >
                       {byteVal!.toString(16).padStart(2, '0').toUpperCase()}
@@ -198,14 +198,14 @@ export const HexInspector: React.FC = () => {
               </div>
 
               {/* ASCII Representation */}
-              <div className={`${hexShowAscii ? '' : 'hidden'} text-right text-[#94A3B8] tracking-widest text-[10.5px] font-mono`}>
+              <div className={`${hexShowAscii ? '' : 'hidden'} text-right text-bf-mute tracking-widest text-[10.5px] font-mono`}>
                 {row.bytes.map((b, idx) => {
                   const globalIdx = row.offset + idx;
                   const highlighted = isByteHighlighted(globalIdx);
                   return (
                     <span
                       key={idx}
-                      className={highlighted ? 'text-[#00E5FF] font-bold' : 'text-[#64748B]'}
+                      className={highlighted ? 'text-bf-cyan font-bold' : 'text-bf-faint'}
                     >
                       {toAsciiChar(b)}
                     </span>

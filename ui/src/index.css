@@ -1,22 +1,361 @@
 @import "tailwindcss";
 @import "dockview/dist/styles/dockview.css";
 
+/*
+ * BaudForge theme system.
+ *
+ * Every chrome color in the app is a semantic token. The `@theme` block is
+ * the CLASSIC "Obsidian" dark palette (the original engineering aesthetic);
+ * Tailwind v4 generates utilities from it (bg-bf-panel, text-bf-faint,
+ * border-bf-line, ...). The data-bf-theme / data-bf-mode blocks below swap
+ * the whole token set at runtime — components never hardcode hex.
+ *
+ * The --bf-*-rgb triplets back the arbitrary glow shadows
+ * (shadow-[0_0_8px_rgb(var(--bf-cyan-rgb)/0.4)]) so glows follow the theme.
+ */
+@theme {
+  /* Surfaces */
+  --color-bf-canvas: #0a0d13;
+  --color-bf-deep: #0d111a;
+  --color-bf-surface: #0e131f;
+  --color-bf-panel: #10141d;
+  --color-bf-head: #121722;
+  --color-bf-subpanel: #161c28;
+  --color-bf-hover: #1e2638;
+  --color-bf-active: #26324a;
+  --color-bf-btn: #1e293b;
+  --color-bf-btn-hi: #334155;
+  /* Lines */
+  --color-bf-line-soft: #1a2230;
+  --color-bf-line: #222d3d;
+  --color-bf-line-strong: #2d3a4e;
+  /* Text */
+  --color-bf-bright: #f8fafc;
+  --color-bf-body: #e2e8f0;
+  --color-bf-dim: #cbd5e1;
+  --color-bf-mute: #94a3b8;
+  --color-bf-faint: #64748b;
+  --color-bf-ghost: #475569;
+  /* Accents & status */
+  --color-bf-cyan: #00e5ff;
+  --color-bf-cyan-hi: #00b4d8;
+  --color-bf-sky: #38bdf8;
+  --color-bf-info: #3b82f6;
+  --color-bf-purple: #a855f7;
+  --color-bf-math: #d946ef;
+  --color-bf-ok: #10b981;
+  --color-bf-ok-hi: #059669;
+  --color-bf-warn: #f59e0b;
+  --color-bf-warn-hi: #d97706;
+  --color-bf-amber: #fbbf24;
+  --color-bf-fault: #ef4444;
+  --color-bf-fault-hi: #dc2626;
+  --color-bf-fault-soft: #fca5a5;
+  /* Text painted on saturated fills (accent/ok/fault/amber buttons). */
+  --color-bf-onfill: #0a0d13;
+}
+
 :root {
-  --bf-canvas: #0a0d13;
-  --bf-panel: #10141d;
-  --bf-subpanel: #161c28;
-  --bf-hover: #1e2638;
-  --bf-active: #26324a;
-  --bf-border-subtle: #1a2230;
-  --bf-border-strong: #2d3a4e;
-  --bf-text-primary: #e2e8f0;
-  --bf-text-secondary: #94a3b8;
-  --bf-text-muted: #64748b;
-  --bf-accent-cyan: #00e5ff;
-  --bf-accent-amber: #fbbf24;
-  --bf-status-ok: #10b981;
-  --bf-status-warn: #f59e0b;
-  --bf-status-fault: #ef4444;
+  --bf-cyan-rgb: 0 229 255;
+  --bf-fault-rgb: 239 68 68;
+  --bf-shadow-rgb: 0 0 0;
+  color-scheme: dark;
+}
+
+html[data-bf-mode="light"] {
+  color-scheme: light;
+}
+
+/* ------------------------------------------------------------------ */
+/* CLASSIC (Obsidian) — light variant: same accents, daylight surfaces */
+/* ------------------------------------------------------------------ */
+html[data-bf-theme="obsidian"][data-bf-mode="light"] {
+  --color-bf-canvas: #f3f5f9;
+  --color-bf-deep: #e9edf4;
+  --color-bf-surface: #ffffff;
+  --color-bf-panel: #f7f9fc;
+  --color-bf-head: #eef1f7;
+  --color-bf-subpanel: #eef2f8;
+  --color-bf-hover: #e2e8f2;
+  --color-bf-active: #d7e0ee;
+  --color-bf-btn: #e5eaf2;
+  --color-bf-btn-hi: #d3dcea;
+  --color-bf-line-soft: #dde4ee;
+  --color-bf-line: #c3cede;
+  --color-bf-line-strong: #9dabc2;
+  --color-bf-bright: #0b1220;
+  --color-bf-body: #1e293b;
+  --color-bf-dim: #334155;
+  --color-bf-mute: #475569;
+  --color-bf-faint: #64748b;
+  --color-bf-ghost: #94a3b8;
+  --color-bf-cyan: #0891b2;
+  --color-bf-cyan-hi: #0e7490;
+  --color-bf-sky: #0284c7;
+  --color-bf-info: #2563eb;
+  --color-bf-purple: #9333ea;
+  --color-bf-math: #c026d3;
+  --color-bf-ok: #059669;
+  --color-bf-ok-hi: #047857;
+  --color-bf-warn: #d97706;
+  --color-bf-warn-hi: #b45309;
+  --color-bf-amber: #ca8a04;
+  --color-bf-fault: #dc2626;
+  --color-bf-fault-hi: #b91c1c;
+  --color-bf-fault-soft: #ef4444;
+  --color-bf-onfill: #ffffff;
+  --bf-cyan-rgb: 8 145 178;
+  --bf-fault-rgb: 220 38 38;
+  --bf-shadow-rgb: 71 85 105;
+}
+
+/* ------------------------------------------------------------------ */
+/* MATERIAL — Material Design 3 tonal surfaces, violet primary         */
+/* ------------------------------------------------------------------ */
+html[data-bf-theme="materials"][data-bf-mode="dark"] {
+  --color-bf-canvas: #131218;
+  --color-bf-deep: #17141d;
+  --color-bf-surface: #1d1b20;
+  --color-bf-panel: #211f26;
+  --color-bf-head: #26232b;
+  --color-bf-subpanel: #2b2930;
+  --color-bf-hover: #36343b;
+  --color-bf-active: #4a4458;
+  --color-bf-btn: #36343b;
+  --color-bf-btn-hi: #48454e;
+  --color-bf-line-soft: #2b2930;
+  --color-bf-line: #36343b;
+  --color-bf-line-strong: #4a4458;
+  --color-bf-bright: #f4eff4;
+  --color-bf-body: #e6e0e9;
+  --color-bf-dim: #cac4d0;
+  --color-bf-mute: #948f99;
+  --color-bf-faint: #79747e;
+  --color-bf-ghost: #605d64;
+  --color-bf-cyan: #d0bcff;
+  --color-bf-cyan-hi: #baa5f5;
+  --color-bf-sky: #9ec9ff;
+  --color-bf-info: #a8c7fa;
+  --color-bf-purple: #e2b8ff;
+  --color-bf-math: #efb8c8;
+  --color-bf-ok: #6dd58c;
+  --color-bf-ok-hi: #57c979;
+  --color-bf-warn: #ffb871;
+  --color-bf-warn-hi: #f79e4a;
+  --color-bf-amber: #f2c14e;
+  --color-bf-fault: #f2b8b5;
+  --color-bf-fault-hi: #ffb4ab;
+  --color-bf-fault-soft: #ffdad6;
+  --color-bf-onfill: #2e2145;
+  --bf-cyan-rgb: 208 188 255;
+  --bf-fault-rgb: 242 184 181;
+  --bf-shadow-rgb: 0 0 0;
+}
+
+html[data-bf-theme="materials"][data-bf-mode="light"] {
+  --color-bf-canvas: #f5eff8;
+  --color-bf-deep: #eee5f1;
+  --color-bf-surface: #ffffff;
+  --color-bf-panel: #faf5fd;
+  --color-bf-head: #f0e9f4;
+  --color-bf-subpanel: #ece6f0;
+  --color-bf-hover: #e5dfe9;
+  --color-bf-active: #d9d0e0;
+  --color-bf-btn: #e8e2ec;
+  --color-bf-btn-hi: #d9d0e0;
+  --color-bf-line-soft: #e0d8e6;
+  --color-bf-line: #cbc3d2;
+  --color-bf-line-strong: #a9a0b2;
+  --color-bf-bright: #1b1a1f;
+  --color-bf-body: #1d1b20;
+  --color-bf-dim: #44424a;
+  --color-bf-mute: #5b5863;
+  --color-bf-faint: #6f6a78;
+  --color-bf-ghost: #938f99;
+  --color-bf-cyan: #6750a4;
+  --color-bf-cyan-hi: #5a4691;
+  --color-bf-sky: #7f67be;
+  --color-bf-info: #4557b8;
+  --color-bf-purple: #8250b8;
+  --color-bf-math: #a6338f;
+  --color-bf-ok: #188651;
+  --color-bf-ok-hi: #146c43;
+  --color-bf-warn: #b06000;
+  --color-bf-warn-hi: #8f4e00;
+  --color-bf-amber: #b08c00;
+  --color-bf-fault: #b3261e;
+  --color-bf-fault-hi: #8f1e18;
+  --color-bf-fault-soft: #c0392f;
+  --color-bf-onfill: #ffffff;
+  --bf-cyan-rgb: 103 80 164;
+  --bf-fault-rgb: 179 38 30;
+  --bf-shadow-rgb: 80 63 111;
+}
+
+/* ------------------------------------------------------------------ */
+/* SKEUOMORPH — textured leather & brushed metal, glossy candy fills   */
+/* ------------------------------------------------------------------ */
+html[data-bf-theme="skeuomorph"][data-bf-mode="dark"] {
+  --color-bf-canvas: #232120;
+  --color-bf-deep: #1b1a19;
+  --color-bf-surface: #2a2826;
+  --color-bf-panel: #262422;
+  --color-bf-head: #2e2b29;
+  --color-bf-subpanel: #33302d;
+  --color-bf-hover: #3b3733;
+  --color-bf-active: #4a453f;
+  --color-bf-btn: #3a3631;
+  --color-bf-btn-hi: #4b463f;
+  --color-bf-line-soft: #332f2c;
+  --color-bf-line: #453f39;
+  --color-bf-line-strong: #5c554c;
+  --color-bf-bright: #f5efe4;
+  --color-bf-body: #e8e0d0;
+  --color-bf-dim: #cfc5b0;
+  --color-bf-mute: #a89e8a;
+  --color-bf-faint: #857c6a;
+  --color-bf-ghost: #655e50;
+  --color-bf-cyan: #d9a441;
+  --color-bf-cyan-hi: #b9862f;
+  --color-bf-sky: #7fa8c9;
+  --color-bf-info: #6b9bc3;
+  --color-bf-purple: #9d7bb8;
+  --color-bf-math: #c478a8;
+  --color-bf-ok: #6fa357;
+  --color-bf-ok-hi: #588a42;
+  --color-bf-warn: #cf8a3b;
+  --color-bf-warn-hi: #b06f28;
+  --color-bf-amber: #e0b45c;
+  --color-bf-fault: #c05046;
+  --color-bf-fault-hi: #a03b32;
+  --color-bf-fault-soft: #e08a80;
+  --color-bf-onfill: #1b1a19;
+  --bf-cyan-rgb: 217 164 65;
+  --bf-fault-rgb: 192 80 70;
+  --bf-shadow-rgb: 0 0 0;
+}
+
+html[data-bf-theme="skeuomorph"][data-bf-mode="light"] {
+  --color-bf-canvas: #d8d3c8;
+  --color-bf-deep: #cbc5b8;
+  --color-bf-surface: #f4f1ea;
+  --color-bf-panel: #eeeae0;
+  --color-bf-head: #e2ddd1;
+  --color-bf-subpanel: #e6e1d5;
+  --color-bf-hover: #dcd6c8;
+  --color-bf-active: #cdc6b5;
+  --color-bf-btn: #e3ded2;
+  --color-bf-btn-hi: #d3ccbc;
+  --color-bf-line-soft: #cfc8b9;
+  --color-bf-line: #b5ad9b;
+  --color-bf-line-strong: #948c79;
+  --color-bf-bright: #2b2620;
+  --color-bf-body: #3a332a;
+  --color-bf-dim: #4f473b;
+  --color-bf-mute: #6b6252;
+  --color-bf-faint: #857b67;
+  --color-bf-ghost: #a39a86;
+  --color-bf-cyan: #3f6fa5;
+  --color-bf-cyan-hi: #345d8b;
+  --color-bf-sky: #5b87ad;
+  --color-bf-info: #4a6d94;
+  --color-bf-purple: #7a5a99;
+  --color-bf-math: #a85a8c;
+  --color-bf-ok: #4e7d3a;
+  --color-bf-ok-hi: #3f6a2e;
+  --color-bf-warn: #b3742c;
+  --color-bf-warn-hi: #95591c;
+  --color-bf-amber: #c29135;
+  --color-bf-fault: #b23c30;
+  --color-bf-fault-hi: #942f26;
+  --color-bf-fault-soft: #c96a5c;
+  --color-bf-onfill: #ffffff;
+  --bf-cyan-rgb: 63 111 165;
+  --bf-fault-rgb: 178 60 48;
+  --bf-shadow-rgb: 60 55 45;
+}
+
+/* ------------------------------------------------------------------ */
+/* SOFT — neumorphism: extruded same-hue surfaces, pastel accents      */
+/* ------------------------------------------------------------------ */
+html[data-bf-theme="soft"][data-bf-mode="dark"] {
+  --color-bf-canvas: #23262e;
+  --color-bf-deep: #1e2129;
+  --color-bf-surface: #262a33;
+  --color-bf-panel: #252932;
+  --color-bf-head: #2a2e38;
+  --color-bf-subpanel: #2c3039;
+  --color-bf-hover: #333845;
+  --color-bf-active: #3b4150;
+  --color-bf-btn: #2b303a;
+  --color-bf-btn-hi: #38404d;
+  --color-bf-line-soft: #2e333d;
+  --color-bf-line: #383e4a;
+  --color-bf-line-strong: #4a5263;
+  --color-bf-bright: #eef1f8;
+  --color-bf-body: #dde2ee;
+  --color-bf-dim: #b9c1d4;
+  --color-bf-mute: #8d96ad;
+  --color-bf-faint: #6f7890;
+  --color-bf-ghost: #545d73;
+  --color-bf-cyan: #8b9cf5;
+  --color-bf-cyan-hi: #7486e8;
+  --color-bf-sky: #7fb3e8;
+  --color-bf-info: #7aa7e8;
+  --color-bf-purple: #a78bdb;
+  --color-bf-math: #c78bdc;
+  --color-bf-ok: #7fc9a6;
+  --color-bf-ok-hi: #63b48d;
+  --color-bf-warn: #e0a96d;
+  --color-bf-warn-hi: #cc9052;
+  --color-bf-amber: #e3bc74;
+  --color-bf-fault: #e08585;
+  --color-bf-fault-hi: #cc6a6a;
+  --color-bf-fault-soft: #eba7a7;
+  --color-bf-onfill: #23262e;
+  --bf-cyan-rgb: 139 156 245;
+  --bf-fault-rgb: 224 133 133;
+  --bf-shadow-rgb: 0 0 0;
+}
+
+html[data-bf-theme="soft"][data-bf-mode="light"] {
+  --color-bf-canvas: #e3e8f0;
+  --color-bf-deep: #d8deea;
+  --color-bf-surface: #eceff6;
+  --color-bf-panel: #e9edf5;
+  --color-bf-head: #dfe4ee;
+  --color-bf-subpanel: #e2e7f0;
+  --color-bf-hover: #d9dfec;
+  --color-bf-active: #c9d2e4;
+  --color-bf-btn: #e4e9f2;
+  --color-bf-btn-hi: #d3daea;
+  --color-bf-line-soft: #d5dbe8;
+  --color-bf-line: #bcc5d8;
+  --color-bf-line-strong: #97a3bc;
+  --color-bf-bright: #1f2430;
+  --color-bf-body: #2d3444;
+  --color-bf-dim: #454e63;
+  --color-bf-mute: #5f6a84;
+  --color-bf-faint: #76819c;
+  --color-bf-ghost: #98a2ba;
+  --color-bf-cyan: #6a79e8;
+  --color-bf-cyan-hi: #5563d4;
+  --color-bf-sky: #5f93c9;
+  --color-bf-info: #5a7fc4;
+  --color-bf-purple: #8d6fd0;
+  --color-bf-math: #b06cc4;
+  --color-bf-ok: #4d9d78;
+  --color-bf-ok-hi: #3f8a67;
+  --color-bf-warn: #c98a4b;
+  --color-bf-warn-hi: #b07234;
+  --color-bf-amber: #cfa254;
+  --color-bf-fault: #c96a6a;
+  --color-bf-fault-hi: #b25252;
+  --color-bf-fault-soft: #d68f8f;
+  --color-bf-onfill: #ffffff;
+  --bf-cyan-rgb: 106 121 232;
+  --bf-fault-rgb: 201 106 106;
+  --bf-shadow-rgb: 100 110 135;
 }
 
 html {
@@ -31,7 +370,6 @@ body {
   width: 100%;
   overflow: hidden;
   font-family: 'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
-  color-scheme: dark;
   -webkit-font-smoothing: antialiased;
 }
 
@@ -40,30 +378,30 @@ body {
   font-variant-numeric: tabular-nums;
 }
 
-/* Custom styling for Dockview to match BaudForge dark engineering aesthetic */
+/* Custom styling for Dockview to match the active BaudForge theme */
 .dockview-theme-dark.dockview-theme-baudforge,
 .dockview-theme-baudforge {
-  --dv-background-color: #0a0d13;
-  --dv-group-view-background-color: #0d111a;
-  --dv-tabs-and-actions-container-background-color: #121722;
-  --dv-activegroup-visiblepanel-tab-background-color: #10141d;
-  --dv-activegroup-hiddenpanel-tab-background-color: #161c28;
-  --dv-inactivegroup-visiblepanel-tab-background-color: #10141d;
-  --dv-inactivegroup-hiddenpanel-tab-background-color: #161c28;
-  --dv-activegroup-visiblepanel-tab-color: #00e5ff;
-  --dv-activegroup-hiddenpanel-tab-color: #94a3b8;
-  --dv-inactivegroup-visiblepanel-tab-color: #e2e8f0;
-  --dv-inactivegroup-hiddenpanel-tab-color: #64748b;
-  --dv-tab-divider-color: #1a2230;
-  --dv-separator-border: #222d3d;
-  --dv-sash-color: #222d3d;
-  --dv-sash-hover-color: #00e5ff;
+  --dv-background-color: var(--color-bf-canvas);
+  --dv-group-view-background-color: var(--color-bf-deep);
+  --dv-tabs-and-actions-container-background-color: var(--color-bf-head);
+  --dv-activegroup-visiblepanel-tab-background-color: var(--color-bf-panel);
+  --dv-activegroup-hiddenpanel-tab-background-color: var(--color-bf-subpanel);
+  --dv-inactivegroup-visiblepanel-tab-background-color: var(--color-bf-panel);
+  --dv-inactivegroup-hiddenpanel-tab-background-color: var(--color-bf-subpanel);
+  --dv-activegroup-visiblepanel-tab-color: var(--color-bf-cyan);
+  --dv-activegroup-hiddenpanel-tab-color: var(--color-bf-mute);
+  --dv-inactivegroup-visiblepanel-tab-color: var(--color-bf-body);
+  --dv-inactivegroup-hiddenpanel-tab-color: var(--color-bf-faint);
+  --dv-tab-divider-color: var(--color-bf-line-soft);
+  --dv-separator-border: var(--color-bf-line);
+  --dv-sash-color: var(--color-bf-line);
+  --dv-sash-hover-color: var(--color-bf-cyan);
   --dv-sash-size: 4px;
-  --dv-drag-over-background-color: rgba(0, 229, 255, 0.15);
-  --dv-drag-over-border: 1px dashed #00e5ff;
-  --dv-drag-over-border-color: #00e5ff;
-  --dv-dnd-compass-color: #00e5ff;
-  --dv-dnd-compass-active-cell-color: #00e5ff;
+  --dv-drag-over-background-color: rgb(var(--bf-cyan-rgb) / 0.15);
+  --dv-drag-over-border: 1px dashed var(--color-bf-cyan);
+  --dv-drag-over-border-color: var(--color-bf-cyan);
+  --dv-dnd-compass-color: var(--color-bf-cyan);
+  --dv-dnd-compass-active-cell-color: var(--color-bf-cyan);
   --dv-tabs-and-actions-container-height: 24px;
 }
 
@@ -76,7 +414,7 @@ body {
   text-transform: uppercase;
   height: 24px;
   line-height: 24px;
-  border-right: 1px solid #1a2230;
+  border-right: 1px solid var(--color-bf-line-soft);
   cursor: grab;
 }
 
@@ -87,8 +425,8 @@ body {
 
 .dockview-theme-baudforge .dockview-tab.active-tab,
 .dockview-theme-dark .dockview-tab.active-tab {
-  border-top: 2px solid #00e5ff;
-  color: #00e5ff !important;
+  border-top: 2px solid var(--color-bf-cyan);
+  color: var(--color-bf-cyan) !important;
 }
 
 /* Floating Group Window Styling in Dockview */
@@ -100,16 +438,16 @@ body {
 
 .dv-floating-overlay-host > .dv-resize-container {
   pointer-events: auto !important;
-  border: 1px solid #00e5ff !important;
+  border: 1px solid var(--color-bf-cyan) !important;
   border-radius: 6px !important;
-  box-shadow: 0 16px 48px rgba(0, 0, 0, 0.9) !important;
-  background-color: #10141d !important;
+  box-shadow: 0 16px 48px rgb(var(--bf-shadow-rgb) / 0.9) !important;
+  background-color: var(--color-bf-panel) !important;
   overflow: hidden;
 }
 
 .dv-floating-titlebar {
-  background-color: #161c28 !important;
-  border-bottom: 1px solid #222d3d !important;
+  background-color: var(--color-bf-subpanel) !important;
+  border-bottom: 1px solid var(--color-bf-line) !important;
   height: 24px !important;
 }
 
@@ -117,9 +455,9 @@ body {
 .bf-tooltip {
   position: fixed;
   z-index: 100000;
-  background-color: #0e131f;
-  color: #e2e8f0;
-  border: 1px solid #2d3a4e;
+  background-color: var(--color-bf-surface);
+  color: var(--color-bf-body);
+  border: 1px solid var(--color-bf-line-strong);
   border-radius: 4px;
   padding: 3px 6px;
   font-family: 'JetBrains Mono', monospace;
@@ -127,7 +465,7 @@ body {
   line-height: 1.25;
   white-space: nowrap;
   pointer-events: none;
-  box-shadow: 0 4px 16px rgba(0, 0, 0, 0.7);
+  box-shadow: 0 4px 16px rgb(var(--bf-shadow-rgb) / 0.7);
   animation: bf-tooltip-fade 80ms ease-out;
 }
 
@@ -148,12 +486,12 @@ body {
   height: 4px;
 }
 ::-webkit-scrollbar-track {
-  background: #0a0d13;
+  background: var(--color-bf-canvas);
 }
 ::-webkit-scrollbar-thumb {
-  background: #222d3d;
+  background: var(--color-bf-line);
   border-radius: 2px;
 }
 ::-webkit-scrollbar-thumb:hover {
-  background: #3a4b66;
+  background: var(--color-bf-line-strong);
 }
