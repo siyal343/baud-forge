@@ -452,6 +452,8 @@ export const PlotForgeView: React.FC = () => {
   const hoverRef = useRef<{ x: number; y: number } | null>(null);
   const interRef = useRef<InteractionState>({ drag: null, startX: 0, panWin: null, boxUs: null });
   const cursorOverrideRef = useRef<{ x1Us: number | null; x2Us: number | null } | null>(null);
+  /** Cursor positions as fractions of the window while LIVE (see painter). */
+  const cursorFracRef = useRef<{ f1: number; f2: number } | null>(null);
   const [, setStatsTick] = useState(0);
   const [addMenuOpen, setAddMenuOpen] = useState(false);
   const [catalogVersion, setCatalogVersion] = useState(0);
@@ -574,14 +576,14 @@ export const PlotForgeView: React.FC = () => {
     ctx.textAlign = 'right';
     ctx.textBaseline = 'middle';
     ctx.fillStyle = pal.textDim;
-    for (let r = 0; r <= 8; r += 2) {
+    for (let r = 2; r <= 6; r += 2) {
       const v = y1.max - ((y1.max - y1.min) * r) / 8;
       ctx.fillText(fmtValue(v), mg.l - 4, mg.t + (plotH * r) / 8);
     }
     if (hasY2) {
       ctx.textAlign = 'left';
       ctx.fillStyle = pal.textDim;
-      for (let r = 0; r <= 8; r += 2) {
+      for (let r = 2; r <= 6; r += 2) {
         const v = y2.max - ((y2.max - y2.min) * r) / 8;
         ctx.fillText(fmtValue(v), mg.l + plotW + 4, mg.t + (plotH * r) / 8);
       }
@@ -628,34 +630,57 @@ export const PlotForgeView: React.FC = () => {
       ctx.setLineDash([]);
     }
 
-    // X cursors (store positions, or the in-drag override).
+    // X cursors — in LIVE mode they ride the window at their set fractions
+    // (absolute µs would drift off-screen as the head advances); frozen mode
+    // uses the committed absolute positions. Fractions self-heal on mount:
+    // persisted positions may predate the current live window.
     const cEff = cursorOverrideRef.current ?? cursorPair ?? { x1Us: null, x2Us: null };
+    if (chart.live && cursorsOn && win && !cursorFracRef.current) {
+      const span0 = win.tMaxUs - win.tMinUs;
+      const fracOf = (t: number | null, fb: number) =>
+        t === null ? fb : Math.min(1, Math.max(0, (t - win.tMinUs) / span0));
+      cursorFracRef.current = { f1: fracOf(cEff.x1Us, 0.3), f2: fracOf(cEff.x2Us, 0.7) };
+    }
+    let e1 = cEff.x1Us;
+    let e2 = cEff.x2Us;
+    if (chart.live && cursorFracRef.current && win) {
+      const span = win.tMaxUs - win.tMinUs;
+      e1 = win.tMinUs + cursorFracRef.current.f1 * span;
+      e2 = win.tMinUs + cursorFracRef.current.f2 * span;
+    }
     const cursorXs: Array<{ x: number; label: string }> = [];
     if (cursorsOn) {
       ctx.font = 'bold 9px "JetBrains Mono", monospace';
       for (const [which, tUs] of [
-        ['X1', cEff.x1Us],
-        ['X2', cEff.x2Us],
+        ['X1', e1],
+        ['X2', e2],
       ] as const) {
         if (tUs === null) continue;
         const x = xOf(tUs);
         if (x < mg.l - 1 || x > mg.l + plotW + 1) continue;
         ctx.strokeStyle = pal.cursor;
-        ctx.lineWidth = 1;
-        ctx.setLineDash([4, 3]);
+        ctx.lineWidth = 1.5;
+        ctx.setLineDash([5, 3]);
         ctx.beginPath();
         ctx.moveTo(Math.round(x) + 0.5, mg.t);
         ctx.lineTo(Math.round(x) + 0.5, mg.t + plotH);
         ctx.stroke();
         ctx.setLineDash([]);
+        // Grab handle: small filled triangle at the top edge.
         ctx.fillStyle = pal.cursor;
+        ctx.beginPath();
+        ctx.moveTo(x - 4, mg.t);
+        ctx.lineTo(x + 4, mg.t);
+        ctx.lineTo(x, mg.t + 5);
+        ctx.closePath();
+        ctx.fill();
         ctx.textAlign = 'left';
         ctx.textBaseline = 'top';
-        ctx.fillText(which, x + 3, mg.t + 2);
+        ctx.fillText(which, x + 3, mg.t + 6);
         cursorXs.push({ x, label: which });
       }
-      if (cEff.x1Us !== null && cEff.x2Us !== null) {
-        const dtUs = Math.abs(cEff.x2Us - cEff.x1Us);
+      if (e1 !== null && e2 !== null) {
+        const dtUs = Math.abs(e2 - e1);
         ctx.fillStyle = 'rgba(10, 13, 19, 0.85)';
         const label = `Δt ${fmtTimeUs(dtUs)}  ·  ${dtUs > 0 ? fmtValue(1e6 / dtUs) : '—'} Hz`;
         ctx.font = 'bold 9px "JetBrains Mono", monospace';
@@ -795,20 +820,33 @@ export const PlotForgeView: React.FC = () => {
       }
     };
 
+    const effCursorUs = (): { x1Us: number | null; x2Us: number | null } => {
+      const c = cursorOverrideRef.current ?? cursorPair ?? { x1Us: null, x2Us: null };
+      const win = resolveWindow(chart);
+      if (chart.live && cursorFracRef.current && win) {
+        const span = win.tMaxUs - win.tMinUs;
+        return {
+          x1Us: c.x1Us === null ? null : win.tMinUs + cursorFracRef.current.f1 * span,
+          x2Us: c.x2Us === null ? null : win.tMinUs + cursorFracRef.current.f2 * span,
+        };
+      }
+      return c;
+    };
+
     const hitCursor = (x: number): 'c1' | 'c2' | null => {
       if (!cursorsOn) return null;
       const { mg, plotW } = geom();
       const win = resolveWindow(chart);
       if (!win) return null;
       const tSpan = win.tMaxUs - win.tMinUs;
-      const cEff = cursorOverrideRef.current ?? cursorPair ?? { x1Us: null, x2Us: null };
+      const cEff = effCursorUs();
       for (const [which, tUs] of [
         ['c2', cEff.x2Us],
         ['c1', cEff.x1Us],
       ] as const) {
         if (tUs === null) continue;
         const cx = mg.l + ((tUs - win.tMinUs) / tSpan) * plotW;
-        if (Math.abs(x - cx) <= 6) return which;
+        if (Math.abs(x - cx) <= 8) return which;
       }
       return null;
     };
@@ -826,6 +864,14 @@ export const PlotForgeView: React.FC = () => {
       if (cursorHit) {
         interRef.current = { drag: cursorHit, startX: x, panWin: null, boxUs: null };
         cursorOverrideRef.current = { ...(cursorPair ?? { x1Us: null, x2Us: null }) };
+        // Seed fractions from the current effective positions so LIVE drags
+        // re-anchor cleanly even if the window advanced since the last set.
+        const eff = effCursorUs();
+        const span = win.tMaxUs - win.tMinUs;
+        cursorFracRef.current = {
+          f1: eff.x1Us === null ? 0.3 : Math.min(1, Math.max(0, (eff.x1Us - win.tMinUs) / span)),
+          f2: eff.x2Us === null ? 0.7 : Math.min(1, Math.max(0, (eff.x2Us - win.tMinUs) / span)),
+        };
         return;
       }
       if (e.shiftKey) {
@@ -853,8 +899,12 @@ export const PlotForgeView: React.FC = () => {
         it.boxUs.t1 = tAt;
       } else if (it.drag === 'c1' || it.drag === 'c2') {
         const t = Math.min(win.tMaxUs, Math.max(win.tMinUs, tAt));
+        const frac = (t - win.tMinUs) / (win.tMaxUs - win.tMinUs);
         if (cursorOverrideRef.current) {
           cursorOverrideRef.current[it.drag === 'c1' ? 'x1Us' : 'x2Us'] = t;
+        }
+        if (cursorFracRef.current) {
+          cursorFracRef.current[it.drag === 'c1' ? 'f1' : 'f2'] = frac;
         }
       }
       paint();
@@ -865,6 +915,13 @@ export const PlotForgeView: React.FC = () => {
       const win = resolveWindow(chart);
       if (it.drag === 'pan' && it.panWin && win) {
         store.freezeView(chart.id, it.panWin.tMinUs, it.panWin.tMaxUs);
+        // Re-anchor parked cursors into the newly frozen window so they stay
+        // visible instead of drifting outside their old absolute positions.
+        if (cursorsOn && cursorFracRef.current) {
+          const span = it.panWin.tMaxUs - it.panWin.tMinUs;
+          store.setCursorX(chart.id, 'x1', it.panWin.tMinUs + cursorFracRef.current.f1 * span);
+          store.setCursorX(chart.id, 'x2', it.panWin.tMinUs + cursorFracRef.current.f2 * span);
+        }
       } else if (it.drag === 'box' && it.boxUs && win) {
         const tSpan = win.tMaxUs - win.tMinUs;
         const lo = Math.min(it.boxUs.t0, it.boxUs.t1);
@@ -906,8 +963,11 @@ export const PlotForgeView: React.FC = () => {
 
   const catalog = useMemo(() => {
     void catalogVersion;
+    // Recompute when the menu opens — the memo's mount-time snapshot can
+    // predate the first ingested packets, showing a phantom "none seen yet".
+    void addMenuOpen;
     return plotEngine.catalogList();
-  }, [catalogVersion]);
+  }, [catalogVersion, addMenuOpen]);
 
   const metaEntries: Array<{ label: string; metric: 'length' | 'delta' | 'rate'; unit: string }> = [
     { label: 'Frame length', metric: 'length', unit: 'B' },
@@ -938,10 +998,12 @@ export const PlotForgeView: React.FC = () => {
     if (cursorsOn) {
       store.setCursorX(chart.id, 'x1', null);
       store.setCursorX(chart.id, 'x2', null);
+      cursorFracRef.current = null;
     } else {
       const win = resolveWindow(chart);
       if (!win) return;
       const span = win.tMaxUs - win.tMinUs;
+      cursorFracRef.current = { f1: 0.3, f2: 0.7 };
       store.setCursorX(chart.id, 'x1', win.tMinUs + span * 0.3);
       store.setCursorX(chart.id, 'x2', win.tMinUs + span * 0.7);
     }
