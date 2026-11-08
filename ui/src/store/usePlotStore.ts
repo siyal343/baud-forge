@@ -465,3 +465,8 @@ export const usePlotStore = create<PlotState>((set, get) => {
     },
   };
 });
+
+// Smoke-test handle (mirrors __bforgeStore in useWorkstationStore).
+if (typeof window !== 'undefined') {
+  (window as unknown as Record<string, unknown>).__bforgePlotStore = usePlotStore;
+}

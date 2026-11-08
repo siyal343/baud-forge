@@ -855,6 +855,53 @@ try {
     await page.mouse.click(5, 800);
     await sleep(200);
   }
+
+  // T14: Plot Forge — panel opens, live channels fill from the sim stream and
+  // the canvas paints. Channels are added through the plot store (the same
+  // path the ADD CHANNEL menu drives); the painter itself is covered by the
+  // engine/decimation unit tests, here we assert real plotted data.
+  {
+    await page.evaluate(() => window.__bforgeStore.getState().requestOpenPanel('plotForge'));
+    await sleep(800);
+    const opened = await page.evaluate(() => {
+      const tab = [...document.querySelectorAll('[role="tab"]')].find((x) =>
+        x.textContent.includes('PLOT FORGE')
+      );
+      return !!tab;
+    });
+
+    const addOk = await page.evaluate(() => {
+      const s = window.__bforgePlotStore?.getState();
+      if (!s) return 'no store handle';
+      const chartId = s.charts[0].id;
+      const a = s.addChannel(chartId, { kind: 'field', name: 'v_batt_mv' }, { label: 'v_batt_mv', unit: 'V' });
+      const b = s.addChannel(chartId, { kind: 'meta', metric: 'rate' }, { label: 'rate' });
+      return a && b ? 'ok' : 'add-failed';
+    });
+    await sleep(2500); // the 20 Hz sim stream fills the rings
+
+    const plot = await page.evaluate(() => {
+      const s = window.__bforgePlotStore?.getState();
+      const engine = window.__bforgePlotEngine;
+      if (!s || !engine) return { data: false };
+      const chs = s.charts[0].channels;
+      const data =
+        chs.length >= 2 && chs.every((c) => engine.getTail(c.id, 10).v.length > 0);
+      // The inactive scope tab unmounts its canvas, so any large canvas is ours.
+      const canvas = [...document.querySelectorAll('canvas')].some((c) => c.width > 50 && c.height > 50);
+      const chip = [...document.querySelectorAll('button')].some((b) => b.textContent.includes('v_batt_mv'));
+      return { data, canvas, chip, n: chs.length };
+    });
+
+    check(
+      'Plot Forge opens, channels fill live and the canvas paints',
+      opened && addOk === 'ok' && plot.data && plot.canvas && plot.chip,
+      `opened=${opened} add=${addOk} data=${plot.data} canvas=${plot.canvas} chip=${plot.chip} chs=${plot.n}`
+    );
+
+    // Hygiene: leave a clean plot config for anything that runs later.
+    await page.evaluate(() => window.__bforgePlotStore?.getState().resetPanel());
+  }
 } finally {
   await browser.close();
 }

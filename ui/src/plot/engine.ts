@@ -448,3 +448,8 @@ export class PlotEngine {
 }
 
 export const plotEngine = new PlotEngine();
+
+// Smoke-test handle (mirrors __bforgeStore in useWorkstationStore).
+if (typeof window !== 'undefined') {
+  (window as unknown as Record<string, unknown>).__bforgePlotEngine = plotEngine;
+}
