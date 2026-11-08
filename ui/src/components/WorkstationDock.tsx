@@ -23,6 +23,7 @@ import { FileTransferView } from './FileTransferView';
 import { ElfSymbolView } from './ElfSymbolView';
 import { SchemaDialectView } from './SchemaDialectView';
 import { ActivityLogView } from './ActivityLogView';
+import { PlotForgeView } from './PlotForgeView';
 
 const StreamPanel = (_props: IDockviewPanelProps) => <PacketStreamView />;
 const DissectorPanel = (_props: IDockviewPanelProps) => <ProtocolDissector />;
@@ -37,12 +38,14 @@ const ElfPanel = (_props: IDockviewPanelProps) => <ElfSymbolView />;
 const SchemaPanel = (_props: IDockviewPanelProps) => <SchemaDialectView />;
 const BridgeMitmPanel = (_props: IDockviewPanelProps) => <BridgePanel />;
 const ActivityPanel = (_props: IDockviewPanelProps) => <ActivityLogView />;
+const PlotPanel = (_props: IDockviewPanelProps) => <PlotForgeView />;
 
 const components = {
   packetStream: StreamPanel,
   protocolDissector: DissectorPanel,
   hexInspector: HexPanel,
   oscilloscope: ScopePanel,
+  plotForge: PlotPanel,
   commandForge: CommandPanel,
   sessionDiff: DiffPanel,
   pinSequencer: PinsPanel,
@@ -66,12 +69,13 @@ const detachedOrigins = new Map<string, DetachedOrigin>();
 
 const CANONICAL_DECK_ORDERS: Record<string, string[]> = {
   // Bottom Subdeck
-  oscilloscope: ['oscilloscope', 'commandForge', 'pinSequencer', 'faultRig', 'fileTransfer', 'activityLog'],
-  commandForge: ['oscilloscope', 'commandForge', 'pinSequencer', 'faultRig', 'fileTransfer', 'activityLog'],
-  pinSequencer: ['oscilloscope', 'commandForge', 'pinSequencer', 'faultRig', 'fileTransfer', 'activityLog'],
-  faultRig: ['oscilloscope', 'commandForge', 'pinSequencer', 'faultRig', 'fileTransfer', 'activityLog'],
-  fileTransfer: ['oscilloscope', 'commandForge', 'pinSequencer', 'faultRig', 'fileTransfer', 'activityLog'],
-  activityLog: ['oscilloscope', 'commandForge', 'pinSequencer', 'faultRig', 'fileTransfer', 'activityLog'],
+  oscilloscope: ['oscilloscope', 'plotForge', 'commandForge', 'pinSequencer', 'faultRig', 'fileTransfer', 'activityLog'],
+  plotForge: ['oscilloscope', 'plotForge', 'commandForge', 'pinSequencer', 'faultRig', 'fileTransfer', 'activityLog'],
+  commandForge: ['oscilloscope', 'plotForge', 'commandForge', 'pinSequencer', 'faultRig', 'fileTransfer', 'activityLog'],
+  pinSequencer: ['oscilloscope', 'plotForge', 'commandForge', 'pinSequencer', 'faultRig', 'fileTransfer', 'activityLog'],
+  faultRig: ['oscilloscope', 'plotForge', 'commandForge', 'pinSequencer', 'faultRig', 'fileTransfer', 'activityLog'],
+  fileTransfer: ['oscilloscope', 'plotForge', 'commandForge', 'pinSequencer', 'faultRig', 'fileTransfer', 'activityLog'],
+  activityLog: ['oscilloscope', 'plotForge', 'commandForge', 'pinSequencer', 'faultRig', 'fileTransfer', 'activityLog'],
 
   // Top-Right Dissector Deck
   protocolDissector: ['protocolDissector', 'elfSymbols', 'schemaDialects'],
@@ -135,6 +139,7 @@ const PANEL_ORIGIN_HOMES: Record<
 
   // Bottom-Left (Subdeck)
   oscilloscope: { refPanel: 'packetStream', position: 'bottom' },
+  plotForge: { refPanel: 'oscilloscope', position: 'center' },
   commandForge: { refPanel: 'oscilloscope', position: 'center' },
   pinSequencer: { refPanel: 'oscilloscope', position: 'center' },
   faultRig: { refPanel: 'oscilloscope', position: 'center' },
@@ -183,6 +188,7 @@ function findPreferredTarget(
     { refPanel: string; position: 'center' | 'bottom' | 'right' | 'left' | 'top' }
   > = {
     commandForge: { refPanel: 'packetStream', position: 'bottom' },
+    plotForge: { refPanel: 'packetStream', position: 'bottom' },
     pinSequencer: { refPanel: 'packetStream', position: 'bottom' },
     faultRig: { refPanel: 'packetStream', position: 'bottom' },
     fileTransfer: { refPanel: 'packetStream', position: 'bottom' },
@@ -455,6 +461,13 @@ export const WorkstationDock: React.FC = () => {
     });
 
     api.addPanel({
+      id: 'plotForge',
+      component: 'plotForge',
+      title: 'PLOT FORGE',
+      position: { referencePanel: scope, direction: 'within' },
+    });
+
+    api.addPanel({
       id: 'commandForge',
       component: 'commandForge',
       title: 'COMMAND FORGE',
@@ -565,6 +578,13 @@ export const WorkstationDock: React.FC = () => {
       initialHeight: bottomHeight,
       minimumHeight: 200,
       position: { referencePanel: stream, direction: 'below' },
+    });
+
+    api.addPanel({
+      id: 'plotForge',
+      component: 'plotForge',
+      title: 'PLOT FORGE',
+      position: { referencePanel: scope, direction: 'within' },
     });
 
     api.addPanel({
@@ -765,6 +785,7 @@ export const WorkstationDock: React.FC = () => {
         hexInspector: 'CANONICAL HEX & ASCII',
         sessionDiff: 'SESSION DIFF',
         oscilloscope: 'TELEMETRY OSCILLOSCOPE',
+        plotForge: 'PLOT FORGE',
         commandForge: 'COMMAND FORGE',
         pinSequencer: 'PIN SEQUENCER',
         faultRig: 'HIL FAULT RIG',
