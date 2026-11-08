@@ -566,6 +566,34 @@ try {
     await sleep(400);
     check('Ctrl+, opens settings dialog', await settingsOpen());
 
+    // ⓘ hint: hovering a settings row body shows nothing; hovering the row's
+    // ⓘ icon shows the styled hint surface (TooltipOverlay portal)
+    const hintViaIcon = await page.evaluate(async () => {
+      const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
+      const overlayVisible = () =>
+        [...document.querySelectorAll('div')].some(
+          (d) => d.className?.includes?.('pointer-events-none') && d.textContent.trim()
+        );
+      const label = [...document.querySelectorAll('span')].find(
+        (s) => s.textContent.trim() === 'UI Scale:'
+      );
+      if (!label) return 'no-label';
+      label.dispatchEvent(new MouseEvent('mouseover', { bubbles: true }));
+      await sleep(300);
+      const rowHoverSilent = !overlayVisible();
+      label.dispatchEvent(new MouseEvent('mouseout', { bubbles: true }));
+      await sleep(300);
+      const icon = label.querySelector('span[title]');
+      if (!icon) return 'no-icon';
+      icon.dispatchEvent(new MouseEvent('mouseover', { bubbles: true }));
+      await sleep(300);
+      const iconHoverShows = overlayVisible();
+      icon.dispatchEvent(new MouseEvent('mouseout', { bubbles: true }));
+      await sleep(200);
+      return rowHoverSilent && iconHoverShows;
+    });
+    check('settings hint appears only via ⓘ icon', hintViaIcon === true, String(hintViaIcon));
+
     // Apply persists (timestamp base SESSION) and survives a reload
     await clickInSettings('SESSION');
     await clickInSettings('Apply');

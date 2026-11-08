@@ -1,6 +1,6 @@
 import React, { useState, useEffect, useRef } from 'react';
 import { createPortal } from 'react-dom';
-import { Settings, X, Check, RotateCcw, Palette, Gauge, Database } from 'lucide-react';
+import { Settings, X, Check, RotateCcw, Palette, Gauge, Database, Info } from 'lucide-react';
 import {
   useSettingsStore,
   DEFAULT_SETTINGS,
@@ -23,6 +23,16 @@ const SECTIONS: Array<{ id: SettingsSection; label: string; icon: React.Componen
   { id: 'data', label: 'DATA & EXPORT', icon: Database },
 ];
 
+/** Circled ⓘ next to a setting's label — the only hover target for its hint. */
+const InfoHint: React.FC<{ text: string }> = ({ text }) => (
+  <span
+    title={text}
+    className="inline-flex items-center justify-center w-3.5 h-3.5 rounded-full border border-[#2D3A4E] text-[#64748B] hover:text-[#00E5FF] hover:border-[#00E5FF]/60 cursor-help transition-colors shrink-0"
+  >
+    <Info className="w-2.5 h-2.5" />
+  </span>
+);
+
 /** Small labeled ON/OFF segment pair — the modal's boolean control. */
 const BoolRow: React.FC<{
   label: string;
@@ -32,8 +42,11 @@ const BoolRow: React.FC<{
   onLabel?: string;
   offLabel?: string;
 }> = ({ label, tooltip, value, onChange, onLabel = 'ON', offLabel = 'OFF' }) => (
-  <div className="flex items-center justify-between gap-2" data-tooltip={tooltip}>
-    <span className="text-[#64748B] text-[10px]">{label}</span>
+  <div className="flex items-center justify-between gap-2">
+    <span className="flex items-center gap-1 text-[#64748B] text-[10px]">
+      {label}
+      <InfoHint text={tooltip} />
+    </span>
     <div className="flex items-center gap-1">
       {[true, false].map((v) => (
         <button
@@ -61,8 +74,11 @@ const SegRow: React.FC<{
   options: Array<{ v: string | number; label: string }>;
   onChange: (v: any) => void;
 }> = ({ label, tooltip, value, options, onChange }) => (
-  <div className="flex items-center justify-between gap-2" data-tooltip={tooltip}>
-    <span className="text-[#64748B] text-[10px]">{label}</span>
+  <div className="flex items-center justify-between gap-2">
+    <span className="flex items-center gap-1 text-[#64748B] text-[10px]">
+      {label}
+      <InfoHint text={tooltip} />
+    </span>
     <div className="flex items-center gap-1">
       {options.map((o) => (
         <button
@@ -92,8 +108,11 @@ const NumRow: React.FC<{
   suffix?: string;
   onChange: (v: number) => void;
 }> = ({ label, tooltip, value, min, max, step, suffix, onChange }) => (
-  <div className="flex items-center justify-between gap-2" data-tooltip={tooltip}>
-    <span className="text-[#64748B] text-[10px]">{label}</span>
+  <div className="flex items-center justify-between gap-2">
+    <span className="flex items-center gap-1 text-[#64748B] text-[10px]">
+      {label}
+      <InfoHint text={tooltip} />
+    </span>
     <div className="flex items-center gap-1.5">
       <input
         type="number"
@@ -318,8 +337,11 @@ export const SettingsModal: React.FC = () => {
 
             {section === 'data' && (
               <>
-                <div className="flex items-center justify-between gap-2" data-tooltip="Format preselected when the EXPORT dialog opens.">
-                  <span className="text-[#64748B] text-[10px]">Default Export Format:</span>
+                <div className="flex items-center justify-between gap-2">
+                  <span className="flex items-center gap-1 text-[#64748B] text-[10px]">
+                    Default Export Format:
+                    <InfoHint text="Format preselected when the EXPORT dialog opens." />
+                  </span>
                   <select
                     value={draft.defaultExportFormat}
                     onChange={(e) => set('defaultExportFormat', e.target.value as any)}
@@ -333,8 +355,11 @@ export const SettingsModal: React.FC = () => {
                   </select>
                 </div>
                 <div className="space-y-1.5">
-                  <div className="flex items-center justify-between gap-2" data-tooltip="REC file name template. <stamp> expands to the capture timestamp; .bflog and the vaults/ directory are always enforced.">
-                    <span className="text-[#64748B] text-[10px]">Vault Name Pattern:</span>
+                  <div className="flex items-center justify-between gap-2">
+                    <span className="flex items-center gap-1 text-[#64748B] text-[10px]">
+                      Vault Name Pattern:
+                      <InfoHint text="REC file name template. <stamp> expands to the capture timestamp; .bflog and the vaults/ directory are always enforced." />
+                    </span>
                     <input
                       type="text"
                       value={draft.vaultNamePattern}
