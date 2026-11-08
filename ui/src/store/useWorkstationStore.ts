@@ -83,18 +83,12 @@ interface WorkstationState {
   activePreset: 'default' | 'dissector' | 'scope' | 'hil';
   openPanelId: string | null;
   resetLayoutTrigger: number;
-  saveLayoutTrigger: number;
-  restoreSavedLayoutTrigger: number;
-  hasSavedLayout: boolean;
 
   // Actions
   setExportModalOpen: (open: boolean) => void;
   setActivePreset: (preset: 'default' | 'dissector' | 'scope' | 'hil') => void;
   requestOpenPanel: (id: string) => void;
   requestResetLayout: () => void;
-  requestSaveLayout: () => void;
-  requestRestoreSavedLayout: () => void;
-  setHasSavedLayout: (saved: boolean) => void;
   connect: () => Promise<void>;
   disconnect: () => void;
   setSelectedPort: (port: string) => void;
@@ -302,9 +296,6 @@ export const useWorkstationStore = create<WorkstationState>((set, get) => ({
   activePreset: (localStorage.getItem('bforge_active_preset') as any) || 'default',
   openPanelId: null,
   resetLayoutTrigger: 0,
-  saveLayoutTrigger: 0,
-  restoreSavedLayoutTrigger: 0,
-  hasSavedLayout: typeof localStorage !== 'undefined' && localStorage.getItem('bforge_user_saved_layout') !== null,
 
   // Actions
   setExportModalOpen: (open: boolean) => set({ isExportModalOpen: open }),
@@ -316,9 +307,6 @@ export const useWorkstationStore = create<WorkstationState>((set, get) => ({
   },
   requestOpenPanel: (id) => set({ openPanelId: id }),
   requestResetLayout: () => set((state) => ({ resetLayoutTrigger: state.resetLayoutTrigger + 1 })),
-  requestSaveLayout: () => set((state) => ({ saveLayoutTrigger: state.saveLayoutTrigger + 1 })),
-  requestRestoreSavedLayout: () => set((state) => ({ restoreSavedLayoutTrigger: state.restoreSavedLayoutTrigger + 1 })),
-  setHasSavedLayout: (saved) => set({ hasSavedLayout: saved }),
   connect: async () => {
     // The desktop launcher owns real session starts (Tauri). Against a CLI
     // engine, a running session's ports are fixed — /api/quick-connect says

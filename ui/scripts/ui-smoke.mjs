@@ -729,9 +729,12 @@ try {
       await sleep(350);
     };
     const dockPanelIds = () =>
-      page.evaluate(() => Object.keys(window.__bforgeDockApi?.panels ?? {}).sort().join(','));
+      page.evaluate(() =>
+        (window.__bforgeDockApi?.panels ?? []).map((p) => p.id).sort().join(',')
+      );
 
-    // Save Current Layout… -> name it -> Enter
+    // Save Current Layout… -> name it -> Enter. The input is pre-filled with
+    // the last used name, so select-all before typing to replace it.
     await openLayoutsMenu();
     await page.evaluate(() => {
       const btn = [...document.querySelectorAll('button')].find((b) =>
@@ -744,6 +747,9 @@ try {
       const input = [...document.querySelectorAll('input')].find((i) => i.placeholder === 'Layout name');
       input?.focus();
     });
+    await page.keyboard.down('Control');
+    await page.keyboard.press('a');
+    await page.keyboard.up('Control');
     await page.keyboard.type('Smoke Layout');
     await page.keyboard.press('Enter');
     await sleep(700);
