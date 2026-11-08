@@ -47,6 +47,16 @@ describe('useSettingsStore — persistence', () => {
     expect(useSettingsStore.getState().settings.theme).toBe('skeuomorph');
   });
 
+  it('clamps the yield duration into the engine-legal window', () => {
+    expect(mergeSettings({ yieldSeconds: 999_999 }).yieldSeconds).toBe(600);
+    expect(mergeSettings({ yieldSeconds: 1 }).yieldSeconds).toBe(5);
+    expect(mergeSettings({}).yieldSeconds).toBe(30);
+    useSettingsStore.getState().updateSettings({ yieldSeconds: 120 });
+    expect(useSettingsStore.getState().settings.yieldSeconds).toBe(120);
+    const blob = JSON.parse(localStorage.getItem('bforge_settings_v1') || '{}');
+    expect(blob.yieldSeconds).toBe(120);
+  });
+
   it('a corrupted blob falls back to defaults', () => {
     localStorage.setItem('bforge_settings_v1', '{not json');
     // The store already booted with the pristine localStorage; simulate the

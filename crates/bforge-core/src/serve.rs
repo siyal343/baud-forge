@@ -119,10 +119,13 @@ struct PinJob {
 }
 
 /// One `POST /api/yield`: release a port for a window so a flash tool can use it.
+/// With `reclaim`, one `POST /api/yield/reclaim`: take the port back early.
 #[derive(Debug)]
 struct YieldJob {
     port: String,
+    /// Window length for a yield; ignored when `reclaim` is set.
     seconds: u64,
+    reclaim: bool,
     reply: std::sync::mpsc::SyncSender<bool>,
 }
 
@@ -528,20 +531,41 @@ impl Server {
                 let _ = job.reply.send(result);
             }
             while let Ok(job) = yield_rx.try_recv() {
-                let released = session.yield_port(&job.port, Duration::from_secs(job.seconds));
-                if released {
-                    shared.log(
-                        crate::logs::LogLevel::Info,
-                        "yield",
-                        format!("{}: released for {} s", job.port, job.seconds),
-                    );
+                let released = if job.reclaim {
+                    // Take the port back before the window ends; harmless when
+                    // the port is already open again.
+                    let reclaimed = session.end_yield(&job.port);
+                    if reclaimed {
+                        shared.log(
+                            crate::logs::LogLevel::Info,
+                            "reclaim",
+                            format!("{}: yielded port taken back", job.port),
+                        );
+                    } else {
+                        shared.log(
+                            crate::logs::LogLevel::Warn,
+                            "reclaim_unknown_port",
+                            &job.port,
+                        );
+                    }
+                    reclaimed
                 } else {
-                    shared.log(
-                        crate::logs::LogLevel::Warn,
-                        "yield_unknown_port",
-                        &job.port,
-                    );
-                }
+                    let released = session.yield_port(&job.port, Duration::from_secs(job.seconds));
+                    if released {
+                        shared.log(
+                            crate::logs::LogLevel::Info,
+                            "yield",
+                            format!("{}: released for {} s", job.port, job.seconds),
+                        );
+                    } else {
+                        shared.log(
+                            crate::logs::LogLevel::Warn,
+                            "yield_unknown_port",
+                            &job.port,
+                        );
+                    }
+                    released
+                };
                 let _ = job.reply.send(released);
             }
             while let Ok(job) = fault_rx.try_recv() {
@@ -933,6 +957,11 @@ fn handle(mut stream: TcpStream, shared: Arc<Shared>, stop: Arc<AtomicBool>) {
     if method == "POST" && path == "/api/yield" {
         let body = read_body(&mut reader, content_length);
         yield_port(&mut stream, &shared, &body);
+        return;
+    }
+    if method == "POST" && path == "/api/yield/reclaim" {
+        let body = read_body(&mut reader, content_length);
+        reclaim_port(&mut stream, &shared, &body);
         return;
     }
     if method == "POST" && path == "/api/pins" {
@@ -1853,6 +1882,7 @@ fn yield_port(stream: &mut TcpStream, shared: &Arc<Shared>, body: &[u8]) {
         .send(YieldJob {
             port: request.port.clone(),
             seconds,
+            reclaim: false,
             reply,
         })
         .is_err()
@@ -1876,6 +1906,73 @@ fn yield_port(stream: &mut TcpStream, shared: &Arc<Shared>, body: &[u8]) {
         Ok(false) => {
             let body = format!(
                 "{{\"error\":\"port `{}` cannot be yielded\"}}",
+                request.port
+            );
+            respond(stream, "404 Not Found", "application/json", body.as_bytes());
+        }
+        Err(_) => {
+            let body = "{\"error\":\"no answer from the pump\"}";
+            respond(
+                stream,
+                "504 Gateway Timeout",
+                "application/json",
+                body.as_bytes(),
+            );
+        }
+    }
+}
+
+/// One `POST /api/yield/reclaim`: end a yield window early so the workbench
+/// owns the port again the moment the operator (or the flash tool) is done.
+fn reclaim_port(stream: &mut TcpStream, shared: &Arc<Shared>, body: &[u8]) {
+    let request: YieldBody = match serde_json::from_slice(body) {
+        Ok(request) => request,
+        Err(error) => {
+            let body = format!("{{\"error\":\"bad request: {error}\"}}");
+            return respond(
+                stream,
+                "400 Bad Request",
+                "application/json",
+                body.as_bytes(),
+            );
+        }
+    };
+    let sender = shared.yield_request.lock().unwrap().clone();
+    let Some(sender) = sender else {
+        let body = "{\"error\":\"the pump is not running\"}";
+        return respond(
+            stream,
+            "503 Service Unavailable",
+            "application/json",
+            body.as_bytes(),
+        );
+    };
+    let (reply, answer) = std::sync::mpsc::sync_channel(1);
+    if sender
+        .send(YieldJob {
+            port: request.port.clone(),
+            seconds: 0,
+            reclaim: true,
+            reply,
+        })
+        .is_err()
+    {
+        let body = "{\"error\":\"the pump has stopped\"}";
+        return respond(
+            stream,
+            "503 Service Unavailable",
+            "application/json",
+            body.as_bytes(),
+        );
+    }
+    match answer.recv_timeout(Duration::from_secs(2)) {
+        Ok(true) => {
+            let body = format!("{{\"port\":\"{}\",\"reclaimed\":true}}", request.port);
+            respond(stream, "200 OK", "application/json", body.as_bytes());
+        }
+        Ok(false) => {
+            let body = format!(
+                "{{\"error\":\"port `{}` cannot be reclaimed\"}}",
                 request.port
             );
             respond(stream, "404 Not Found", "application/json", body.as_bytes());

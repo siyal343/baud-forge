@@ -302,7 +302,7 @@ export const App: React.FC = () => {
         stepFrame('forward');
       } else if (e.ctrlKey && e.shiftKey && e.code === 'KeyY') {
         e.preventDefault();
-        triggerFlashYield(30);
+        triggerFlashYield(useSettingsStore.getState().settings.yieldSeconds);
       } else if (e.key === '/') {
         // Spec 2.3: '/' focuses the stream filter (advertised in its placeholder)
         e.preventDefault();

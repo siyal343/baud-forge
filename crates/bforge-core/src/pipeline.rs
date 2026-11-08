@@ -119,6 +119,9 @@ pub struct YieldRequest {
     /// Milliseconds of requested window, counted from the request.
     window_ms: AtomicU64,
     pending: AtomicBool,
+    /// Set to end an in-flight window early: the flash tool finished (or the
+    /// operator hit RECLAIM), so the reader must take the port back now.
+    cancel: AtomicBool,
 }
 
 impl YieldRequest {
@@ -126,7 +129,16 @@ impl YieldRequest {
     pub fn request(&self, duration: Duration) {
         self.window_ms
             .store(duration.as_millis() as u64, Ordering::Relaxed);
+        // A fresh window supersedes any cancel that was never observed.
+        self.cancel.store(false, Ordering::Relaxed);
         self.pending.store(true, Ordering::Release);
+    }
+
+    /// End the current yield window now. When no window is running the flag
+    /// simply waits and is cleared by the next `request`, so this is always
+    /// safe to fire.
+    pub fn cancel(&self) {
+        self.cancel.store(true, Ordering::Release);
     }
 
     /// The reader's side: take a pending request and its window.
@@ -327,6 +339,11 @@ impl Pipeline {
     /// Ask the reader to release the port so another program can use it.
     pub fn yield_for(&self, duration: Duration) {
         self.yield_request.request(duration);
+    }
+
+    /// Take the port back before the yield window ends.
+    pub fn end_yield(&self) {
+        self.yield_request.cancel();
     }
 
     /// Drive DTR and RTS, and wait for the reader to report the result.
@@ -592,7 +609,7 @@ fn read_loop(
             counters.state.store(STATE_YIELDED, Ordering::Relaxed);
             counters.yields.fetch_add(1, Ordering::Relaxed);
             state.transport.close();
-            yield_port(state.transport, &counters, &stop, window);
+            yield_port(state.transport, &counters, &stop, window, &yield_request.cancel);
             continue;
         }
 
@@ -898,17 +915,23 @@ fn set_pins_one(
 /// flash tool for the same handle, and an open that wins that race is exactly the
 /// failure the yield exists to prevent. The window is therefore the contract — the
 /// flasher owns the port until it ends — and the reader takes the port back
-/// afterwards with the normal reconnect patience.
+/// afterwards with the normal reconnect patience. `cancel` shortens the contract:
+/// the flash tool finished early (or the operator hit RECLAIM), so the wait ends
+/// the moment the flag is seen.
 fn yield_port(
     transport: &mut Box<dyn TransportDriver + Send>,
     counters: &Counters,
     stop: &AtomicBool,
     window: Duration,
+    cancel: &AtomicBool,
 ) {
     let deadline = Instant::now() + window;
     while Instant::now() < deadline {
         if stop.load(Ordering::Relaxed) {
             return;
+        }
+        if cancel.swap(false, Ordering::Acquire) {
+            break;
         }
         thread::sleep(YIELD_RECLAIM_POLL.min(deadline.saturating_duration_since(Instant::now())));
     }

@@ -41,6 +41,8 @@ export interface BfSettings {
   defaultExportFormat: ExportFormat;
   /** REC file name template; `<stamp>` expands to an ISO timestamp. */
   vaultNamePattern: string;
+  /** Flash-yield window in seconds — how long the YIELD button surrenders the port. */
+  yieldSeconds: number;
 }
 
 export const EXPORT_FORMATS: ExportFormat[] = ['pcapng', 'saleae', 'csv', 'jsonl', 'parquet'];
@@ -57,12 +59,16 @@ export const DEFAULT_SETTINGS: BfSettings = {
   maxScopeSamples: 600,
   defaultExportFormat: 'pcapng',
   vaultNamePattern: 'rec-<stamp>',
+  yieldSeconds: 30,
 };
 
 export const MAX_PACKETS_MIN = 1000;
 export const MAX_PACKETS_MAX = 100000;
 export const MAX_SCOPE_SAMPLES_MIN = 100;
 export const MAX_SCOPE_SAMPLES_MAX = 5000;
+/** The engine clamps yield windows to 1–600 s; keep the picker inside that. */
+export const YIELD_SECONDS_MIN = 5;
+export const YIELD_SECONDS_MAX = 600;
 
 const STORAGE_KEY = 'bforge_settings_v1';
 
@@ -101,6 +107,7 @@ export const mergeSettings = (saved: unknown): BfSettings => {
       merged.defaultExportFormat = s.defaultExportFormat as ExportFormat;
     if (typeof s.vaultNamePattern === 'string' && s.vaultNamePattern.trim())
       merged.vaultNamePattern = s.vaultNamePattern.trim();
+    merged.yieldSeconds = clampInt(s.yieldSeconds, YIELD_SECONDS_MIN, YIELD_SECONDS_MAX, merged.yieldSeconds);
   }
   return merged;
 };
@@ -134,6 +141,7 @@ export const useSettingsStore = create<SettingsState>((set, get) => ({
       MAX_SCOPE_SAMPLES_MAX,
       DEFAULT_SETTINGS.maxScopeSamples
     );
+    next.yieldSeconds = clampInt(next.yieldSeconds, YIELD_SECONDS_MIN, YIELD_SECONDS_MAX, DEFAULT_SETTINGS.yieldSeconds);
     try {
       localStorage.setItem(STORAGE_KEY, JSON.stringify(next));
     } catch (_) {}

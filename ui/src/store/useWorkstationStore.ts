@@ -614,7 +614,27 @@ export const useWorkstationStore = create<WorkstationState>((set, get) => ({
   },
 
   reclaimPort: () => {
+    // Any running countdown ends here, whether this was a manual RECLAIM or
+    // the window expiring on its own.
+    if (yieldTimerId !== null) {
+      clearInterval(yieldTimerId);
+      yieldTimerId = null;
+    }
     set({ isYielded: false, yieldRemainingSecs: 0, portState: 'open' });
+    // The engine keeps the port released until its own window ends, so a
+    // local-only reset would leave it surrendered in the background — tell
+    // it to end the yield now (no-op when the window already ran out).
+    const port = get().selectedPort;
+    if (port) {
+      engineApi.reclaimPort(port).then((ok) => {
+        if (!ok) {
+          toast.warn(
+            'Reclaim not acknowledged by engine',
+            `The local countdown ended, but the engine did not confirm ending the yield on ${port}. The port reopens when its window expires.`
+          );
+        }
+      });
+    }
   },
 
   toggleFaultArm: () => {

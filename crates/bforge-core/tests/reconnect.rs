@@ -255,3 +255,71 @@ fn a_yield_releases_the_port_and_takes_it_back_when_the_holder_leaves() {
     pipeline.stop();
     assert!(back, "the reader never reclaimed the port");
 }
+
+/// RECLAIM must end the window early. A 10 s yield cancelled right after the
+/// reader reports Yielded returns to Open within a second — the wait never
+/// runs out the window in the background while the UI already says "open".
+#[test]
+fn a_cancelled_yield_takes_the_port_back_before_the_window_ends() {
+    let holder = Arc::new(std::sync::atomic::AtomicBool::new(false));
+    let opens = Arc::new(AtomicUsize::new(0));
+    let transport = Busy {
+        holder: Arc::clone(&holder),
+        opens: Arc::clone(&opens),
+    };
+    let mut pipeline = Pipeline::start(
+        PipelineConfig {
+            port_id: 1,
+            consumers: 1,
+            ..Default::default()
+        },
+        Box::new(transport),
+    );
+    let mut logger = pipeline.take_consumers().remove(0);
+
+    // The reader opened the port once at start-up.
+    let deadline = Instant::now() + Duration::from_secs(2);
+    while opens.load(Ordering::Relaxed) < 1 && Instant::now() < deadline {
+        std::thread::sleep(Duration::from_millis(1));
+    }
+
+    // Hand the port to a "flash tool" for far longer than the test will wait.
+    pipeline.yield_for(Duration::from_secs(10));
+    let deadline = Instant::now() + Duration::from_secs(2);
+    let mut saw_yielded = false;
+    while Instant::now() < deadline {
+        if pipeline.stats().state == PortState::Yielded {
+            saw_yielded = true;
+            break;
+        }
+        std::thread::sleep(Duration::from_millis(2));
+    }
+    assert!(saw_yielded, "the yield was never reported");
+
+    // The flash tool finished early: reclaim. The reader must leave the wait
+    // loop immediately and reopen — while the holder is still gone, proving
+    // the port really came back instead of the window quietly expiring.
+    let started = Instant::now();
+    pipeline.end_yield();
+    let deadline = started + Duration::from_secs(2);
+    let mut back = false;
+    while Instant::now() < deadline {
+        if pipeline.stats().state == PortState::Open {
+            back = true;
+            break;
+        }
+        std::thread::sleep(Duration::from_millis(2));
+    }
+    pipeline.stop();
+    assert!(back, "the cancelled yield never reopened the port");
+    assert!(
+        started.elapsed() < Duration::from_secs(9),
+        "reclaim waited out the window instead of ending it ({:?})",
+        started.elapsed()
+    );
+    assert_eq!(
+        opens.load(Ordering::Relaxed),
+        2,
+        "the port was not reopened after the reclaim"
+    );
+}

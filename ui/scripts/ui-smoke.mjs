@@ -709,8 +709,26 @@ try {
         blob.maxPackets === 10000 &&
         blob.defaultExportFormat === 'pcapng' &&
         blob.theme === 'obsidian' &&
-        blob.themeMode === 'dark',
+        blob.themeMode === 'dark' &&
+        blob.yieldSeconds === 30,
       JSON.stringify(blob)
+    );
+
+    // Flash-yield banner: the countdown starts, and RECLAIM ends it right away
+    // (it must not keep ticking in the background after the port is reopened).
+    await page.evaluate(() => window.__bforgeStore.getState().triggerFlashYield(30));
+    await sleep(300);
+    const yieldShown = await page.evaluate(() => document.body.innerText.includes('YIELD (30s)'));
+    await page.evaluate(() => window.__bforgeStore.getState().reclaimPort());
+    await sleep(300);
+    const yieldCleared = await page.evaluate(() => !document.body.innerText.includes('YIELD ('));
+    // The countdown must not resurrect the banner one tick later.
+    await sleep(1200);
+    const yieldStaysDown = await page.evaluate(() => !document.body.innerText.includes('YIELD ('));
+    check(
+      'yield banner shows and RECLAIM ends it immediately',
+      yieldShown && yieldCleared && yieldStaysDown,
+      `shown=${yieldShown} cleared=${yieldCleared} staysDown=${yieldStaysDown}`
     );
   }
 

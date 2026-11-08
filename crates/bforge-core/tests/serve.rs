@@ -878,6 +878,41 @@ fn a_yield_request_releases_the_port() {
     assert!(stats.requests >= 2, "{stats:?}");
 }
 
+/// The ribbon's RECLAIM button has a route, and it cancels a pending window.
+#[test]
+fn a_reclaim_request_ends_the_yield() {
+    let (device, _received) = chatty_device();
+    let config = workspace(&device);
+    let ports = session_ports_from_config(&config, &[]).expect("ports");
+    let session = Session::start(ports, None, None).expect("session");
+
+    let server = Server::bind("127.0.0.1:0".parse().unwrap()).expect("bind");
+    let address = server.local_addr().unwrap().to_string();
+
+    let client = std::thread::spawn(move || {
+        std::thread::sleep(Duration::from_millis(300));
+        // Surrender the port for far longer than the test will ever run.
+        let (status, body) = post(&address, "/api/yield", r#"{"port":"sim","seconds":30}"#);
+        assert!(status.contains("200"), "{status} {body}");
+        assert!(body.contains("\"yielded_seconds\":30"), "{body}");
+
+        // Reclaim: the window ends now, not when the 30 s run out.
+        let (status, body) = post(&address, "/api/yield/reclaim", r#"{"port":"sim"}"#);
+        assert!(status.contains("200"), "{status} {body}");
+        assert!(body.contains("\"reclaimed\":true"), "{body}");
+
+        // An unknown port says so instead of pretending.
+        let (status, body) = post(&address, "/api/yield/reclaim", r#"{"port":"nope"}"#);
+        assert!(status.contains("404"), "{status} {body}");
+    });
+
+    let stats = server
+        .run(session, Some(Duration::from_secs(3)))
+        .expect("serve");
+    client.join().expect("client");
+    assert!(stats.requests >= 3, "{stats:?}");
+}
+
 /// The scrubber can seek by time, which is what a timeline in seconds needs.
 #[test]
 fn a_vault_window_can_be_seeked_by_time() {

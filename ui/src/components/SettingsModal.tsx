@@ -10,6 +10,8 @@ import {
   MAX_PACKETS_MAX,
   MAX_SCOPE_SAMPLES_MIN,
   MAX_SCOPE_SAMPLES_MAX,
+  YIELD_SECONDS_MIN,
+  YIELD_SECONDS_MAX,
   BfSettings,
   BfTheme,
 } from '../store/useSettingsStore';
@@ -249,7 +251,7 @@ export const SettingsModal: React.FC = () => {
           transform: 'translate(-50%, -50%)',
           zIndex: 999999,
         }}
-        className="w-[680px] bg-bf-surface border border-bf-line-strong shadow-[0_12px_36px_rgb(var(--bf-shadow-rgb)/0.85)] rounded-lg text-[11px] font-mono text-bf-dim overflow-hidden flex flex-col"
+        className="w-[680px] h-[520px] bg-bf-surface border border-bf-line-strong shadow-[0_12px_36px_rgb(var(--bf-shadow-rgb)/0.85)] rounded-lg text-[11px] font-mono text-bf-dim overflow-hidden flex flex-col"
       >
         {/* Header */}
         <div className="h-[32px] bg-bf-head border-b border-bf-line px-3 flex items-center justify-between shrink-0">
@@ -266,8 +268,8 @@ export const SettingsModal: React.FC = () => {
           </button>
         </div>
 
-        {/* Body: section rail + content pane */}
-        <div className="flex min-h-0">
+        {/* Body: section rail + content pane — flexes to fill the fixed 520px frame */}
+        <div className="flex min-h-0 flex-1">
           {/* Nav rail */}
           <div className="w-[132px] shrink-0 bg-bf-panel border-r border-bf-line p-1.5 flex flex-col gap-1">
             {SECTIONS.map((s) => {
@@ -292,7 +294,7 @@ export const SettingsModal: React.FC = () => {
           </div>
 
           {/* Content pane */}
-          <div className="flex-1 p-3.5 space-y-3 max-h-[440px] overflow-y-auto">
+          <div className="flex-1 min-h-0 p-3.5 space-y-3 overflow-y-auto">
             {section === 'general' && (
               <>
                 <ThemeRow value={draft.theme} onChange={(v) => set('theme', v)} />
@@ -310,6 +312,21 @@ export const SettingsModal: React.FC = () => {
                   The skin recolors the entire workstation — panels, docking chrome, scrollbars,
                   tooltips, the oscilloscope canvas and every accent glow. The choice persists
                   across restarts and is restored before the first paint.
+                </div>
+                <div className="border-t border-bf-line pt-3 space-y-3">
+                  <div className="text-[10px] font-semibold text-bf-mute uppercase tracking-wider">
+                    Flash Yield
+                  </div>
+                  <NumRow
+                    label="Yield Duration:"
+                    tooltip="How long the ribbon YIELD button surrenders the COM port to an external flasher before reclaiming it. RECLAIM always ends the window early. 5–600 s."
+                    value={draft.yieldSeconds}
+                    min={YIELD_SECONDS_MIN}
+                    max={YIELD_SECONDS_MAX}
+                    step={5}
+                    suffix="s"
+                    onChange={(v) => set('yieldSeconds', v)}
+                  />
                 </div>
               </>
             )}

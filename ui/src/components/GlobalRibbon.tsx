@@ -35,6 +35,7 @@ const PANEL_CATALOG = [
   { id: 'hexInspector', name: 'Canonical Hex & ASCII' },
   { id: 'sessionDiff', name: 'Session Diff & Comparison' },
   { id: 'oscilloscope', name: 'Telemetry Oscilloscope' },
+  { id: 'plotForge', name: 'Plot Forge (Advanced Plotting)' },
   { id: 'commandForge', name: 'Command Forge' },
   { id: 'pinSequencer', name: 'Pin Sequencer & Modem Lines' },
   { id: 'faultRig', name: 'HIL Fault Injection Rig' },
@@ -605,8 +606,8 @@ export const GlobalRibbon: React.FC = () => {
           </div>
         ) : (
           <button
-            onClick={() => triggerFlashYield(30)}
-            title="Surrender COM port handle for external programmer/IDE (Ctrl+Shift+Y). Does not drop session capture history."
+            onClick={() => triggerFlashYield(useSettingsStore.getState().settings.yieldSeconds)}
+            title={`Surrender COM port handle for external programmer/IDE for ${useSettingsStore.getState().settings.yieldSeconds}s (Ctrl+Shift+Y). Does not drop session capture history. RECLAIM takes it back early; the window length is set in Settings → GENERAL.`}
             className="flex items-center gap-1 px-2 py-0.5 bg-bf-subpanel border border-bf-warn/40 text-bf-warn rounded hover:bg-bf-warn/10 transition-colors"
           >
             <Zap className="w-3 h-3" />

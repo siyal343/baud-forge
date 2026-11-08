@@ -478,6 +478,20 @@ export class EngineApiClient {
     }
   }
 
+  /** End a yield window early — the engine reopens the port immediately. */
+  async reclaimPort(port: string): Promise<boolean> {
+    try {
+      const res = await this.fetchWithTimeout('/api/yield/reclaim', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ port }),
+      });
+      return res.ok;
+    } catch {
+      return false;
+    }
+  }
+
   async setFault(port: string, profile: any): Promise<boolean> {
     try {
       const res = await this.fetchWithTimeout('/api/fault', {

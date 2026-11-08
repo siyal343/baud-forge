@@ -1261,6 +1261,18 @@ impl Session {
         }
     }
 
+    /// Take a yielded port back before its window ends. False when unknown.
+    /// Harmless when the port is not currently yielded.
+    pub fn end_yield(&self, port: &str) -> bool {
+        match self.yield_requests.iter().find(|(id, _)| id == port) {
+            Some((_, request)) => {
+                request.cancel();
+                true
+            }
+            None => false,
+        }
+    }
+
     /// Where a client can reach this session's control plane, if it has one.
     pub fn control_address(&self) -> Option<std::net::SocketAddr> {
         self.control.as_ref().map(ControlServer::address)
