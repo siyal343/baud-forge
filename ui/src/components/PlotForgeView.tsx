@@ -1,9 +1,12 @@
 import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { Eye, EyeOff, Minus, Pause, Play, Plus, X } from 'lucide-react';
-import { usePlotStore, SPAN_MIN_US, SPAN_MAX_US } from '../store/usePlotStore';
+import { usePlotStore, SPAN_MIN_US, SPAN_MAX_US, FFT_SIZES, HIST_BINS_MIN, HIST_BINS_MAX } from '../store/usePlotStore';
 import { useShallow } from 'zustand/react/shallow';
 import { plotEngine, PLOT_DEPTH_MAX, PLOT_DEPTH_MIN } from '../plot/engine';
-import { plotPalette } from '../plot/palette';
+import { plotPalette, type PlotPalette } from '../plot/palette';
+import { magnitudeSpectrum } from '../plot/fft';
+import { lttbIndices } from '../plot/decimate';
+import { compileExpr } from '../plot/expr';
 import type { ChannelDef, ChartDef } from '../plot/types';
 import { toast } from '../store/useToastStore';
 
@@ -16,7 +19,10 @@ import { toast } from '../store/useToastStore';
  * changes and a 2 Hz stats tick, never on data arrival. The rAF loop idles
  * when the chart is frozen (repaints come from interaction handlers).
  *
- * Interactions:
+ * Modes: TIME (cursors/crosshair/zoom/pan), FFT (radix-2 spectrum of the
+ * newest samples), XY (channel vs channel), HIST (amplitude histogram).
+ *
+ * Interactions (TIME mode):
  *   wheel            zoom X about the cursor (span stepper in LIVE mode)
  *   Ctrl+wheel       zoom the Y axis under the cursor (sets a manual range)
  *   drag             pan (freezes a LIVE chart at the current window)
@@ -58,6 +64,12 @@ const fmtTimeUs = (tUs: number): string => {
   if (a >= 1e6) return `${(tUs / 1e6).toFixed(2)} s`;
   if (a >= 1e3) return `${(tUs / 1e3).toFixed(1)} ms`;
   return `${tUs.toFixed(0)} µs`;
+};
+
+const fmtFreq = (hz: number): string => {
+  if (hz >= 1e6) return `${(hz / 1e6).toFixed(2)} MHz`;
+  if (hz >= 1e3) return `${(hz / 1e3).toFixed(1)} kHz`;
+  return `${hz.toFixed(1)} Hz`;
 };
 
 const ribbonBtn =
@@ -115,6 +127,302 @@ const resolveAxisRange = (chart: ChartDef, axis: 'y1' | 'y2', win: ViewWindow): 
   }
   const pad = (max - min) * 0.06;
   return { min: min - pad, max: max + pad };
+};
+
+// ---------------------------------------------------------------------------
+// Non-time mode painters (FFT / XY / HIST). Pure-ish: read engine tails.
+// ---------------------------------------------------------------------------
+
+interface PaintCtx {
+  ctx: CanvasRenderingContext2D;
+  pal: PlotPalette;
+  mg: { l: number; r: number; t: number; b: number };
+  plotW: number;
+  plotH: number;
+  chart: ChartDef;
+}
+
+const MONO = '9px "JetBrains Mono", monospace';
+
+const drawGrid = (p: PaintCtx): void => {
+  const { ctx, pal, mg, plotW, plotH } = p;
+  ctx.lineWidth = 1;
+  ctx.strokeStyle = pal.gridMinor;
+  ctx.setLineDash([2, 4]);
+  ctx.beginPath();
+  for (let c = 1; c < 10; c++) {
+    const x = Math.round(mg.l + (plotW * c) / 10) + 0.5;
+    ctx.moveTo(x, mg.t);
+    ctx.lineTo(x, mg.t + plotH);
+  }
+  for (let r = 1; r < 8; r++) {
+    const y = Math.round(mg.t + (plotH * r) / 8) + 0.5;
+    ctx.moveTo(mg.l, y);
+    ctx.lineTo(mg.l + plotW, y);
+  }
+  ctx.stroke();
+  ctx.setLineDash([]);
+  ctx.strokeStyle = pal.grid;
+  ctx.strokeRect(mg.l + 0.5, mg.t + 0.5, plotW - 1, plotH - 1);
+};
+
+const drawHint = (p: PaintCtx, text: string): void => {
+  const { ctx, pal, mg, plotW, plotH } = p;
+  ctx.fillStyle = pal.textFaint;
+  ctx.font = 'bold 11px "JetBrains Mono", monospace';
+  ctx.textAlign = 'center';
+  ctx.textBaseline = 'middle';
+  ctx.fillText(text, mg.l + plotW / 2, mg.t + plotH / 2);
+};
+
+/** Median sample interval (µs) of a tail — the FFT sample-rate estimator. */
+const medianDeltaUs = (t: Float64Array): number => {
+  if (t.length < 2) return 1000;
+  const diffs: number[] = [];
+  for (let i = 1; i < t.length; i++) diffs.push(t[i] - t[i - 1]);
+  diffs.sort((a, b) => a - b);
+  return diffs[Math.floor(diffs.length / 2)] || 1000;
+};
+
+const drawFftChart = (p: PaintCtx): void => {
+  const { ctx, pal, mg, plotW, plotH, chart } = p;
+  const chs = chart.channels.filter((c) => c.visible).slice(0, 4);
+  const spectra = chs
+    .map((ch) => {
+      const tail = plotEngine.getTail(ch.id, chart.fftSize);
+      if (tail.v.length < 16) return null;
+      const fs = 1e6 / medianDeltaUs(tail.t);
+      return { ch, spec: magnitudeSpectrum(tail.v, fs, { detrend: true }) };
+    })
+    .filter((s): s is { ch: ChannelDef; spec: NonNullable<ReturnType<typeof magnitudeSpectrum>> } => s !== null);
+
+  if (spectra.length === 0) {
+    drawHint(p, 'AWAITING DATA… (FFT needs ≥16 samples per channel)');
+    return;
+  }
+
+  let lo = Infinity;
+  let hi = -Infinity;
+  for (const s of spectra) {
+    const arr = chart.fftDb ? s.spec.db : s.spec.mag;
+    for (const v of arr) {
+      if (v < lo) lo = v;
+      if (v > hi) hi = v;
+    }
+  }
+  if (chart.fftDb) hi = Math.min(hi, lo + 5); // keep the noise floor readable
+  if (hi - lo < 1e-9) hi = lo + 1;
+  lo -= (hi - lo) * 0.06;
+  hi += (hi - lo) * 0.06;
+  const nyq = spectra[0].spec.freqHz[spectra[0].spec.freqHz.length - 1] || 1;
+  const xOf = (hz: number) => mg.l + (hz / nyq) * plotW;
+  const yOf = (v: number) => mg.t + plotH - ((v - lo) / (hi - lo)) * plotH;
+
+  ctx.font = MONO;
+  ctx.fillStyle = pal.textFaint;
+  ctx.textAlign = 'center';
+  ctx.textBaseline = 'top';
+  for (let c = 0; c <= 10; c += 2) ctx.fillText(fmtFreq((nyq * c) / 10), mg.l + (plotW * c) / 10, mg.t + plotH + 3);
+  ctx.textAlign = 'right';
+  ctx.textBaseline = 'middle';
+  for (let r = 0; r <= 8; r += 2) {
+    const v = hi - ((hi - lo) * r) / 8;
+    ctx.fillText(`${fmtValue(v)}${chart.fftDb ? ' dB' : ''}`, mg.l - 4, mg.t + (plotH * r) / 8);
+  }
+
+  for (const s of spectra) {
+    const arr = chart.fftDb ? s.spec.db : s.spec.mag;
+    const bins = arr.length;
+    const stride = Math.max(1, Math.floor(bins / Math.max(10, plotW)));
+    ctx.strokeStyle = s.ch.color;
+    ctx.lineWidth = 1.2;
+    ctx.beginPath();
+    let started = false;
+    for (let k = 0; k < bins; k += stride) {
+      const x = xOf(s.spec.freqHz[k]);
+      const y = yOf(arr[k]);
+      if (!started) {
+        ctx.moveTo(x, y);
+        started = true;
+      } else ctx.lineTo(x, y);
+    }
+    ctx.stroke();
+    // Peak marker (peak search excludes DC).
+    if (s.spec.peakMag > 0) {
+      const px = xOf(s.spec.peakHz);
+      const pv = chart.fftDb ? 20 * Math.log10(s.spec.peakMag) : s.spec.peakMag;
+      const py = yOf(Math.min(hi, Math.max(lo, pv)));
+      ctx.fillStyle = s.ch.color;
+      ctx.beginPath();
+      ctx.arc(px, py, 2.5, 0, Math.PI * 2);
+      ctx.fill();
+      ctx.textAlign = 'left';
+      ctx.textBaseline = 'bottom';
+      ctx.fillText(fmtFreq(s.spec.peakHz), px + 4, py - 2);
+    }
+  }
+};
+
+const drawXyChart = (p: PaintCtx): void => {
+  const { ctx, pal, mg, plotW, plotH, chart } = p;
+  const xCh = chart.channels.find((c) => c.id === chart.xyXChannelId) ?? chart.channels.find((c) => c.visible) ?? null;
+  const yChs = chart.channels.filter((c) => c.visible && (!xCh || c.id !== xCh.id));
+  if (!xCh || yChs.length === 0) {
+    drawHint(p, 'XY NEEDS AN X CHANNEL + AT LEAST ONE OTHER VISIBLE CHANNEL');
+    return;
+  }
+
+  const xTail = plotEngine.getTail(xCh.id, 5000);
+  const xVals = xTail.v;
+  if (xVals.length < 2) {
+    drawHint(p, 'AWAITING DATA…');
+    return;
+  }
+  const pairs: Array<{ ch: ChannelDef; xs: Float64Array; ys: Float64Array }> = [];
+  let xLo = Infinity;
+  let xHi = -Infinity;
+  for (const v of xVals) {
+    if (v < xLo) xLo = v;
+    if (v > xHi) xHi = v;
+  }
+  let yLo = Infinity;
+  let yHi = -Infinity;
+  for (const yCh of yChs) {
+    const yTail = plotEngine.getTail(yCh.id, 5000);
+    const n = Math.min(xVals.length, yTail.v.length);
+    if (n < 2) continue;
+    const xs = xVals.subarray(xVals.length - n);
+    const ys = yTail.v.subarray(yTail.v.length - n);
+    pairs.push({ ch: yCh, xs, ys });
+    for (const v of ys) {
+      if (v < yLo) yLo = v;
+      if (v > yHi) yHi = v;
+    }
+  }
+  if (pairs.length === 0) {
+    drawHint(p, 'AWAITING DATA…');
+    return;
+  }
+  if (xHi === xLo) xHi = xLo + 1e-9;
+  if (yHi === yLo) yHi = yLo + 1e-9;
+  const xPad = (xHi - xLo) * 0.06;
+  const yPad = (yHi - yLo) * 0.06;
+  const xOf = (v: number) => mg.l + ((v - (xLo - xPad)) / (xHi - xLo + 2 * xPad)) * plotW;
+  const yOf = (v: number) => mg.t + plotH - ((v - (yLo - yPad)) / (yHi - yLo + 2 * yPad)) * plotH;
+
+  ctx.font = MONO;
+  ctx.fillStyle = pal.textFaint;
+  ctx.textAlign = 'right';
+  ctx.textBaseline = 'middle';
+  for (let r = 0; r <= 8; r += 2) {
+    const v = yHi + yPad - ((yHi - yLo + 2 * yPad) * r) / 8;
+    ctx.fillText(fmtValue(v), mg.l - 4, mg.t + (plotH * r) / 8);
+  }
+  ctx.textAlign = 'center';
+  ctx.textBaseline = 'top';
+  for (let c = 0; c <= 10; c += 2) {
+    const v = xLo - xPad + ((xHi - xLo + 2 * xPad) * c) / 10;
+    ctx.fillText(fmtValue(v), mg.l + (plotW * c) / 10, mg.t + plotH + 3);
+  }
+  ctx.fillStyle = pal.textDim;
+  ctx.textAlign = 'right';
+  ctx.fillText(`${xCh.label}${xCh.unit ? ` (${xCh.unit})` : ''} →`, mg.l + plotW, mg.t + plotH + 3);
+
+  for (const pair of pairs) {
+    ctx.strokeStyle = pair.ch.color;
+    ctx.fillStyle = pair.ch.color;
+    ctx.lineWidth = 1;
+    const n = pair.xs.length;
+    if (n > 2000) {
+      const idxs = lttbIndices(pair.xs, pair.ys, 2000);
+      ctx.beginPath();
+      idxs.forEach((i, k) => {
+        const x = xOf(pair.xs[i]);
+        const y = yOf(pair.ys[i]);
+        if (k === 0) ctx.moveTo(x, y);
+        else ctx.lineTo(x, y);
+      });
+      ctx.stroke();
+    } else {
+      ctx.beginPath();
+      for (let i = 0; i < n; i++) {
+        const x = xOf(pair.xs[i]);
+        const y = yOf(pair.ys[i]);
+        if (i === 0) ctx.moveTo(x, y);
+        else ctx.lineTo(x, y);
+      }
+      ctx.stroke();
+      if (n <= 800) {
+        for (let i = 0; i < n; i++) ctx.fillRect(xOf(pair.xs[i]) - 1, yOf(pair.ys[i]) - 1, 2, 2);
+      }
+    }
+  }
+};
+
+const drawHistChart = (p: PaintCtx): void => {
+  const { ctx, pal, mg, plotW, plotH, chart } = p;
+  const src = chart.channels.find((c) => c.id === chart.histChannelId) ?? chart.channels.find((c) => c.visible) ?? null;
+  if (!src) {
+    drawHint(p, 'HIST NEEDS A SOURCE CHANNEL');
+    return;
+  }
+  const tail = plotEngine.getTail(src.id, chart.fftSize);
+  if (tail.v.length < 2) {
+    drawHint(p, 'AWAITING DATA…');
+    return;
+  }
+  let lo = Infinity;
+  let hi = -Infinity;
+  for (const v of tail.v) {
+    if (v < lo) lo = v;
+    if (v > hi) hi = v;
+  }
+  if (hi === lo) hi = lo + 1e-9;
+  const bins = chart.histBins;
+  const counts = new Array<number>(bins).fill(0);
+  const bw = (hi - lo) / bins;
+  for (const v of tail.v) {
+    let b = Math.floor((v - lo) / bw);
+    if (b >= bins) b = bins - 1;
+    if (b < 0) b = 0;
+    counts[b]++;
+  }
+  const maxCount = Math.max(...counts, 1);
+  const yOf = (c: number) => mg.t + plotH - (c / maxCount) * plotH;
+
+  ctx.font = MONO;
+  ctx.fillStyle = pal.textFaint;
+  ctx.textAlign = 'right';
+  ctx.textBaseline = 'middle';
+  for (let r = 0; r <= 8; r += 2) {
+    const c = Math.round((maxCount * r) / 8);
+    ctx.fillText(String(c), mg.l - 4, mg.t + (plotH * r) / 8);
+  }
+  ctx.textAlign = 'center';
+  ctx.textBaseline = 'top';
+  ctx.fillText(fmtValue(lo), mg.l, mg.t + plotH + 3);
+  ctx.fillText(fmtValue(hi), mg.l + plotW, mg.t + plotH + 3);
+
+  const barW = plotW / bins;
+  ctx.globalAlpha = 0.8;
+  ctx.fillStyle = src.color;
+  for (let b = 0; b < bins; b++) {
+    if (counts[b] === 0) continue;
+    const x = mg.l + b * barW;
+    const y = yOf(counts[b]);
+    ctx.fillRect(x + 0.5, y, Math.max(1, barW - 1), mg.t + plotH - y);
+  }
+  ctx.globalAlpha = 1;
+  ctx.strokeStyle = src.color;
+  ctx.lineWidth = 1;
+  ctx.beginPath();
+  for (let b = 0; b < bins; b++) {
+    const x = mg.l + b * barW + barW / 2;
+    const y = yOf(counts[b]);
+    if (b === 0) ctx.moveTo(x, y);
+    else ctx.lineTo(x, y);
+  }
+  ctx.stroke();
 };
 
 type DragMode = null | 'pan' | 'box' | 'c1' | 'c2';
@@ -195,6 +503,16 @@ export const PlotForgeView: React.FC = () => {
 
     ctx.fillStyle = pal.canvas;
     ctx.fillRect(0, 0, W, H);
+
+    // Non-time modes are self-contained painters (own grid/axes, no cursors).
+    if (chart.mode !== 'time') {
+      const p: PaintCtx = { ctx, pal, mg, plotW, plotH, chart };
+      drawGrid(p);
+      if (chart.mode === 'fft') drawFftChart(p);
+      else if (chart.mode === 'xy') drawXyChart(p);
+      else drawHistChart(p);
+      return;
+    }
 
     // Effective window: in-drag pan override wins over the committed one.
     const win = interRef.current.panWin ?? resolveWindow(chart);
@@ -629,6 +947,84 @@ export const PlotForgeView: React.FC = () => {
     }
   };
 
+  // ---- export --------------------------------------------------------------
+  const stamp = (): string => new Date().toISOString().replace(/[:.]/g, '-').slice(0, 19);
+  const downloadBlob = (blob: Blob, name: string): void => {
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = name;
+    a.click();
+    setTimeout(() => URL.revokeObjectURL(url), 5000);
+  };
+
+  const exportPng = (): void => {
+    if (!chart) return;
+    canvasRef.current?.toBlob((blob) => {
+      if (!blob) {
+        toast.error('PNG export failed', 'canvas.toBlob returned null');
+        return;
+      }
+      const name = `plotforge-${chart.name}-${stamp()}.png`;
+      downloadBlob(blob, name);
+      toast.success('PNG export started', name);
+    }, 'image/png');
+  };
+
+  const exportCsv = (): void => {
+    if (!chart) return;
+    if (chart.mode !== 'time') {
+      toast.warn('CSV export is available in TIME mode', 'switch the chart mode and retry');
+      return;
+    }
+    const win = resolveWindow(chart);
+    const vis = chart.channels.filter((c) => c.visible);
+    if (!win || vis.length === 0) {
+      toast.warn('Nothing to export', 'add visible channels with samples first');
+      return;
+    }
+    const master = plotEngine.getWindowSamples(vis[0].id, win.tMinUs, win.tMaxUs, 100_000);
+    if (master.length === 0) {
+      toast.warn('No samples in the current window');
+      return;
+    }
+    // Median inter-sample gap doubles as the nearest-sample alignment
+    // tolerance for the secondary channels' columns.
+    const mid = Math.floor(master.length / 2);
+    const medDt = master.length > 1 ? Math.abs(master[mid].tUs - master[mid - 1].tUs) : 1e6;
+    const esc = (s: string): string => (/[",\n]/.test(s) ? `"${s.replace(/"/g, '""')}"` : s);
+    const lines: string[] = [`t_us,${vis.map((c) => esc(`${c.label}${c.unit ? ` (${c.unit})` : ''}`)).join(',')}`];
+    for (const m of master) {
+      const row = [String(Math.round(m.tUs)), String(m.v)];
+      for (const ch of vis.slice(1)) {
+        const s = plotEngine.sampleNearest(ch.id, m.tUs, medDt * 1.5 + 1);
+        row.push(s ? String(s.value) : '');
+      }
+      lines.push(row.join(','));
+    }
+    const name = `plotforge-${chart.name}-${stamp()}.csv`;
+    downloadBlob(new Blob([lines.join('\n')], { type: 'text/csv' }), name);
+    toast.success('CSV export started', `${master.length} rows × ${vis.length} channels`);
+  };
+
+  // ---- expression channels -------------------------------------------------
+  const [exprOpen, setExprOpen] = useState(false);
+  const [exprValue, setExprValue] = useState('');
+  const exprCheck = useMemo(() => (exprValue.trim() ? compileExpr(exprValue) : null), [exprValue]);
+  const exprOk = exprCheck?.ok === true ? exprCheck : null;
+  const exprErr = exprCheck && !exprCheck.ok ? exprCheck.error : null;
+  const addExprChannel = (): void => {
+    if (!chart || !exprCheck?.ok) return;
+    const ok = usePlotStore
+      .getState()
+      .addChannel(chart.id, { kind: 'expr', source: exprValue.trim() }, { label: exprValue.trim().slice(0, 48) });
+    if (!ok) toast.warn('Channel limit reached', 'Up to 32 channels across all charts');
+    else toast.success('Expression channel added', exprValue.trim());
+    setExprOpen(false);
+    setExprValue('');
+    setAddMenuOpen(false);
+  };
+
   const commitRename = () => {
     if (renamingId) usePlotStore.getState().renameChart(renamingId, renameValue);
     setRenamingId(null);
@@ -728,10 +1124,93 @@ export const PlotForgeView: React.FC = () => {
         <button onClick={toggleCursors} className={cursorsOn ? ribbonActive : ribbonBtn} data-tooltip="X measurement cursors — drag X1/X2 for Δt and frequency">
           X CURSORS
         </button>
+        <div className="flex items-center rounded border border-bf-line overflow-hidden shrink-0" data-tooltip="Chart mode">
+          {(['time', 'fft', 'xy', 'hist'] as const).map((m) => (
+            <button
+              key={m}
+              onClick={() => usePlotStore.getState().setChartMode(chart.id, m)}
+              className={`px-1.5 py-0.5 text-[9px] tracking-wider ${chart.mode === m ? 'bg-bf-btn-hi text-bf-bright' : 'bg-bf-panel text-bf-dim hover:bg-bf-btn'}`}
+            >
+              {m.toUpperCase()}
+            </button>
+          ))}
+        </div>
+        {chart.mode === 'fft' && (
+          <>
+            <select
+              value={chart.fftSize}
+              onChange={(e) => usePlotStore.getState().setFftConfig(chart.id, { fftSize: Number(e.target.value) })}
+              className="bg-bf-panel border border-bf-line rounded px-0.5 py-[1px] text-[9.5px] text-bf-body"
+              data-tooltip="FFT window length (newest samples)"
+            >
+              {FFT_SIZES.map((n) => (
+                <option key={n} value={n}>
+                  {n}
+                </option>
+              ))}
+            </select>
+            <button onClick={() => usePlotStore.getState().setFftConfig(chart.id, { fftDb: !chart.fftDb })} className={ribbonBtn} data-tooltip="Toggle dB / linear magnitude">
+              {chart.fftDb ? 'dB' : 'LIN'}
+            </button>
+          </>
+        )}
+        {chart.mode === 'xy' && (
+          <select
+            value={chart.xyXChannelId ?? ''}
+            onChange={(e) => usePlotStore.getState().setXyXChannel(chart.id, e.target.value || null)}
+            className="bg-bf-panel border border-bf-line rounded px-0.5 py-[1px] text-[9.5px] text-bf-body"
+            data-tooltip="Channel driving the X axis"
+          >
+            <option value="">X channel…</option>
+            {chart.channels.map((c) => (
+              <option key={c.id} value={c.id}>
+                {c.label}
+              </option>
+            ))}
+          </select>
+        )}
+        {chart.mode === 'hist' && (
+          <>
+            <select
+              value={chart.histChannelId ?? ''}
+              onChange={(e) => usePlotStore.getState().setHistConfig(chart.id, { channelId: e.target.value || null })}
+              className="bg-bf-panel border border-bf-line rounded px-0.5 py-[1px] text-[9.5px] text-bf-body"
+              data-tooltip="Histogram source channel"
+            >
+              <option value="">Source…</option>
+              {chart.channels.map((c) => (
+                <option key={c.id} value={c.id}>
+                  {c.label}
+                </option>
+              ))}
+            </select>
+            <div className="flex items-center gap-0.5 border border-bf-line rounded bg-bf-panel" data-tooltip="Bin count">
+              <button
+                className="px-1 text-bf-dim hover:text-bf-bright"
+                onClick={() => usePlotStore.getState().setHistConfig(chart.id, { bins: Math.max(HIST_BINS_MIN, Math.round(chart.histBins / 2)) })}
+              >
+                <Minus size={10} />
+              </button>
+              <span className="px-1 text-[9.5px] font-mono w-6 text-center">{chart.histBins}</span>
+              <button
+                className="px-1 text-bf-dim hover:text-bf-bright"
+                onClick={() => usePlotStore.getState().setHistConfig(chart.id, { bins: Math.min(HIST_BINS_MAX, chart.histBins * 2) })}
+              >
+                <Plus size={10} />
+              </button>
+            </div>
+          </>
+        )}
         <span className="text-bf-faint text-[9px] hidden xl:inline">
-          {chart.live ? 'FOLLOWING HEAD' : chart.frozen ? `WINDOW ${fmtTimeUs(chart.frozen.tMinUs)} … ${fmtTimeUs(chart.frozen.tMaxUs)}` : ''}
+          {chart.live && chart.mode === 'time' ? 'FOLLOWING HEAD' : chart.frozen && chart.mode === 'time' ? `WINDOW ${fmtTimeUs(chart.frozen.tMinUs)} … ${fmtTimeUs(chart.frozen.tMaxUs)}` : ''}
           {' · wheel zoom · drag pan · ⇧drag box · dbl-click autoscale'}
         </span>
+        <button onClick={exportCsv} className={`${ribbonBtn} shrink-0`} data-tooltip="Export the visible channels over the current window as CSV">
+          CSV
+        </button>
+        <button onClick={exportPng} className={`${ribbonBtn} shrink-0`} data-tooltip="Save the chart canvas as a PNG image">
+          PNG
+        </button>
         <div className="ml-auto flex items-center gap-1.5 text-bf-faint text-[9px]" data-tooltip="Ring depth per channel — older samples drop off">
           DEPTH
           <select
@@ -833,9 +1312,40 @@ export const PlotForgeView: React.FC = () => {
               {catalog.length === 0 && (
                 <div className="px-2 py-1.5 text-bf-faint">No numeric fields decoded yet — load a capture or connect a stream.</div>
               )}
-              <div className="px-2 py-1 text-[9px] tracking-wider text-bf-faint border-t border-bf-line">
-                Expression channels land with the FFT/XY update
-              </div>
+              <div className="px-2 py-1 text-[9px] tracking-wider text-bf-faint border-t border-bf-line">EXPRESSION</div>
+              {!exprOpen ? (
+                <button onClick={() => setExprOpen(true)} className="w-full text-left px-2 py-1 hover:bg-bf-btn text-bf-cyan">
+                  + New expression…
+                </button>
+              ) : (
+                <div className="p-2 space-y-1">
+                  <input
+                    autoFocus
+                    value={exprValue}
+                    onChange={(e) => setExprValue(e.target.value)}
+                    onKeyDown={(e) => {
+                      if (e.key === 'Enter' && exprCheck?.ok) addExprChannel();
+                      if (e.key === 'Escape') setExprOpen(false);
+                    }}
+                    placeholder="e.g. v_batt_mv * gyro_z"
+                    className="w-full bg-bf-canvas border border-bf-line rounded-sm px-1 py-0.5 text-[10px] font-mono text-bf-bright outline-none focus:border-bf-cyan"
+                  />
+                  {exprValue.trim() === '' ? (
+                    <div className="text-[9px] text-bf-faint">Refs resolve to channel labels (e.g. v_batt_mv, rate).</div>
+                  ) : exprOk ? (
+                    <div className="text-[9px] text-bf-ok">OK · refs: {exprOk.refs.length ? exprOk.refs.join(', ') : 'none'}</div>
+                  ) : (
+                    <div className="text-[9px] text-bf-fault">{exprErr}</div>
+                  )}
+                  <button
+                    onClick={addExprChannel}
+                    disabled={!exprOk}
+                    className="w-full py-0.5 rounded-sm bg-bf-btn-hi border border-bf-cyan text-bf-bright text-[9.5px] disabled:opacity-40 disabled:cursor-not-allowed"
+                  >
+                    ADD EXPRESSION CHANNEL
+                  </button>
+                </div>
+              )}
             </div>
           )}
         </div>
@@ -849,23 +1359,33 @@ export const PlotForgeView: React.FC = () => {
         <canvas ref={canvasRef} className="absolute inset-0 w-full h-full" />
       </div>
 
-      {/* Footer: per-channel window stats */}
+      {/* Footer: per-channel window stats (time) or mode summary */}
       <div className="min-h-[20px] flex items-center gap-3 px-2 py-0.5 bg-bf-subpanel border-t border-bf-line text-[9px] shrink-0 overflow-x-auto whitespace-nowrap">
-        {statsRows.length === 0 && <span className="text-bf-faint">NO ACTIVE CHANNELS</span>}
-        {statsRows.map(({ ch, stats }) => (
-          <span key={ch.id} className="flex items-center gap-1">
-            <span className="w-1.5 h-1.5 rounded-full" style={{ background: ch.color }} />
-            <span className="text-bf-body">{ch.label}</span>
-            {stats ? (
-              <span className="text-bf-faint font-mono">
-                min {fmtValue(stats.min)} · max {fmtValue(stats.max)} · μ {fmtValue(stats.mean)} · σ {fmtValue(stats.stdDev)}
-                {ch.unit ? ` ${ch.unit}` : ''}
+        {chart.mode === 'time' ? (
+          <>
+            {statsRows.length === 0 && <span className="text-bf-faint">NO ACTIVE CHANNELS</span>}
+            {statsRows.map(({ ch, stats }) => (
+              <span key={ch.id} className="flex items-center gap-1">
+                <span className="w-1.5 h-1.5 rounded-full" style={{ background: ch.color }} />
+                <span className="text-bf-body">{ch.label}</span>
+                {stats ? (
+                  <span className="text-bf-faint font-mono">
+                    min {fmtValue(stats.min)} · max {fmtValue(stats.max)} · μ {fmtValue(stats.mean)} · σ {fmtValue(stats.stdDev)}
+                    {ch.unit ? ` ${ch.unit}` : ''}
+                  </span>
+                ) : (
+                  <span className="text-bf-faint">no samples in window</span>
+                )}
               </span>
-            ) : (
-              <span className="text-bf-faint">no samples in window</span>
-            )}
+            ))}
+          </>
+        ) : (
+          <span className="text-bf-faint">
+            {chart.mode === 'fft' && `FFT · n=${chart.fftSize} newest samples · ${chart.fftDb ? 'dB magnitude' : 'linear magnitude'} · Hann window, detrended`}
+            {chart.mode === 'xy' && `XY · X: ${chart.channels.find((c) => c.id === chart.xyXChannelId)?.label ?? '(first channel)'} · pairs aligned by index from the newest 5000 samples`}
+            {chart.mode === 'hist' && `HIST · source: ${chart.channels.find((c) => c.id === chart.histChannelId)?.label ?? '(first channel)'} · ${chart.histBins} bins over the newest ${chart.fftSize} samples`}
           </span>
-        ))}
+        )}
       </div>
     </div>
   );

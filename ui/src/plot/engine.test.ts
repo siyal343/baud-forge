@@ -255,6 +255,18 @@ describe('depth + queries', () => {
     expect(plotEngine.getSeries('c1', 0, 1000, 10).length).toBeLessThanOrEqual(40);
   });
 
+  it('getWindowSamples strides down to the row budget', () => {
+    plotEngine.ensureChannel(mkChannel('c1', 'f', { kind: 'field', name: 'f' }));
+    plotEngine.ingestPackets(Array.from({ length: 100 }, (_, i) => mkPacket(i * 10, [mkField('f', i)])));
+    const all = plotEngine.getWindowSamples('c1', -1, 10_000);
+    expect(all).toHaveLength(100);
+    expect(all[0]).toEqual({ tUs: 0, v: 0 });
+    const capped = plotEngine.getWindowSamples('c1', -1, 10_000, 10);
+    expect(capped).toHaveLength(10);
+    expect(capped[capped.length - 1].v).toBeGreaterThanOrEqual(90); // strided, not tail-only
+    expect(plotEngine.getWindowSamples('c1', 50_000, 60_000)).toHaveLength(0);
+  });
+
   it('sampleNearest finds the closest sample within tolerance', () => {
     plotEngine.ensureChannel(mkChannel('c1', 'f', { kind: 'field', name: 'f' }));
     plotEngine.ingestPackets([

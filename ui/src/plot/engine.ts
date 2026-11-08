@@ -331,6 +331,27 @@ export class PlotEngine {
 
   // ---- queries -------------------------------------------------------------
 
+  /**
+   * Raw samples in [tMin, tMax] for CSV export, uniformly strided down to at
+   * most `maxSamples` rows (0/undefined = no limit).
+   */
+  getWindowSamples(
+    channelId: string,
+    tMinUs: number,
+    tMaxUs: number,
+    maxSamples = 0
+  ): Array<{ tUs: number; v: number }> {
+    const rt = this.channels.get(channelId);
+    if (!rt || rt.ring.length === 0) return [];
+    const { lo, hi } = rt.ring.rangeFor(tMinUs, tMaxUs);
+    const count = hi - lo;
+    if (count <= 0) return [];
+    const stride = maxSamples > 0 ? Math.max(1, Math.ceil(count / maxSamples)) : 1;
+    const out: Array<{ tUs: number; v: number }> = [];
+    for (let i = lo; i < hi; i += stride) out.push({ tUs: rt.ring.tAt(i), v: rt.ring.vAt(i) });
+    return out;
+  }
+
   /** Min-max decimated series for painting a [tMin, tMax] µs window. */
   getSeries(channelId: string, tMinUs: number, tMaxUs: number, buckets: number): DecimatedPoint[] {
     const rt = this.channels.get(channelId);
