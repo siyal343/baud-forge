@@ -6,8 +6,6 @@ import {
   DEFAULT_SETTINGS,
   EXPORT_FORMATS,
   buildVaultPath,
-  UI_SCALE_MIN,
-  UI_SCALE_MAX,
   MAX_PACKETS_MIN,
   MAX_PACKETS_MAX,
   MAX_SCOPE_SAMPLES_MIN,
@@ -244,16 +242,6 @@ export const SettingsModal: React.FC = () => {
           <div className="flex-1 p-3.5 space-y-3 max-h-[440px] overflow-y-auto">
             {section === 'appearance' && (
               <>
-                <NumRow
-                  label="UI Scale:"
-                  tooltip="Whole-workbench zoom (0.70–1.50). Ctrl+= / Ctrl+- / Ctrl+0 also work anywhere."
-                  value={draft.uiScale}
-                  min={UI_SCALE_MIN}
-                  max={UI_SCALE_MAX}
-                  step={0.05}
-                  suffix="×"
-                  onChange={(v) => set('uiScale', v)}
-                />
                 <BoolRow
                   label="Tooltips:"
                   tooltip="Custom dark tooltip surface on hover. OFF falls back to the browser's native title tooltips."

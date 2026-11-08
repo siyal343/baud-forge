@@ -14,8 +14,6 @@ export type TimestampBase = 'wall' | 'relative';
 
 export interface BfSettings {
   // Appearance
-  /** Whole-app CSS zoom on <html>, 0.7–1.5. */
-  uiScale: number;
   tooltipsEnabled: boolean;
   /** Stream Time column: wall clock vs elapsed since first formatted frame. */
   timestampBase: TimestampBase;
@@ -37,7 +35,6 @@ export interface BfSettings {
 export const EXPORT_FORMATS: ExportFormat[] = ['pcapng', 'saleae', 'csv', 'jsonl', 'parquet'];
 
 export const DEFAULT_SETTINGS: BfSettings = {
-  uiScale: 1.0,
   tooltipsEnabled: true,
   timestampBase: 'wall',
   hexBytesPerRow: 16,
@@ -49,20 +46,12 @@ export const DEFAULT_SETTINGS: BfSettings = {
   vaultNamePattern: 'rec-<stamp>',
 };
 
-export const UI_SCALE_MIN = 0.7;
-export const UI_SCALE_MAX = 1.5;
 export const MAX_PACKETS_MIN = 1000;
 export const MAX_PACKETS_MAX = 100000;
 export const MAX_SCOPE_SAMPLES_MIN = 100;
 export const MAX_SCOPE_SAMPLES_MAX = 5000;
 
 const STORAGE_KEY = 'bforge_settings_v1';
-const LEGACY_UI_SCALE_KEY = 'bforge_ui_scale';
-
-const clampUiScale = (v: unknown): number => {
-  const n = typeof v === 'number' && isFinite(v) ? v : DEFAULT_SETTINGS.uiScale;
-  return Math.min(UI_SCALE_MAX, Math.max(UI_SCALE_MIN, Math.round(n * 100) / 100));
-};
 
 const clampInt = (v: unknown, lo: number, hi: number, fallback: number): number => {
   const n = typeof v === 'number' && isFinite(v) ? Math.round(v) : fallback;
@@ -70,8 +59,8 @@ const clampInt = (v: unknown, lo: number, hi: number, fallback: number): number 
 };
 
 /**
- * Build the persisted layer: defaults → saved blob → legacy zoom-key
- * migration (one-time; the old `bforge_ui_scale` key is consumed here).
+ * Build the persisted layer: defaults → saved blob. Unknown keys in an older
+ * blob (e.g. the removed `uiScale`) are simply ignored.
  */
 const loadSettings = (): BfSettings => {
   const merged: BfSettings = { ...DEFAULT_SETTINGS };
@@ -80,7 +69,6 @@ const loadSettings = (): BfSettings => {
     if (raw) {
       const saved = JSON.parse(raw);
       if (saved && typeof saved === 'object') {
-        if (typeof saved.uiScale === 'number') merged.uiScale = clampUiScale(saved.uiScale);
         if (typeof saved.tooltipsEnabled === 'boolean') merged.tooltipsEnabled = saved.tooltipsEnabled;
         if (saved.timestampBase === 'wall' || saved.timestampBase === 'relative')
           merged.timestampBase = saved.timestampBase;
@@ -101,15 +89,6 @@ const loadSettings = (): BfSettings => {
         if (typeof saved.vaultNamePattern === 'string' && saved.vaultNamePattern.trim())
           merged.vaultNamePattern = saved.vaultNamePattern.trim();
       }
-    } else {
-      const legacy = localStorage.getItem(LEGACY_UI_SCALE_KEY);
-      if (legacy) {
-        merged.uiScale = clampUiScale(parseFloat(legacy));
-        localStorage.removeItem(LEGACY_UI_SCALE_KEY);
-      } else if (typeof window !== 'undefined' && window.innerWidth < 1440) {
-        // Same narrow-window fallback the old store used for fresh installs.
-        merged.uiScale = 0.9;
-      }
     }
   } catch (_) {}
   return merged;
@@ -128,8 +107,7 @@ export const useSettingsStore = create<SettingsState>((set, get) => ({
   setSettingsOpen: (open) => set({ isSettingsOpen: open }),
   updateSettings: (partial) => {
     const next: BfSettings = { ...get().settings, ...partial };
-    // Re-clamp free-form fields so direct writes (Ctrl+=/-/0 hotkeys) stay legal.
-    next.uiScale = clampUiScale(next.uiScale);
+    // Re-clamp free-form fields so direct writes stay legal.
     next.maxPackets = clampInt(next.maxPackets, MAX_PACKETS_MIN, MAX_PACKETS_MAX, DEFAULT_SETTINGS.maxPackets);
     next.maxScopeSamples = clampInt(
       next.maxScopeSamples,

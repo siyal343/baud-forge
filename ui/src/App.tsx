@@ -79,9 +79,6 @@ export const App: React.FC = () => {
       setFilterText: s.setFilterText,
     }))
   );
-  // UI scale is a global preference now (Settings dialog) — live in the
-  // settings store so the Launcher screen can apply the same zoom.
-  const uiScale = useSettingsStore((s) => s.settings.uiScale);
 
   // The demo capture seeds only when there is no engine to connect to —
   // tryConnect's failure path seeds it after the first failed health check.
@@ -279,18 +276,7 @@ export const App: React.FC = () => {
         return;
       }
 
-      if (e.ctrlKey && (e.key === '=' || e.key === '+')) {
-        e.preventDefault();
-        const cur = useSettingsStore.getState().settings.uiScale;
-        useSettingsStore.getState().updateSettings({ uiScale: cur + 0.05 });
-      } else if (e.ctrlKey && e.key === '-') {
-        e.preventDefault();
-        const cur = useSettingsStore.getState().settings.uiScale;
-        useSettingsStore.getState().updateSettings({ uiScale: cur - 0.05 });
-      } else if (e.ctrlKey && e.key === '0') {
-        e.preventDefault();
-        useSettingsStore.getState().updateSettings({ uiScale: 1.0 });
-      } else if (e.ctrlKey && e.key === ',') {
+      if (e.ctrlKey && e.key === ',') {
         // Standard settings shortcut — opens the global Settings dialog.
         e.preventDefault();
         useSettingsStore.getState().setSettingsOpen(true);
@@ -322,12 +308,6 @@ export const App: React.FC = () => {
     window.addEventListener('keydown', handleKeyDown);
     return () => window.removeEventListener('keydown', handleKeyDown);
   }, [setDvrPaused, stepFrame, triggerFlashYield, setFilterText, clearStream]);
-
-  // Synchronize native webview zoom to document element for perfect responsive scaling
-  useEffect(() => {
-    const scale = uiScale || 1.0;
-    (document.documentElement.style as any).zoom = String(scale);
-  }, [uiScale]);
 
   return (
     <div className="w-full h-screen flex flex-col bg-[#0A0D13] overflow-hidden select-none">

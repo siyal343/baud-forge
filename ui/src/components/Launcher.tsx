@@ -685,13 +685,6 @@ export const Launcher: React.FC = () => {
   // than one of the named actions below.
   const startingPath = busy !== null && busy !== 'demo' && busy !== 'review' && !busy.startsWith('qc-');
 
-  // Same document zoom as the workbench — UI scale is a global preference
-  // (Settings dialog), and the launcher previously never applied it.
-  const uiScale = useSettingsStore((s) => s.settings.uiScale);
-  useEffect(() => {
-    (document.documentElement.style as any).zoom = String(uiScale || 1.0);
-  }, [uiScale]);
-
   // Ctrl+, opens Settings here too.
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => {

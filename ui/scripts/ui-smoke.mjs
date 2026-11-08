@@ -575,7 +575,7 @@ try {
           (d) => d.className?.includes?.('pointer-events-none') && d.textContent.trim()
         );
       const label = [...document.querySelectorAll('span')].find(
-        (s) => s.textContent.trim() === 'UI Scale:'
+        (s) => s.textContent.trim() === 'Tooltips:'
       );
       if (!label) return 'no-label';
       label.dispatchEvent(new MouseEvent('mouseover', { bubbles: true }));
@@ -643,7 +643,6 @@ try {
       blob.timestampBase === 'wall' &&
         blob.hexBytesPerRow === 16 &&
         blob.tooltipsEnabled === true &&
-        blob.uiScale === 1.0 &&
         blob.maxPackets === 10000 &&
         blob.defaultExportFormat === 'pcapng',
       JSON.stringify(blob)
