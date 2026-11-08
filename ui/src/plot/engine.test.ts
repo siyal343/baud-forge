@@ -255,6 +255,20 @@ describe('depth + queries', () => {
     expect(plotEngine.getSeries('c1', 0, 1000, 10).length).toBeLessThanOrEqual(40);
   });
 
+  it('sampleNearest finds the closest sample within tolerance', () => {
+    plotEngine.ensureChannel(mkChannel('c1', 'f', { kind: 'field', name: 'f' }));
+    plotEngine.ingestPackets([
+      mkPacket(0, [mkField('f', 10)]),
+      mkPacket(100, [mkField('f', 20)]),
+      mkPacket(200, [mkField('f', 30)]),
+    ]);
+    expect(plotEngine.sampleNearest('c1', 95, 10)).toEqual({ tUs: 100, value: 20 });
+    expect(plotEngine.sampleNearest('c1', 170, 35)).toEqual({ tUs: 200, value: 30 }); // 30 µs away
+    expect(plotEngine.sampleNearest('c1', 160, 20)).toBeNull(); // nearest is 40 µs away
+    expect(plotEngine.sampleNearest('c1', 10_000, 5)).toBeNull();
+    expect(plotEngine.sampleNearest('ghost', 0, 100)).toBeNull();
+  });
+
   it('getDataExtent spans all channels', () => {
     plotEngine.ensureChannel(mkChannel('a', 'fa', { kind: 'field', name: 'fa' }));
     plotEngine.ensureChannel(mkChannel('b', 'fb', { kind: 'field', name: 'fb' }));

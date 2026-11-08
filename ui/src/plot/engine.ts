@@ -347,6 +347,31 @@ export class PlotEngine {
     return rt.ring.tailArrays(n);
   }
 
+  /**
+   * Nearest sample to `tUs` within `toleranceUs` — crosshair readout helper.
+   * Returns null when the channel is empty or has no sample within tolerance.
+   */
+  sampleNearest(channelId: string, tUs: number, toleranceUs: number): { tUs: number; value: number } | null {
+    const rt = this.channels.get(channelId);
+    if (!rt || rt.ring.length === 0) return null;
+    const ring = rt.ring;
+    const { lo, hi } = ring.rangeFor(tUs - toleranceUs, tUs + toleranceUs);
+    if (hi <= lo) return null;
+    const idx = Math.min(hi, Math.max(lo, ring.lowerBound(tUs)));
+    let best = -1;
+    let bestDist = Infinity;
+    for (const i of [idx - 1, idx]) {
+      if (i < lo || i >= hi) continue;
+      const d = Math.abs(ring.tAt(i) - tUs);
+      if (d < bestDist) {
+        bestDist = d;
+        best = i;
+      }
+    }
+    if (best === -1 || bestDist > toleranceUs) return null;
+    return { tUs: ring.tAt(best), value: ring.vAt(best) };
+  }
+
   getStats(channelId: string, tMinUs: number, tMaxUs: number): WindowStats | null {
     const rt = this.channels.get(channelId);
     if (!rt || rt.ring.length === 0) return null;
