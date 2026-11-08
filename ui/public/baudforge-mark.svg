@@ -1,0 +1,17 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512" width="512" height="512" role="img" aria-label="BaudForge mark">
+  <!-- transparent line-work mark: anvil + serial pulse -->
+  <g transform="translate(18,0)" fill="none" stroke-linecap="round" stroke-linejoin="round">
+    <g stroke="#fbbf24" stroke-width="10">
+      <path d="M110,156 H160 V108 H218 V156 H276 V108 H334 V156 H376"/>
+    </g>
+    <circle cx="398" cy="156" r="9" fill="#fbbf24" stroke="none"/>
+
+    <g stroke="#9db8dc" stroke-width="10" fill="#9db8dc" fill-opacity="0.07">
+      <path d="M120,190 C96,192 72,198 52,208 C72,222 96,236 120,240 L398,240 C412,240 422,230 422,215 C422,200 412,190 398,190 Z"/>
+      <path d="M226,240 H278 L268,326 H236 Z"/>
+      <path d="M206,326 H298 L322,378 H182 Z"/>
+      <rect x="168" y="378" width="180" height="34" rx="10"/>
+    </g>
+    <path d="M60,215 H412" stroke="#9db8dc" stroke-opacity="0.45" stroke-width="3" stroke-dasharray="10 8"/>
+  </g>
+</svg>
