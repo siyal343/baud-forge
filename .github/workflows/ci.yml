@@ -93,7 +93,7 @@ jobs:
         with:
           targets: x86_64-apple-darwin
       - name: Build
-        run: cargo build --workspace --locked --target x86_64-apple-darwin
+        run: cargo build --workspace --exclude bforge-desktop --locked --target x86_64-apple-darwin
       - name: Build the app
         run: cargo build --release --locked -p bforge-cli --target x86_64-apple-darwin
       - name: Stage the app binary
@@ -190,10 +190,10 @@ jobs:
       - name: Build the engine
         run: cargo build -p bforge-cli --locked
       - name: Bridge / REC e2e (9 checks)
-        run: python e2e/e2e_bridge_rec.py target/debug/bforge.exe
+        run: python e2e/e2e_bridge_rec.py target/debug/bforge
       - name: Let the previous engine's sockets tear down
         run: sleep 3
       - name: X/YMODEM e2e (14 checks)
-        run: python e2e/e2e_xmodem.py target/debug/bforge.exe
+        run: python e2e/e2e_xmodem.py target/debug/bforge
       - name: Duration exit + device reconnect e2e (4 checks)
-        run: python e2e/e2e_duration_exit.py target/debug/bforge.exe
+        run: python e2e/e2e_duration_exit.py target/debug/bforge
