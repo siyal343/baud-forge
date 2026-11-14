@@ -36,11 +36,12 @@ describe('SampleRing', () => {
     expect(() => new SampleRing(NaN)).toThrow();
   });
 
-  it('rangeFor finds the half-open window on monotonic timestamps', () => {
+  it('rangeFor covers the window inclusive of tMax on monotonic timestamps', () => {
     const r = new SampleRing(100);
     for (let i = 0; i < 50; i++) r.push(i * 10, i);
-    // Window [15, 35] µs → logical indices 2 (t=20) .. 3 (t=30), hi exclusive.
-    expect(r.rangeFor(15, 35)).toEqual({ lo: 2, hi: 4 });
+    // Window [15, 30] µs → logical indices 2 (t=20) .. 3 (t=30): a sample
+    // sitting exactly on tMax is inside the window (F-41).
+    expect(r.rangeFor(15, 30)).toEqual({ lo: 2, hi: 4 });
     // Clamp on both ends.
     expect(r.rangeFor(-100, 10_000)).toEqual({ lo: 0, hi: 50 });
     // Empty window when the range precedes all samples.
@@ -50,8 +51,9 @@ describe('SampleRing', () => {
   it('rangeFor works across a wrapped buffer', () => {
     const r = new SampleRing(10);
     for (let i = 0; i < 25; i++) r.push(i * 10, i);
-    // Ring now holds i=15..24 → t=150..240. Window [200, 220] → i=20,21.
-    expect(r.rangeFor(200, 220)).toEqual({ lo: 5, hi: 7 });
+    // Ring now holds i=15..24 → t=150..240. Window [200, 220] → i=20,21,22 —
+    // the sample sitting exactly on tMax is inside the window (F-41).
+    expect(r.rangeFor(200, 220)).toEqual({ lo: 5, hi: 8 });
   });
 
   it('tailArrays copies the newest n in chronological order', () => {

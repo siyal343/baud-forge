@@ -192,7 +192,11 @@ export const App: React.FC = () => {
       engineApi.checkHealth().then((isHealthy) => {
         if (disposed) return;
         if (!isHealthy) {
-          // No engine (yet): keep the screen rich with the simulated capture.
+          // The link is down (never up, or the engine died mid-session): the
+          // status footer must not keep pulsing LINK OPEN over a dead stream
+          // (F-3). No engine (yet): keep the screen rich with the simulated
+          // capture.
+          useWorkstationStore.setState({ isConnected: false });
           if (useWorkstationStore.getState().packets.length === 0) {
             loadSampleCapture();
           }
@@ -222,13 +226,16 @@ export const App: React.FC = () => {
           },
           handleFrameBatch,
           undefined,
-          // SSE dropped: tear down and retry until the stream returns.
+          // SSE dropped: tear down and retry until the stream returns. The
+          // link state drops with it, so the footer stops showing LINK OPEN
+          // while the stream is dead (F-3).
           () => {
             if (disposed) return;
             if (unsubscribe) {
               unsubscribe();
               unsubscribe = null;
             }
+            useWorkstationStore.setState({ isConnected: false });
             retryTimer = window.setTimeout(tryConnect, 2000);
           }
         );

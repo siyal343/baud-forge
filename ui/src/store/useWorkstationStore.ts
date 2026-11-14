@@ -728,10 +728,14 @@ export const useWorkstationStore = create<WorkstationState>((set, get) => ({
         combined = combined.slice(combined.length - maxPackets());
       }
 
-      // Sample scope points from the newest frames (decoded payloads in HW mode)
-      const newestFrames = batch.slice(-10);
+      // Sample scope points from the batch's frames (decoded payloads in HW
+      // mode). Every frame feeds the lanes and the scope: the old slice(-10)
+      // silently dropped samples whenever the engine flushed a bigger batch
+      // (F-4) — the caps below already bound the arrays, and the plots
+      // decimate for display.
+      const batchFrames = batch;
       let prevSample = state.scopeSamples[state.scopeSamples.length - 1] ?? null;
-      const newScopeSamples = newestFrames.map((p) => {
+      const newScopeSamples = batchFrames.map((p) => {
         const pt = state.isSimulated
           ? generateScopeSample(p.timestampUs)
           : scopeSampleFromPacket(p, prevSample);
@@ -744,7 +748,7 @@ export const useWorkstationStore = create<WorkstationState>((set, get) => ({
       if (state.traceBindings.length) {
         const next: Record<string, Array<{ tUs: number; value: number }>> = { ...traceSeries };
         for (const binding of state.traceBindings) {
-          const points = newestFrames
+          const points = batchFrames
             .map((p) => ({ tUs: p.timestampUs, value: findFieldValue(p, binding.name) }))
             .filter((pt): pt is { tUs: number; value: number } => pt.value !== null);
           if (!points.length) continue;

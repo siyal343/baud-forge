@@ -455,7 +455,7 @@ export const PlotForgeView: React.FC = () => {
   const cursorOverrideRef = useRef<{ x1Us: number | null; x2Us: number | null } | null>(null);
   /** Cursor positions as fractions of the window while LIVE (see painter). */
   const cursorFracRef = useRef<{ f1: number; f2: number } | null>(null);
-  const [, setStatsTick] = useState(0);
+  const [statsTick, setStatsTick] = useState(0);
   const [addMenuOpen, setAddMenuOpen] = useState(false);
   const [catalogVersion, setCatalogVersion] = useState(0);
   const [renamingId, setRenamingId] = useState<string | null>(null);
@@ -1094,14 +1094,18 @@ export const PlotForgeView: React.FC = () => {
   };
 
   // Window stats for the footer (recomputed per render + 2 Hz tick while live).
+  // The tick state must be a dependency: with only [chart], the memo returned
+  // the values from the last config change and the strip froze while the chart
+  // streamed (F-42) — the sibling catalog memo had the identical miss.
   const statsRows = useMemo(() => {
+    void statsTick;
     if (!chart) return [];
     const win = resolveWindow(chart);
     if (!win) return [];
     return chart.channels
       .filter((c) => c.visible)
       .map((c) => ({ ch: c, stats: plotEngine.getStats(c.id, win.tMinUs, win.tMaxUs) }));
-  }, [chart]);
+  }, [chart, statsTick]);
 
   if (!chart) return null;
 

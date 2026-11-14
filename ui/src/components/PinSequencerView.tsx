@@ -22,8 +22,12 @@ export const PinSequencerView: React.FC = () => {
   );
   const pushToast = useToastStore((s) => s.pushToast);
 
-  const [dtrState, setDtrState] = useState(pins.dtr);
-  const [rtsState, setRtsState] = useState(pins.rts);
+  // The toggle state reads the store, which every engine snapshot refreshes:
+  // the old local useState was captured once at mount and never re-synced, so
+  // the panel drifted from the hardware after any engine-driven sequence —
+  // and a toggle then sent values opposite to what the panel displayed (F-19).
+  const dtrState = pins.dtr;
+  const rtsState = pins.rts;
   const [running, setRunning] = useState(false);
   const [statusMsg, setStatusMsg] = useState<string | null>(null);
 
@@ -34,8 +38,8 @@ export const PinSequencerView: React.FC = () => {
   ]);
 
   const handleApplyPins = async (dtr: boolean, rts: boolean) => {
-    setDtrState(dtr);
-    setRtsState(rts);
+    // Optimistic store write; the next engine snapshot reconciles it with the
+    // hardware's actual line state.
     updatePins({ dtr, rts });
     const ok = await engineApi.setPins(selectedPort, dtr, rts);
     if (!ok) {

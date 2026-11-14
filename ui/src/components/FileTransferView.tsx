@@ -72,59 +72,80 @@ export const FileTransferView: React.FC = () => {
     }
   };
 
+  const stopPolling = () => {
+    if (pollRef.current !== null) {
+      window.clearInterval(pollRef.current);
+      pollRef.current = null;
+    }
+  };
+
   const startPolling = () => {
     if (pollRef.current !== null) return;
+    // The status call can outlast the 400 ms tick (its fetch deadline is
+    // 3.5 s): skip until it lands instead of stacking overlapping requests,
+    // and stop with a log line when the engine stops answering — the old loop
+    // polled forever with the status stuck on TRANSFERRING (F-18).
+    let inFlight = false;
+    let failures = 0;
     pollRef.current = window.setInterval(async () => {
-      if (!aliveRef.current) return;
-      const result = await engineApi.transferStatus(selectedPort);
-      if (!result.ok) return;
-      const view = result.view;
-      if (!view) return;
-      const phase = view.phase ?? 'none';
-      if (phase === 'none' || phase.startsWith('failed')) {
-        if (pollRef.current !== null) {
-          window.clearInterval(pollRef.current);
-          pollRef.current = null;
-        }
-        if (phase.startsWith('failed')) {
-          setStatus('error');
-          addLog(`TRANSFER FAILED: ${phase.slice('failed:'.length)}`);
-        } else {
-          setStatus('idle');
-        }
-        return;
-      }
-      if (phase === 'handshake') setStatus('handshake');
-      else if (phase === 'transferring') setStatus('transferring');
-      else if (phase === 'finishing') setStatus('finishing');
-      else if (phase === 'done') {
-        setStatus('complete');
-        if (pollRef.current !== null) {
-          window.clearInterval(pollRef.current);
-          pollRef.current = null;
-        }
-        if (view.direction === 'recv') {
-          // Drain the received bytes and offer them as a download.
-          const data = await engineApi.transferData(selectedPort);
-          if (data.ok && data.bytes && data.bytes.length > 0) {
-            const blob = new Blob([data.bytes as unknown as BlobPart], { type: 'application/octet-stream' });
-            const url = URL.createObjectURL(blob);
-            const a = document.createElement('a');
-            a.href = url;
-            a.download = view.name || 'received.bin';
-            document.body.appendChild(a);
-            a.click();
-            document.body.removeChild(a);
-            setTimeout(() => URL.revokeObjectURL(url), 1500);
-            addLog(`Received ${view.name} (${data.bytes.length} B) — download offered.`);
+      if (!aliveRef.current || inFlight) return;
+      inFlight = true;
+      try {
+        const result = await engineApi.transferStatus(selectedPort);
+        if (!result.ok) {
+          failures += 1;
+          if (failures >= 5) {
+            stopPolling();
+            setStatus('error');
+            addLog(`TRANSFER FAILED: the engine stopped answering (${failures} failed polls).`);
           }
+          return;
         }
-        addLog(`Transfer COMPLETE across ${view.total_blocks} blocks.`);
-        return;
+        failures = 0;
+        const view = result.view;
+        if (!view) return;
+        const phase = view.phase ?? 'none';
+        if (phase === 'none' || phase.startsWith('failed')) {
+          stopPolling();
+          if (phase.startsWith('failed')) {
+            setStatus('error');
+            addLog(`TRANSFER FAILED: ${phase.slice('failed:'.length)}`);
+          } else {
+            setStatus('idle');
+          }
+          return;
+        }
+        if (phase === 'handshake') setStatus('handshake');
+        else if (phase === 'transferring') setStatus('transferring');
+        else if (phase === 'finishing') setStatus('finishing');
+        else if (phase === 'done') {
+          setStatus('complete');
+          stopPolling();
+          if (view.direction === 'recv') {
+            // Drain the received bytes and offer them as a download.
+            const data = await engineApi.transferData(selectedPort);
+            if (data.ok && data.bytes && data.bytes.length > 0) {
+              const blob = new Blob([data.bytes as unknown as BlobPart], { type: 'application/octet-stream' });
+              const url = URL.createObjectURL(blob);
+              const a = document.createElement('a');
+              a.href = url;
+              a.download = view.name || 'received.bin';
+              document.body.appendChild(a);
+              a.click();
+              document.body.removeChild(a);
+              setTimeout(() => URL.revokeObjectURL(url), 1500);
+              addLog(`Received ${view.name} (${data.bytes.length} B) — download offered.`);
+            }
+          }
+          addLog(`Transfer COMPLETE across ${view.total_blocks} blocks.`);
+          return;
+        }
+        setCurrentBlock(view.block ?? 0);
+        setTotalBlocks(view.total_blocks ?? 0);
+        setBytesTransferred(view.bytes_done ?? 0);
+      } finally {
+        inFlight = false;
       }
-      setCurrentBlock(view.block ?? 0);
-      setTotalBlocks(view.total_blocks ?? 0);
-      setBytesTransferred(view.bytes_done ?? 0);
     }, 400);
   };
 

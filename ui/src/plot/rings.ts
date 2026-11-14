@@ -68,13 +68,15 @@ export class SampleRing {
   }
 
   /**
-   * Logical-index range [lo, hi) covering tUs ∈ [tMin, tMax]. Both bounds are
-   * clamped to [0, length]; hi is exclusive. Requires monotonic non-decreasing
-   * timestamps (the feed guarantees this). Binary search on logical indices.
+   * Logical-index range [lo, hi) covering tUs ∈ [tMin, tMax] inclusive: a
+   * sample sitting exactly at tMax belongs to the window (F-41), so hi is the
+   * first index with t > tMax. Both bounds are clamped to [0, length]; hi is
+   * exclusive. Requires monotonic non-decreasing timestamps (the feed
+   * guarantees this). Binary search on logical indices.
    */
   rangeFor(tMin: number, tMax: number): { lo: number; hi: number } {
     const lo = this.lowerBound(tMin);
-    let hi = this.lowerBound(tMax);
+    let hi = this.upperBound(tMax);
     return { lo, hi: Math.min(this.count, Math.max(lo, hi)) };
   }
 
@@ -85,6 +87,18 @@ export class SampleRing {
     while (a < b) {
       const mid = (a + b) >>> 1;
       if (this.tAt(mid) < target) a = mid + 1;
+      else b = mid;
+    }
+    return a;
+  }
+
+  /** First logical index with t > target (== count when none). */
+  upperBound(target: number): number {
+    let a = 0;
+    let b = this.count;
+    while (a < b) {
+      const mid = (a + b) >>> 1;
+      if (this.tAt(mid) <= target) a = mid + 1;
       else b = mid;
     }
     return a;

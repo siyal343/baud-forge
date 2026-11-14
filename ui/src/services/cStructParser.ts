@@ -195,9 +195,16 @@ function packScalar(field: ParsedField, raw: string): { bytes: number[]; error?:
     } else {
       const unsigned = field.type.startsWith('u');
       if (field.size === 8) {
-        // 64-bit via BigInt: setBigUint64/setBigInt64 write the full width.
+        // 64-bit via BigInt parsed straight from the string: routing the value
+        // through Number rounded anything beyond 2^53 before the range check
+        // could reject it, corrupting the field silently (F-2).
         const [lo, hi] = INT_RANGES[field.type];
-        const value = BigInt(Number.isInteger(numeric) ? numeric : 0);
+        let value: bigint;
+        try {
+          value = raw === '' ? 0n : BigInt(raw);
+        } catch {
+          return { bytes: [], error: `"${raw}" is not an integer` };
+        }
         if (value < lo || value > hi) {
           throw new RangeError(`integer out of ${field.type} range`);
         }

@@ -180,19 +180,30 @@ export const OscilloscopeView: React.FC = () => {
     return scopeSamples;
   }, [isRunning, frozenSnapshot, scopeSamples]);
 
+  // The newest sample's timestamp at the moment SINGLE was armed. The catch
+  // effect waits for a sample that arrived after that: the old check fired on
+  // the first render with any buffer content, freezing the pre-arming
+  // waveform — SINGLE behaved exactly like STOP (F-44).
+  const singleArmMarkerRef = useRef<number | null>(null);
+
   // Handle single trigger catch
   useEffect(() => {
-    if (singleArmed && isRunning && scopeSamples.length > 0) {
-      // Catch one frame, freeze scope
-      const tx = getTransforms();
-      setFrozenSnapshot({
-        samples: [...scopeSamples],
-        tMin: tx?.tMin ?? 0,
-        tMax: tx?.tMax ?? 1000,
-      });
-      setIsRunning(false);
-      setSingleArmed(false);
+    if (!singleArmed || !isRunning) return;
+    const newest = scopeSamples[scopeSamples.length - 1];
+    if (!newest) return;
+    if (singleArmMarkerRef.current !== null && newest.timestampUs === singleArmMarkerRef.current) {
+      return;
     }
+    // Catch one frame, freeze scope
+    const tx = getTransforms();
+    setFrozenSnapshot({
+      samples: [...scopeSamples],
+      tMin: tx?.tMin ?? 0,
+      tMax: tx?.tMax ?? 1000,
+    });
+    setIsRunning(false);
+    setSingleArmed(false);
+    singleArmMarkerRef.current = null;
   }, [singleArmed, isRunning, scopeSamples]);
 
   // Statistics calculation on CH1 (v_batt) and CH2 (gyro_z)
@@ -363,6 +374,10 @@ export const OscilloscopeView: React.FC = () => {
       setFrozenSnapshot(null);
       setIsRunning(true);
     }
+    // Mark the newest sample now; the catch effect freezes on the first sample
+    // that arrives after this moment (F-44).
+    const newest = scopeSamples[scopeSamples.length - 1];
+    singleArmMarkerRef.current = newest ? newest.timestampUs : null;
     setSingleArmed(true);
   };
 
@@ -399,12 +414,17 @@ export const OscilloscopeView: React.FC = () => {
     if (!ctx) return;
     const C = scopePalette();
 
-    // Handle high DPI display
+    // Handle high DPI display. Round the target: canvas.width/height are
+    // integers, so a fractional rect (Windows 125%/150% scaling, flex layouts)
+    // made this comparison true every frame and reallocated the backing store
+    // 60x per second (F-43). PlotForgeView does the same rounding.
     const dpr = window.devicePixelRatio || 1;
     const rect = canvas.getBoundingClientRect();
-    if (canvas.width !== rect.width * dpr || canvas.height !== rect.height * dpr) {
-      canvas.width = rect.width * dpr;
-      canvas.height = rect.height * dpr;
+    const targetWidth = Math.round(rect.width * dpr);
+    const targetHeight = Math.round(rect.height * dpr);
+    if (canvas.width !== targetWidth || canvas.height !== targetHeight) {
+      canvas.width = targetWidth;
+      canvas.height = targetHeight;
     }
     ctx.resetTransform();
     ctx.scale(dpr, dpr);
