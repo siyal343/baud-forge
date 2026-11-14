@@ -7,13 +7,16 @@ import puppeteer from 'puppeteer-core';
 
 const BASE = process.argv[2] || 'http://localhost:5173/';
 const EDGE_PATHS = [
+  // Explicit override - e.g. chrome-headless-shell when the installed Edge build
+  // has a broken headless mode (Edge 157 on Windows exits instantly, code 0).
+  process.env.BFORGE_SMOKE_BROWSER || '',
   'C:/Program Files (x86)/Microsoft/Edge/Application/msedge.exe',
   'C:/Program Files/Google/Chrome/Application/chrome.exe',
   '/usr/bin/google-chrome',
   '/usr/bin/google-chrome-stable',
   '/usr/bin/chromium',
   '/snap/bin/chromium',
-];
+].filter(Boolean);
 import { existsSync } from 'node:fs';
 const executablePath = EDGE_PATHS.find((p) => existsSync(p));
 if (!executablePath) {
