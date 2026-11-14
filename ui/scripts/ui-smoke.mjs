@@ -58,6 +58,12 @@ const browser = await puppeteer.launch({
 });
 try {
   const page = await browser.newPage();
+  // The dock's restore paths warn when a starred/saved layout cannot boot;
+  // surface those on the failing checks instead of losing them in the console.
+  const dockWarnings = [];
+  page.on('console', (msg) => {
+    if (msg.text().includes('[bforge-dock]')) dockWarnings.push(msg.text());
+  });
   await page.goto(BASE, { waitUntil: 'domcontentloaded' });
   await sleep(2500); // app boot + simulation warm-up
 
@@ -754,6 +760,18 @@ try {
         (window.__bforgeDockApi?.panels ?? []).map((p) => p.id).sort().join(',')
       );
 
+    // The saved fixture must be deterministic: earlier tests open panels (MITM
+    // bridge, activity log) and — now that boot honors the saved arrangement
+    // instead of clobbering it to the factory preset (F-16) — those panels
+    // survive reloads into the capture. Close them before saving so
+    // "Smoke Layout" is exactly the default panel set.
+    await page.evaluate(() => {
+      for (const id of ['bridge', 'activityLog']) {
+        window.__bforgeDockApi?.getPanel(id)?.api.close();
+      }
+    });
+    await sleep(500);
+
     // Save Current Layout… -> name it -> Enter. The input is pre-filled with
     // the last used name, so select-all before typing to replace it.
     await openLayoutsMenu();
@@ -828,7 +846,7 @@ try {
     check(
       'default layout wins the next boot over the session auto-save',
       !afterBoot.includes('bridge') && afterBoot.includes('packetStream'),
-      `boot=${afterBoot}`
+      `boot=${afterBoot}${dockWarnings.length ? ` | ${dockWarnings.join(' | ')}` : ''}`
     );
 
     // Two-click delete; deleting the starred layout must clear the default too.

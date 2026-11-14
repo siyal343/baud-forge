@@ -699,8 +699,10 @@ export const WorkstationDock: React.FC = () => {
         try {
           event.api.fromJSON(starred.data as any);
           return;
-        } catch (_) {
-          // Corrupt/incompatible default: fall through to the auto-save.
+        } catch (error) {
+          // Corrupt/incompatible default: fall through to the auto-save — but
+          // say why, or the user's starred default silently never boots.
+          console.warn('[bforge-dock] starred layout restore failed:', error);
         }
       }
 
@@ -710,8 +712,9 @@ export const WorkstationDock: React.FC = () => {
         try {
           event.api.fromJSON(JSON.parse(savedLayout));
           return;
-        } catch (_) {
-          // If corrupted, fallback to preset
+        } catch (error) {
+          // If corrupted, fallback to preset — but say why.
+          console.warn('[bforge-dock] saved layout restore failed:', error);
         }
       }
 
@@ -720,8 +723,15 @@ export const WorkstationDock: React.FC = () => {
     [activePreset, applyPreset]
   );
 
-  // Listen to preset changes
+  // Listen to preset changes. The boot run is skipped: onReady has already
+  // decided the startup layout (starred default > auto-save > preset) by the
+  // time this parent effect flushes after the child's mount effect, and
+  // rebuilding the preset here would clobber the restored arrangement on
+  // every launch (F-16). Only a genuine change of preset rebuilds the dock.
+  const appliedPresetRef = useRef(activePreset);
   useEffect(() => {
+    if (appliedPresetRef.current === activePreset) return;
+    appliedPresetRef.current = activePreset;
     const api = apiRef.current;
     if (api) {
       localStorage.removeItem('bforge_dock_layout');

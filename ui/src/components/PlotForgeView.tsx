@@ -210,7 +210,8 @@ const drawFftChart = (p: PaintCtx): void => {
       if (v > hi) hi = v;
     }
   }
-  if (chart.fftDb) hi = Math.min(hi, lo + 5); // keep the noise floor readable
+  // The axis spans the actual data: a dB clamp to floor+5 dB put the peak tens
+  // of plot-heights above the canvas and rendered the spectrum invisible (F-39).
   if (hi - lo < 1e-9) hi = lo + 1;
   lo -= (hi - lo) * 0.06;
   hi += (hi - lo) * 0.06;
@@ -1164,7 +1165,21 @@ export const PlotForgeView: React.FC = () => {
       {/* Ribbon */}
       <div className="h-[26px] flex items-center gap-2 px-2 bg-bf-subpanel border-b border-bf-line shrink-0">
         <button
-          onClick={() => usePlotStore.getState().setLive(chart.id, !chart.live)}
+          onClick={() => {
+            if (chart.live) {
+              // Freeze on the window being displayed right now: setLive alone
+              // cleared the frozen window, so the chart kept tracking the head
+              // on the next paint and CSV exported rows the user never saw (F-40).
+              const win = resolveWindow(chart);
+              if (win && win.tMaxUs > win.tMinUs) {
+                usePlotStore.getState().freezeView(chart.id, win.tMinUs, win.tMaxUs);
+              } else {
+                usePlotStore.getState().setLive(chart.id, false);
+              }
+            } else {
+              usePlotStore.getState().setLive(chart.id, true);
+            }
+          }}
           className={chart.live ? ribbonActive : ribbonBtn}
           data-tooltip={chart.live ? 'Following newest samples — click to freeze the view' : 'Frozen view — click to resume live follow'}
         >

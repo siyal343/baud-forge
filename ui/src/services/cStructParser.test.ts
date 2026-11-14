@@ -119,4 +119,40 @@ describe('serializeStruct', () => {
     expect(errors).toEqual([]);
     expect(bytes.every((b) => b === 0)).toBe(true);
   });
+
+  it('packs every element of a numeric array from a comma-separated list (F-1)', () => {
+    const { structs, errors: parseErrors } = parseCStructs(
+      'typedef struct { uint32_t magic; uint8_t samples[4]; uint16_t table[2]; } Telemetry;'
+    );
+    expect(parseErrors).toEqual([]);
+    const t = structs[0];
+    expect(t.size).toBe(12);
+    const ok = serializeStruct(t, { magic: '1', samples: '1,2,3,4', table: '5,6' });
+    expect(ok.errors).toEqual([]);
+    expect(ok.bytes).toHaveLength(12);
+    expect(ok.bytes.slice(0, 4)).toEqual([1, 0, 0, 0]);
+    expect(ok.bytes.slice(4, 8)).toEqual([1, 2, 3, 4]);
+    expect(ok.bytes.slice(8, 12)).toEqual([5, 0, 6, 0]); // uint16 LE each
+  });
+
+  it('packs all zeros for an empty numeric array input', () => {
+    const { structs } = parseCStructs('typedef struct { uint32_t magic; uint8_t samples[4]; } T;');
+    const ok = serializeStruct(structs[0], { magic: '7' });
+    expect(ok.errors).toEqual([]);
+    expect(ok.bytes).toHaveLength(8);
+    expect(ok.bytes.slice(4)).toEqual([0, 0, 0, 0]);
+  });
+
+  it('rejects an array list with the wrong element count', () => {
+    const { structs } = parseCStructs('typedef struct { uint8_t samples[4]; } T;');
+    const bad = serializeStruct(structs[0], { samples: '1,2,3' });
+    expect(bad.errors[0]).toContain('expected 4 comma-separated values, got 3');
+    expect(bad.bytes).toHaveLength(0);
+  });
+
+  it('names the offending element in an array list', () => {
+    const { structs } = parseCStructs('typedef struct { uint8_t samples[4]; } T;');
+    const bad = serializeStruct(structs[0], { samples: '1,2,x,4' });
+    expect(bad.errors[0]).toContain('samples[2]: "x" is not a number');
+  });
 });

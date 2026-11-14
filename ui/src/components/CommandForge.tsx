@@ -503,6 +503,14 @@ typedef struct {
     if (ok) recordTx(wireBytes.length);
   };
 
+  // The periodic timer must read the latest send path on every tick: a closure
+  // captured at toggle time would keep transmitting to the port, mode and
+  // checksum settings of that moment while the UI shows the new ones (F-17).
+  const handleSendRef = useRef(handleSend);
+  useEffect(() => {
+    handleSendRef.current = handleSend;
+  });
+
   const executeCommand = (cmd: UserCommand) => {
     if (cmd.isPeriodic) {
       const isCurrentlyActive = !!activePeriodicIds[cmd.id];
@@ -515,7 +523,7 @@ typedef struct {
       } else {
         handleSend(cmd.payload);
         const timerId = window.setInterval(() => {
-          handleSend(cmd.payload);
+          handleSendRef.current(cmd.payload);
         }, Math.max(20, cmd.intervalMs || 100));
 
         intervalTimersRef.current[cmd.id] = timerId;
@@ -1010,6 +1018,8 @@ typedef struct {
                           placeholder={
                             field.kind === 'chars'
                               ? 'ASCII text (NUL padded)'
+                              : field.count > 1
+                              ? `${field.count} values, comma-separated`
                               : field.kind === 'float'
                               ? 'e.g. 0.5'
                               : 'integer'

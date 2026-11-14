@@ -128,7 +128,12 @@ export function parseCStructs(header: string): ParseResult {
   return { structs, errors };
 }
 
-/** Serialize field values into packed little-endian wire bytes. */
+/** Serialize field values into packed little-endian wire bytes.
+ *
+ * A numeric array field takes a comma-separated list of exactly `count`
+ * values ("1,2,3,4"); an empty input packs all zeros. Emitting one element
+ * for a declared array silently shorted the frame and shifted every field
+ * after it (launch audit F-1). */
 export function serializeStruct(
   struct: ParsedStruct,
   values: Record<string, string>
@@ -144,50 +149,82 @@ export function serializeStruct(
       }
       continue;
     }
-    const numeric = raw === '' ? 0 : Number(raw);
-    if (raw !== '' && Number.isNaN(numeric)) {
-      errors.push(`${field.name}: "${raw}" is not a number`);
+    const elements: string[] =
+      field.count > 1
+        ? raw === ''
+          ? Array.from({ length: field.count }, () => '')
+          : raw.split(',').map((part) => part.trim())
+        : [raw];
+    if (elements.length !== field.count) {
+      errors.push(
+        `${field.name}: expected ${field.count} comma-separated values, got ${elements.length}`
+      );
       continue;
     }
-    const view = new DataView(new ArrayBuffer(field.size));
-    try {
-      if (field.kind === 'float') {
-        if (field.size === 4) view.setFloat32(0, numeric, true);
-        else view.setFloat64(0, numeric, true);
-      } else {
-        const unsigned = field.type.startsWith('u');
-        if (field.size === 8) {
-          // 64-bit via BigInt: setBigUint64/setBigInt64 write the full width.
-          const [lo, hi] = INT_RANGES[field.type];
-          const value = BigInt(Number.isInteger(numeric) ? numeric : 0);
-          if (value < lo || value > hi) {
-            throw new RangeError(`integer out of ${field.type} range`);
-          }
-          if (unsigned) view.setBigUint64(0, value, true);
-          else view.setBigInt64(0, value, true);
-        } else {
-          const [lo, hi] = INT_RANGES[field.type];
-          if (!Number.isInteger(numeric)) {
-            throw new RangeError(`${field.type} requires an integer value`);
-          }
-          if (BigInt(numeric) < lo || BigInt(numeric) > hi) {
-            throw new RangeError(`integer out of ${field.type} range (${lo}..${hi})`);
-          }
-          if (field.size === 1) view.setUint8(0, numeric);
-          else if (field.size === 2) {
-            if (unsigned) view.setUint16(0, numeric, true);
-            else view.setInt16(0, numeric, true);
-          } else if (field.size === 4) {
-            if (unsigned) view.setUint32(0, numeric, true);
-            else view.setInt32(0, numeric, true);
-          }
-        }
+    const packed: number[] = [];
+    let elementError = '';
+    for (let i = 0; i < elements.length; i++) {
+      const result = packScalar(field, elements[i]);
+      if (result.error) {
+        const label = field.count > 1 ? `${field.name}[${i}]` : field.name;
+        elementError = `${label}: ${result.error}`;
+        break;
       }
-    } catch (error) {
-      errors.push(`${field.name}: ${(error as Error).message}`);
-      continue;
+      packed.push(...result.bytes);
     }
-    for (let i = 0; i < field.size; i++) bytes.push(view.getUint8(i));
+    if (elementError) {
+      errors.push(elementError);
+      continue; // a failed field contributes nothing, like before
+    }
+    bytes.push(...packed);
   }
   return { bytes, errors };
+}
+
+/** Pack one scalar element: the numeric path a single field always took. */
+function packScalar(field: ParsedField, raw: string): { bytes: number[]; error?: string } {
+  const numeric = raw === '' ? 0 : Number(raw);
+  if (raw !== '' && Number.isNaN(numeric)) {
+    return { bytes: [], error: `"${raw}" is not a number` };
+  }
+  const view = new DataView(new ArrayBuffer(field.size));
+  try {
+    if (field.kind === 'float') {
+      if (field.size === 4) view.setFloat32(0, numeric, true);
+      else view.setFloat64(0, numeric, true);
+    } else {
+      const unsigned = field.type.startsWith('u');
+      if (field.size === 8) {
+        // 64-bit via BigInt: setBigUint64/setBigInt64 write the full width.
+        const [lo, hi] = INT_RANGES[field.type];
+        const value = BigInt(Number.isInteger(numeric) ? numeric : 0);
+        if (value < lo || value > hi) {
+          throw new RangeError(`integer out of ${field.type} range`);
+        }
+        if (unsigned) view.setBigUint64(0, value, true);
+        else view.setBigInt64(0, value, true);
+      } else {
+        const [lo, hi] = INT_RANGES[field.type];
+        if (!Number.isInteger(numeric)) {
+          throw new RangeError(`${field.type} requires an integer value`);
+        }
+        if (BigInt(numeric) < lo || BigInt(numeric) > hi) {
+          throw new RangeError(`integer out of ${field.type} range (${lo}..${hi})`);
+        }
+        if (field.size === 1) view.setUint8(0, numeric);
+        else if (field.size === 2) {
+          if (unsigned) view.setUint16(0, numeric, true);
+          else view.setInt16(0, numeric, true);
+        } else if (field.size === 4) {
+          if (unsigned) view.setUint32(0, numeric, true);
+          else view.setInt32(0, numeric, true);
+        }
+      }
+    }
+  } catch (error) {
+    return { bytes: [], error: (error as Error).message };
+  }
+  const bytes: number[] = [];
+  for (let i = 0; i < field.size; i++) bytes.push(view.getUint8(i));
+  return { bytes };
 }
