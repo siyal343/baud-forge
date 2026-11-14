@@ -8,6 +8,7 @@
 *.bflog
 /archive/
 *.ico
+!crates/bforge-desktop/icons/icon.ico
 node_modules/
 ui/dist/
 .zcode/

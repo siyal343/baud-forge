@@ -27,8 +27,11 @@ jobs:
         run: sudo apt-get update && sudo apt-get install -y libudev-dev pkg-config
       - name: Check formatting
         run: cargo fmt --all --check
+      # The desktop shell is excluded here: its Tauri build pulls Linux
+      # WebKit/GTK system libraries and needs the built UI, which the
+      # windows-desktop job provides properly (F: CI desktop artifact).
       - name: Run clippy
-        run: cargo clippy --workspace --all-targets --locked -- -D warnings
+        run: cargo clippy --workspace --exclude bforge-desktop --all-targets --locked -- -D warnings
 
   test:
     name: test (${{ matrix.name }})
@@ -55,9 +58,9 @@ jobs:
         if: runner.os == 'Linux'
         run: sudo apt-get update && sudo apt-get install -y libudev-dev pkg-config
       - name: Build
-        run: cargo build --workspace --locked
+        run: cargo build --workspace --exclude bforge-desktop --locked
       - name: Test
-        run: cargo test --workspace --locked
+        run: cargo test --workspace --exclude bforge-desktop --locked
       - name: Run the headless CLI
         run: cargo run --locked -p bforge-cli -- version
 
