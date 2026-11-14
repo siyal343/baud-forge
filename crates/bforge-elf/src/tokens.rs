@@ -511,7 +511,12 @@ fn read_varint_u64(bytes: &[u8], offset: &mut usize) -> Result<u64, TokenDecodeE
     while *offset < bytes.len() {
         let byte = bytes[*offset];
         *offset += 1;
-        result |= ((byte & 0x7F) as u64) << shift;
+        // A malformed varint can carry set bits into the 64th position; shifting
+        // them in would overflow (a debug panic, silent truncation in release).
+        let group = ((byte & 0x7F) as u64)
+            .checked_shl(shift)
+            .ok_or(TokenDecodeError::InvalidVarint)?;
+        result |= group;
         if (byte & 0x80) == 0 {
             return Ok(result);
         }
@@ -835,8 +840,11 @@ fn format_defmt(
                     args.push(formatted.to_string());
                 }
                 "str" => {
-                    let len = read_varint_u64(args_data, &mut offset)? as usize;
-                    let end = offset + len;
+                    let len = usize::try_from(read_varint_u64(args_data, &mut offset)?)
+                        .unwrap_or(usize::MAX);
+                    // A malformed length must saturate, not wrap: the bound check
+                    // below has to see the true magnitude.
+                    let end = offset.saturating_add(len);
                     if end > args_data.len() {
                         return Err(TokenDecodeError::TruncatedData);
                     }

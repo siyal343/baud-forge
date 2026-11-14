@@ -88,13 +88,16 @@ pub fn decode(frame: &[u8]) -> Result<Vec<DecodedField>, ExecError> {
 
     if crc_present {
         require(frame, 8, "csp crc32")?;
-        let expected = u32::from_le_bytes([
+        // libCSP writes the checksum big-endian (`htobe32` before the memcpy in
+        // `csp_crc32_append`), and before CSP 2.1 it covers the payload only,
+        // not the four header bytes.
+        let expected = u32::from_be_bytes([
             frame[payload_end],
             frame[payload_end + 1],
             frame[payload_end + 2],
             frame[payload_end + 3],
         ]);
-        let actual = crc32(&frame[..payload_end]);
+        let actual = crc32(&frame[4..payload_end]);
         fields.push(field(
             "crc32",
             payload_end as u32,
@@ -114,20 +117,23 @@ pub fn decode(frame: &[u8]) -> Result<Vec<DecodedField>, ExecError> {
     Ok(fields)
 }
 
-/// CRC-32 as CSP uses it: polynomial 0x04C11DB7, initial value 0, no final xor.
+/// CRC-32 as libCSP computes it: the reflected IEEE polynomial (0xEDB88320)
+/// with initial value 0xFFFFFFFF and a final xor — the same algorithm zlib
+/// uses, whose published check value for "123456789" is 0xCBF43926. The old
+/// MSB-first no-xor variant here judged every genuine frame invalid.
 fn crc32(data: &[u8]) -> u32 {
-    let mut crc = 0u32;
+    let mut crc = 0xFFFF_FFFFu32;
     for byte in data {
-        crc ^= u32::from(*byte) << 24;
+        crc ^= u32::from(*byte);
         for _ in 0..8 {
-            crc = if crc & 0x8000_0000 != 0 {
-                (crc << 1) ^ 0x04C1_1DB7
+            crc = if crc & 1 != 0 {
+                (crc >> 1) ^ 0xEDB8_8320
             } else {
-                crc << 1
+                crc >> 1
             };
         }
     }
-    crc
+    !crc
 }
 
 #[cfg(test)]
@@ -162,11 +168,20 @@ mod tests {
     }
 
     #[test]
+    fn the_crc_matches_the_libcsp_reference() {
+        // The check value every CRC-32/ISO-HDLC implementation (zlib, libCSP)
+        // publishes for "123456789". This anchors the algorithm to the
+        // reference instead of to this pack's own fixture.
+        assert_eq!(crc32(b"123456789"), 0xCBF4_3926);
+    }
+
+    #[test]
     fn payload_bytes_are_counted_and_a_crc_is_verified_when_asked_for() {
         let mut frame = (header() | 0x01).to_be_bytes().to_vec(); // CRCT flag set
         frame.extend_from_slice(b"abc");
-        let crc = crc32(&frame);
-        frame.extend_from_slice(&crc.to_le_bytes());
+        // libCSP: payload only, big-endian on the wire.
+        let crc = crc32(&frame[4..]);
+        frame.extend_from_slice(&crc.to_be_bytes());
 
         let fields = decode(&frame).unwrap();
         assert_eq!(value_of(&fields, "payload_bytes"), "3");
@@ -174,10 +189,21 @@ mod tests {
     }
 
     #[test]
+    fn a_swapped_crc_endian_is_reported_as_invalid() {
+        let mut frame = (header() | 0x01).to_be_bytes().to_vec();
+        frame.extend_from_slice(b"abc");
+        let crc = crc32(&frame[4..]);
+        frame.extend_from_slice(&crc.swap_bytes().to_be_bytes());
+
+        let fields = decode(&frame).unwrap();
+        assert_eq!(value_of(&fields, "crc32_valid"), "false");
+    }
+
+    #[test]
     fn a_wrong_crc_is_reported_as_invalid() {
         let mut frame = (header() | 0x01).to_be_bytes().to_vec();
         frame.extend_from_slice(b"abc");
-        frame.extend_from_slice(&0xDEAD_BEEFu32.to_le_bytes());
+        frame.extend_from_slice(&0xDEAD_BEEFu32.to_be_bytes());
 
         let fields = decode(&frame).unwrap();
         assert_eq!(value_of(&fields, "crc32_valid"), "false");

@@ -458,6 +458,10 @@ impl Server {
         let mut frames_sent = Instant::now();
         let started = Instant::now();
         let mut published = Instant::now();
+        // A pump failure must not skip the shutdown block: it stops the acceptor
+        // and flush threads and seals the vault, so it runs even when the pump
+        // died and the error is surfaced only after the wind-down.
+        let mut pump_error: Option<ServeError> = None;
         shared.log(
             crate::logs::LogLevel::Info,
             "engine_start",
@@ -727,7 +731,15 @@ impl Server {
                 }
                 let _ = job.reply.send(result);
             }
-            session.pump_once()?;
+            if let Err(error) = session.pump_once() {
+                shared.log(
+                    crate::logs::LogLevel::Error,
+                    "engine_pump_failed",
+                    format!("{error}"),
+                );
+                pump_error = Some(error.into());
+                break;
+            }
             let frames = if frames_sent.elapsed() >= FRAME_TICK {
                 frames_sent = Instant::now();
                 session.take_frames()
@@ -781,7 +793,9 @@ impl Server {
             Ok(summary) => summary.chunks,
             Err(error) => {
                 eprintln!("bforge-serve: the vault could not be sealed: {error}");
-                return Err(ServeError::Session(error));
+                // A pump failure is the more useful answer when there was one:
+                // it is the reason the run ended early.
+                return Err(pump_error.unwrap_or(ServeError::Session(error)));
             }
         };
         shared.log(
@@ -800,6 +814,10 @@ impl Server {
             None => {}
         }
         drop(activity_guard);
+        // The wind-down is done; only now report why the run ended early.
+        if let Some(error) = pump_error {
+            return Err(error);
+        }
         Ok(ServeStats {
             requests: shared.requests.load(Ordering::Relaxed),
             chunks,
@@ -915,7 +933,9 @@ fn handle(mut stream: TcpStream, shared: Arc<Shared>, stop: Arc<AtomicBool>) {
 
     // Writes take a body, so a POST is answered before the read-only guard.
     if method == "POST" && path == "/api/send" {
-        let body = read_body(&mut reader, content_length);
+        let Some(body) = read_body(&mut stream, &mut reader, content_length) else {
+            return;
+        };
         send(&mut stream, &shared, &body);
         return;
     }
@@ -924,17 +944,23 @@ fn handle(mut stream: TcpStream, shared: Arc<Shared>, stop: Arc<AtomicBool>) {
         return;
     }
     if method == "POST" && path == "/api/quick-connect" {
-        let body = read_body(&mut reader, content_length);
+        let Some(body) = read_body(&mut stream, &mut reader, content_length) else {
+            return;
+        };
         quick_connect(&mut stream, &shared, &body);
         return;
     }
     if (method == "POST" || method == "GET") && path == "/api/workspace/export" {
-        let _body = read_body(&mut reader, content_length);
+        let Some(_body) = read_body(&mut stream, &mut reader, content_length) else {
+            return;
+        };
         workspace_export(&mut stream, &shared);
         return;
     }
     if method == "POST" && path.starts_with("/api/ports/") && path.ends_with("/framing") {
-        let body = read_body(&mut reader, content_length);
+        let Some(body) = read_body(&mut stream, &mut reader, content_length) else {
+            return;
+        };
         port_framing(&mut stream, &shared, path, &body);
         return;
     }
@@ -955,52 +981,72 @@ fn handle(mut stream: TcpStream, shared: Arc<Shared>, stop: Arc<AtomicBool>) {
         return;
     }
     if method == "POST" && path == "/api/yield" {
-        let body = read_body(&mut reader, content_length);
+        let Some(body) = read_body(&mut stream, &mut reader, content_length) else {
+            return;
+        };
         yield_port(&mut stream, &shared, &body);
         return;
     }
     if method == "POST" && path == "/api/yield/reclaim" {
-        let body = read_body(&mut reader, content_length);
+        let Some(body) = read_body(&mut stream, &mut reader, content_length) else {
+            return;
+        };
         reclaim_port(&mut stream, &shared, &body);
         return;
     }
     if method == "POST" && path == "/api/pins" {
-        let body = read_body(&mut reader, content_length);
+        let Some(body) = read_body(&mut stream, &mut reader, content_length) else {
+            return;
+        };
         pins(&mut stream, &shared, &body);
         return;
     }
     if method == "POST" && path == "/api/fault" {
-        let body = read_body(&mut reader, content_length);
+        let Some(body) = read_body(&mut stream, &mut reader, content_length) else {
+            return;
+        };
         fault(&mut stream, &shared, &body);
         return;
     }
     if method == "POST" && path == "/api/record" {
-        let body = read_body(&mut reader, content_length);
+        let Some(body) = read_body(&mut stream, &mut reader, content_length) else {
+            return;
+        };
         record(&mut stream, &shared, &body);
         return;
     }
     if method == "POST" && path == "/api/bridge" {
-        let body = read_body(&mut reader, content_length);
+        let Some(body) = read_body(&mut stream, &mut reader, content_length) else {
+            return;
+        };
         bridge(&mut stream, &shared, &body);
         return;
     }
     if method == "POST" && path == "/api/elf" {
-        let body = read_body(&mut reader, content_length);
+        let Some(body) = read_body(&mut stream, &mut reader, content_length) else {
+            return;
+        };
         elf_upload(&mut stream, &shared, &body);
         return;
     }
     if method == "POST" && path == "/api/schema" {
-        let body = read_body(&mut reader, content_length);
+        let Some(body) = read_body(&mut stream, &mut reader, content_length) else {
+            return;
+        };
         schema(&mut stream, &shared, &body);
         return;
     }
     if method == "POST" && path == "/api/transfer" {
-        let body = read_body(&mut reader, content_length);
+        let Some(body) = read_body(&mut stream, &mut reader, content_length) else {
+            return;
+        };
         transfer_control(&mut stream, &shared, &body);
         return;
     }
     if method == "POST" && path == "/api/transfer/upload" {
-        let body = read_body(&mut reader, content_length);
+        let Some(body) = read_body(&mut stream, &mut reader, content_length) else {
+            return;
+        };
         transfer_upload(&mut stream, &shared, &body);
         return;
     }
@@ -1030,7 +1076,9 @@ fn handle(mut stream: TcpStream, shared: Arc<Shared>, stop: Arc<AtomicBool>) {
         return;
     }
     if method == "POST" && path == "/api/logs/client" {
-        let body = read_body(&mut reader, content_length);
+        let Some(body) = read_body(&mut stream, &mut reader, content_length) else {
+            return;
+        };
         client_log(&mut stream, &shared, &body);
         return;
     }
@@ -1161,20 +1209,55 @@ fn stream_events(mut stream: TcpStream, shared: Arc<Shared>, stop: Arc<AtomicBoo
     }
 }
 
-/// Read exactly `length` bytes of body. `shortcut: at most 64 KiB and no chunked
-/// encoding, which is what a forge needs; a larger payload is a different feature`.
-fn read_body(reader: &mut BufReader<TcpStream>, length: usize) -> Vec<u8> {
-    let mut body = vec![0u8; length.min(64 * 1024)];
+/// The largest request body the server accepts. Firmware images and schema files
+/// travel through these endpoints and are routinely larger than the 64 KiB the
+/// old cap silently truncated to.
+const MAX_BODY_BYTES: usize = 16 * 1024 * 1024;
+
+/// Read exactly `length` bytes of body, answering the stream directly when the
+/// body cannot be read whole: 413 over the cap, 400 when the connection ends
+/// before its content-length. `None` means the caller must stop: the response
+/// has already been written.
+fn read_body(
+    stream: &mut TcpStream,
+    reader: &mut BufReader<TcpStream>,
+    length: usize,
+) -> Option<Vec<u8>> {
+    if length > MAX_BODY_BYTES {
+        respond(
+            stream,
+            "413 Payload Too Large",
+            "text/plain",
+            b"request body exceeds the 16 MiB limit\n",
+        );
+        return None;
+    }
+    let mut body = vec![0u8; length];
     let mut read = 0;
     while read < body.len() {
         match reader.read(&mut body[read..]) {
-            Ok(0) => break,
+            Ok(0) => {
+                respond(
+                    stream,
+                    "400 Bad Request",
+                    "text/plain",
+                    b"the body ended before its content-length\n",
+                );
+                return None;
+            }
             Ok(count) => read += count,
-            Err(_) => break,
+            Err(_) => {
+                respond(
+                    stream,
+                    "400 Bad Request",
+                    "text/plain",
+                    b"the body could not be read\n",
+                );
+                return None;
+            }
         }
     }
-    body.truncate(read);
-    body
+    Some(body)
 }
 
 #[derive(Debug, serde::Deserialize)]

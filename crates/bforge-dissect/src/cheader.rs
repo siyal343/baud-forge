@@ -76,9 +76,9 @@ impl std::error::Error for CHeaderError {}
 
 /// Parse a header.
 pub fn parse(text: &str) -> Result<CHeader, CHeaderError> {
-    let cleaned = strip(text);
+    let (cleaned, defines) = strip(text);
     let tokens = tokenize(&cleaned);
-    Parser::new(tokens).run()
+    Parser::new(tokens, defines).run()
 }
 
 /// Compile one struct into the intermediate representation.
@@ -304,10 +304,13 @@ fn type_info(name: &str) -> Option<(u8, bool, bool)> {
 }
 
 /// Replace comments and preprocessor lines with spaces, keeping newlines so line
-/// numbers stay true.
-fn strip(text: &str) -> String {
+/// numbers stay true. Simple `#define NAME <integer>` constants (decimal or hex)
+/// are collected along the way, because firmware headers size their arrays with
+/// them; anything else a define carries is left unresolved.
+fn strip(text: &str) -> (String, HashMap<String, String>) {
     let bytes: Vec<char> = text.chars().collect();
     let mut out = String::with_capacity(text.len());
+    let mut defines = HashMap::new();
     let mut index = 0;
     let mut at_line_start = true;
 
@@ -320,6 +323,27 @@ fn strip(text: &str) -> String {
             continue;
         }
         if at_line_start && character == '#' {
+            // Capture `#define NAME VALUE` before blanking the line: an array
+            // count spelled with a define is resolved later against this map.
+            let mut end = index;
+            while end < bytes.len() && bytes[end] != '\n' {
+                end += 1;
+            }
+            let line: String = bytes[index..end].iter().collect();
+            if let Some(rest) = line.trim_start_matches('#').trim().strip_prefix("define") {
+                let mut parts = rest.split_whitespace();
+                if let (Some(name), Some(value)) = (parts.next(), parts.next()) {
+                    let is_integer = value.parse::<i64>().is_ok()
+                        || value
+                            .strip_prefix("0x")
+                            .or_else(|| value.strip_prefix("0X"))
+                            .and_then(|hex| i64::from_str_radix(hex, 16).ok())
+                            .is_some();
+                    if is_integer && !value.contains('-') {
+                        defines.insert(name.to_string(), value.to_string());
+                    }
+                }
+            }
             while index < bytes.len() && bytes[index] != '\n' {
                 out.push(' ');
                 index += 1;
@@ -364,7 +388,7 @@ fn strip(text: &str) -> String {
         out.push(character);
         index += 1;
     }
-    out
+    (out, defines)
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -412,15 +436,18 @@ struct Parser {
     position: usize,
     header: CHeader,
     aliases: HashMap<String, String>,
+    /// Simple `#define NAME <integer>` constants, for array counts.
+    defines: HashMap<String, String>,
 }
 
 impl Parser {
-    fn new(tokens: Vec<Token>) -> Self {
+    fn new(tokens: Vec<Token>, defines: HashMap<String, String>) -> Self {
         Self {
             tokens,
             position: 0,
             header: CHeader::default(),
             aliases: HashMap::new(),
+            defines,
         }
     }
 
@@ -662,7 +689,16 @@ impl Parser {
                 "," | ";" => {
                     if !current.is_empty() {
                         if after_equals {
-                            next = value.parse().unwrap_or(next);
+                            // A guessed value would decode plausible-looking
+                            // nonsense (see the module header), so an
+                            // initializer the parser does not understand is a
+                            // refusal, not a fallback.
+                            next = parse_enum_value(&value).ok_or_else(|| CHeaderError {
+                                line: token.line,
+                                message: format!(
+                                    "enum initializer `{current} = {value}` is not a number this parser understands (decimal, or hex like 0x80; constant expressions are not supported)"
+                                ),
+                            })?;
                         }
                         variants.push((current.clone(), next));
                         next += 1;
@@ -720,7 +756,7 @@ impl Parser {
         let mut in_bitfield = false;
 
         for member in split_members(body)? {
-            let (type_words, declarators, line) = classify_member(&member)?;
+            let (type_words, declarators, line) = classify_member(&member, &self.defines)?;
             let written = type_words.join(" ");
             // A member names its struct either `Gains gains;` or `struct Gains gains;`.
             let nested_name = written.strip_prefix("struct ").unwrap_or(&written);
@@ -872,9 +908,51 @@ fn split_members(body: &[Token]) -> Result<Vec<Vec<Token>>, CHeaderError> {
     Ok(members)
 }
 
+/// Parse an enum initializer: decimal (optionally signed) or hex like `0x80`.
+/// Anything else is refused by the caller with a line number — an initializer
+/// this parser cannot evaluate must never become a running-counter guess.
+fn parse_enum_value(text: &str) -> Option<i64> {
+    if let Some(hex) = text.strip_prefix("0x").or_else(|| text.strip_prefix("0X")) {
+        return i64::from_str_radix(hex, 16).ok();
+    }
+    if text.is_empty() {
+        return None;
+    }
+    text.parse::<i64>().ok()
+}
+
+/// Resolve an array count: a decimal or hex literal, or a `#define` of one.
+/// Anything else is a refusal — a guessed count silently shifts every field
+/// declared after the array onto the wrong bytes.
+fn resolve_array_count(
+    token: &str,
+    line: usize,
+    defines: &HashMap<String, String>,
+) -> Result<u16, CHeaderError> {
+    if token.is_empty() {
+        return Err(CHeaderError {
+            line,
+            message: "an unsized array `[]` is not supported: give the element count, or a #define of it".to_string(),
+        });
+    }
+    let text = defines.get(token).map(String::as_str).unwrap_or(token);
+    let count = if let Some(hex) = text.strip_prefix("0x").or_else(|| text.strip_prefix("0X")) {
+        u16::from_str_radix(hex, 16).ok()
+    } else {
+        text.parse::<u16>().ok()
+    };
+    count.ok_or(CHeaderError {
+        line,
+        message: format!(
+            "array count `{token}` is not a number this parser understands (a decimal or hex literal, or a #define of one); guessing would shift every field after the array"
+        ),
+    })
+}
+
 /// `uint8_t flags : 3` becomes type words plus one declarator.
 fn classify_member(
     member: &[Token],
+    defines: &HashMap<String, String>,
 ) -> Result<(Vec<String>, Vec<Declarator>, usize), CHeaderError> {
     let line = member.first().map(|token| token.line).unwrap_or(0);
     let mut words: Vec<String> = Vec::new();
@@ -921,7 +999,7 @@ fn classify_member(
         if words.get(index).map(String::as_str) == Some("[") {
             let count = words.get(index + 1).cloned().unwrap_or_default();
             if words.get(index + 2).map(String::as_str) == Some("]") {
-                array = count.parse::<u16>().ok();
+                array = Some(resolve_array_count(&count, line, defines)?);
                 index += 3;
             }
         }
@@ -969,6 +1047,56 @@ mod tests {
             uint8_t  mode;          // 18..19
         };
     "#;
+
+    #[test]
+    fn hex_enum_initializers_keep_their_value() {
+        let header = parse(
+            "typedef enum { MODE_IDLE = 0, MODE_RUN = 0x01, FAULT = 0x80 } mode_t;",
+        )
+        .unwrap();
+        let mode = header
+            .enums
+            .iter()
+            .find(|item| item.name == "mode_t")
+            .expect("mode_t");
+        assert_eq!(
+            mode.variants,
+            vec![
+                ("MODE_IDLE".to_string(), 0),
+                ("MODE_RUN".to_string(), 1),
+                ("FAULT".to_string(), 0x80),
+            ]
+        );
+    }
+
+    #[test]
+    fn an_enum_initializer_the_parser_cannot_evaluate_is_refused() {
+        // Tokens concatenate, so the message shows the initializer without spaces.
+        let error = parse("typedef enum { A = 0, B = 1 << 3 } mode_t;").unwrap_err();
+        assert!(error.message.contains("B = 1<<3"), "{}", error.message);
+    }
+
+    #[test]
+    fn a_define_can_size_an_array() {
+        let header = parse(
+            "#define PKT_LEN 8\nstruct __attribute__((packed)) P { uint8_t len; uint8_t payload[PKT_LEN]; };",
+        )
+        .unwrap();
+        let packet = header
+            .structs
+            .iter()
+            .find(|item| item.name == "P")
+            .expect("P");
+        assert_eq!(packet.size, 9);
+    }
+
+    #[test]
+    fn an_array_count_the_parser_cannot_resolve_is_refused() {
+        let error = parse("struct P { uint8_t payload[UNDEFINED]; };").unwrap_err();
+        assert!(error.message.contains("UNDEFINED"), "{}", error.message);
+        let error = parse("struct P { uint8_t payload[70000]; };").unwrap_err();
+        assert!(error.message.contains("70000"), "{}", error.message);
+    }
 
     #[test]
     fn a_packed_struct_lays_out_field_by_field() {

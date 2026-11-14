@@ -54,14 +54,17 @@ impl IdleGap {
 
     /// Advance the clock. Call this before `feed` for every slab.
     ///
-    /// A tick that follows an interval with bytes records the last byte as
-    /// arriving now. A tick that follows silence of at least one gap emits the
-    /// frame, so detection lags the real silence by at most one tick.
+    /// A slab's bytes arrive when the slab was read, so a tick that follows an
+    /// interval with bytes stamps the previous tick — the read that produced
+    /// them — as the last byte's arrival. A tick then emits the frame when the
+    /// line has been quiet for at least one gap, so detection lags the real
+    /// silence by at most one tick.
     pub fn tick_at(&mut self, now_ns: u64, frames: &mut Vec<Vec<u8>>) {
         if self.bytes_since_tick > 0 {
-            self.last_byte_ns = Some(now_ns);
+            self.last_byte_ns = self.last_ns;
             self.bytes_since_tick = 0;
-        } else if let Some(last_byte) = self.last_byte_ns {
+        }
+        if let Some(last_byte) = self.last_byte_ns {
             let quiet = now_ns.saturating_sub(last_byte);
             if quiet >= self.gap_ns && !self.buffer.is_empty() {
                 frames.push(std::mem::take(&mut self.buffer));
@@ -110,16 +113,17 @@ mod tests {
         let mut machine = IdleGap::new(1_000_000, 1024);
         let mut frames = Vec::new();
 
+        // Slab read at t=0 carries "abc": the tick stamps the read, the feed
+        // delivers its bytes.
         machine.tick_at(0, &mut frames);
         machine.feed(b"abc", &mut frames);
-        // The tick that sees bytes records the last byte and emits nothing.
+        // The next slab is read 0.5 ms later: only 0.5 ms of quiet, no frame yet.
         machine.tick_at(500_000, &mut frames);
         assert!(frames.is_empty());
 
+        // 1 ms after the read that delivered "abc" the gap has passed, and the
+        // tick that sees the silence ends the frame.
         machine.tick_at(1_000_000, &mut frames);
-        assert!(frames.is_empty(), "0.5 ms of quiet is not a gap");
-
-        machine.tick_at(1_500_000, &mut frames);
         assert_eq!(frames, vec![b"abc".to_vec()]);
         assert_eq!(machine.pending(), 0);
     }
@@ -129,14 +133,39 @@ mod tests {
         let mut machine = IdleGap::new(1_000, 1024);
         let mut frames = Vec::new();
         machine.tick_at(0, &mut frames);
-        machine.feed(b"a", &mut frames);
-        machine.tick_at(5_000, &mut frames);
-        machine.tick_at(7_000, &mut frames);
-        assert_eq!(frames, vec![b"a".to_vec()]);
+        machine.feed(b"ab", &mut frames);
+        // 500 ns later the next slab arrives: the gap is not crossed yet.
+        machine.tick_at(500, &mut frames);
+        machine.feed(b"c", &mut frames);
+        // 1.5 us of quiet since "c" ends the frame before the next slab.
+        machine.tick_at(2_000, &mut frames);
+        assert_eq!(frames, vec![b"abc".to_vec()]);
 
-        machine.feed(b"b", &mut frames);
-        machine.tick_at(8_000, &mut frames);
+        machine.feed(b"d", &mut frames);
+        machine.tick_at(2_500, &mut frames);
         assert_eq!(machine.pending(), 1);
+        machine.tick_at(4_000, &mut frames);
+        assert_eq!(frames, vec![b"abc".to_vec(), b"d".to_vec()]);
+    }
+
+    #[test]
+    fn a_gap_between_slabs_ends_a_frame_even_when_every_slab_has_bytes() {
+        // The engine reads slabs back to back and ticks before every feed; the
+        // old machine only emitted from a tick that saw an empty interval, so
+        // this production pattern never produced a frame.
+        let mut machine = IdleGap::new(1_000, 1024);
+        let mut frames = Vec::new();
+        machine.tick_at(0, &mut frames);
+        machine.feed(b"AB", &mut frames);
+        machine.tick_at(10_000, &mut frames);
+        machine.feed(b"CD\n", &mut frames);
+        machine.tick_at(20_000, &mut frames);
+        machine.feed(b"EF\n", &mut frames);
+        machine.tick_at(30_000, &mut frames);
+        assert_eq!(
+            frames,
+            vec![b"AB".to_vec(), b"CD\n".to_vec(), b"EF\n".to_vec()]
+        );
     }
 
     #[test]

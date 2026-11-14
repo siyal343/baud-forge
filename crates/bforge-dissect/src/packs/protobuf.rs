@@ -376,13 +376,23 @@ fn read_field_schema(
             let (len, read) = varint(frame, at + used)?;
             used += read;
             let body = at + used;
-            let len = len as usize;
-            require(frame, body + len, "protobuf length-delimited field")?;
+            // A malformed length can be near u64::MAX: the add must not wrap, or
+            // the range check passes with a wrapped end and the slice panics.
+            let end = usize::try_from(len)
+                .ok()
+                .and_then(|len| body.checked_add(len))
+                .ok_or_else(|| {
+                    ExecError::Unsupported(format!(
+                        "protobuf length-delimited field {name} has an impossible length"
+                    ))
+                })?;
+            require(frame, end, "protobuf length-delimited field")?;
+            let len = end - body;
             used += len;
             length_field_schema(
                 &name,
                 offset,
-                &frame[body..body + len],
+                &frame[body..end],
                 depth,
                 proto_field,
                 schema,
@@ -522,7 +532,14 @@ fn varint(frame: &[u8], at: usize) -> Result<(u64, usize), ExecError> {
             });
         }
         let byte = frame[index];
-        value |= u64::from(byte & 0x7F) << shift;
+        // A malformed varint can carry set bits into the 64th position; shifting
+        // them in would overflow (a debug panic, silent truncation in release).
+        let group = u64::from(byte & 0x7F)
+            .checked_shl(shift)
+            .ok_or_else(|| {
+                ExecError::Unsupported("a protobuf varint overflowed its 64 bits".to_string())
+            })?;
+        value |= group;
         used += 1;
         if byte & 0x80 == 0 {
             return Ok((value, used));

@@ -557,6 +557,7 @@ fn read_loop(
         clock,
         seq_id: &mut seq_id,
         failed_reopens: &mut failed_reopens,
+        reconnected: false,
         reconnect_attempts,
     };
 
@@ -608,13 +609,39 @@ fn read_loop(
         if let Some(window) = yield_request.take() {
             counters.state.store(STATE_YIELDED, Ordering::Relaxed);
             counters.yields.fetch_add(1, Ordering::Relaxed);
+            // Writes queued before the yield are rejected: the port is about to
+            // be lent to another program, and the bytes must not land on it
+            // once that tool releases it.
+            drain_pending_writes(
+                &writes,
+                &mut held,
+                "the port was yielded before the write went out",
+            );
             state.transport.close();
             yield_port(state.transport, &counters, &stop, window, &yield_request.cancel);
+            // Writes that arrived while the port was lent out get the same
+            // answer, whether or not the reclaim succeeded.
+            drain_pending_writes(
+                &writes,
+                &mut held,
+                "the port was yielded before the write went out",
+            );
             continue;
         }
 
         if !state.pump_one_slab() {
             break 'read;
+        }
+        if state.reconnected {
+            state.reconnected = false;
+            // Writes that queued while the port was away are rejected: their
+            // senders already saw a failure (or will), and they must not go out
+            // to the freshly reopened transport.
+            drain_pending_writes(
+                &writes,
+                &mut held,
+                "the port reconnected before the write went out",
+            );
         }
     }
 
@@ -641,6 +668,9 @@ struct ReaderLoopState<'a> {
     seq_id: &'a mut u64,
     failed_reopens: &'a mut u32,
     reconnect_attempts: u32,
+    /// Set for one loop iteration after a reconnect completes, so the loop can
+    /// reject the writes that queued during the outage.
+    reconnected: bool,
 }
 
 impl ReaderLoopState<'_> {
@@ -669,6 +699,7 @@ impl ReaderLoopState<'_> {
                 ) {
                     return false;
                 }
+                self.reconnected = true;
                 return true;
             }
             Err(_) => {
@@ -947,6 +978,34 @@ fn yield_port(
         thread::sleep(RECONNECT_POLL_FAST);
     }
     counters.state.store(STATE_RECONNECTING, Ordering::Relaxed);
+}
+
+/// Reject every queued write after an outage whose senders already saw a failure
+/// (or are about to): the requests would otherwise stay queued and go out to the
+/// hardware the moment the port came back — bytes on a board that just finished
+/// flashing, after the engine reported the send as failed. Delayed (paced)
+/// writes are rejected the same way.
+fn drain_pending_writes(
+    writes: &std::sync::mpsc::Receiver<WriteRequest>,
+    held: &mut Vec<(Instant, WriteRequest)>,
+    reason: &str,
+) {
+    while let Ok(request) = writes.try_recv() {
+        if let Some(failed) = &request.failed {
+            failed.fetch_add(request.bytes.len() as u64, Ordering::Relaxed);
+        }
+        if let Some(reply) = request.reply {
+            let _ = reply.send(Err(reason.to_string()));
+        }
+    }
+    for (_, request) in held.drain(..) {
+        if let Some(failed) = &request.failed {
+            failed.fetch_add(request.bytes.len() as u64, Ordering::Relaxed);
+        }
+        if let Some(reply) = request.reply {
+            let _ = reply.send(Err(reason.to_string()));
+        }
+    }
 }
 
 /// Try to reopen a port that left the bus. Returns false when the port stays away
