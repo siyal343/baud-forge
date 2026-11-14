@@ -146,7 +146,7 @@ impl TransportDriver for TcpTransport {
                 // Bind once. A reconnect keeps the listener, so the address is
                 // never re-bound and the read path picks clients up.
                 if self.listener.is_none() {
-                    let listener = TcpListener::bind(&self.address()).map_err(io)?;
+                    let listener = TcpListener::bind(self.address()).map_err(io)?;
                     listener.set_nonblocking(true).map_err(io)?;
                     self.local_addr = Some(listener.local_addr().map_err(io)?);
                     self.listener = Some(listener);

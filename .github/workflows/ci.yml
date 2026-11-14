@@ -105,6 +105,41 @@ jobs:
           path: dist/*
           retention-days: 7
 
+  windows-desktop:
+    name: build (windows desktop shell)
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+      - uses: pnpm/action-setup@v4
+        with:
+          version: 11
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: pnpm
+          cache-dependency-path: ui/pnpm-lock.yaml
+      - name: Install UI dependencies
+        working-directory: ui
+        run: pnpm install --frozen-lockfile
+      - name: Build the workbench UI
+        working-directory: ui
+        run: pnpm run build
+      - name: Build the desktop shell
+        run: cargo build --release --locked -p bforge-desktop
+      - name: Stage the desktop bundle (exe + workbench UI beside it)
+        shell: pwsh
+        run: |
+          New-Item -ItemType Directory -Force -Path dist/ui | Out-Null
+          Copy-Item target/release/bforge-desktop.exe dist/
+          Copy-Item ui/dist/* dist/ui -Recurse -Force
+      - name: Upload the desktop bundle
+        uses: actions/upload-artifact@v4
+        with:
+          name: bforge-desktop-windows-x86_64
+          path: dist/*
+          retention-days: 7
+
   ui:
     name: ui unit, build and headless smoke
     runs-on: ubuntu-latest
@@ -136,7 +171,7 @@ jobs:
             sleep 1
           done
           curl -sf http://localhost:5173/ > /dev/null || { echo "dev server did not come up"; exit 1; }
-      - name: Headless UI smoke (15 checks)
+      - name: Headless UI smoke
         working-directory: ui
         run: pnpm smoke
 

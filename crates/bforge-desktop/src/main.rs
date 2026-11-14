@@ -519,7 +519,7 @@ fn list_profiles() -> Vec<ProfileDto> {
             })
         })
         .collect();
-    profiles.sort_by(|a, b| a.name.to_lowercase().cmp(&b.name.to_lowercase()));
+    profiles.sort_by_key(|a| a.name.to_lowercase());
     profiles
 }
 
@@ -530,7 +530,13 @@ fn save_profile(app: tauri::AppHandle, name: String, content: String) -> Result<
     let safe = name
         .trim()
         .chars()
-        .map(|c| if c.is_alphanumeric() || c == '-' || c == '_' || c == ' ' { c } else { '-' })
+        .map(|c| {
+            if c.is_alphanumeric() || c == '-' || c == '_' || c == ' ' {
+                c
+            } else {
+                '-'
+            }
+        })
         .collect::<String>()
         .trim()
         .to_string();
@@ -568,7 +574,8 @@ fn start_configured(
 ) -> Result<String, String> {
     // Validate before writing anything: a profile that cannot parse would
     // poison the launcher's saved list.
-    let parsed: ProjectConfig = toml::from_str(&config_text).map_err(|error| format!("config invalid: {error}"))?;
+    let parsed: ProjectConfig =
+        toml::from_str(&config_text).map_err(|error| format!("config invalid: {error}"))?;
     if parsed.ports.is_empty() {
         return Err("config invalid: at least one [[ports]] entry is required".to_string());
     }
@@ -579,7 +586,13 @@ fn start_configured(
             let safe = name
                 .trim()
                 .chars()
-                .map(|c| if c.is_alphanumeric() || c == '-' || c == '_' || c == ' ' { c } else { '-' })
+                .map(|c| {
+                    if c.is_alphanumeric() || c == '-' || c == '_' || c == ' ' {
+                        c
+                    } else {
+                        '-'
+                    }
+                })
                 .collect::<String>();
             dir.join(format!("{}.bforge.toml", safe.trim().replace(' ', "-")))
         }

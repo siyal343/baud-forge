@@ -389,14 +389,7 @@ fn read_field_schema(
             require(frame, end, "protobuf length-delimited field")?;
             let len = end - body;
             used += len;
-            length_field_schema(
-                &name,
-                offset,
-                &frame[body..end],
-                depth,
-                proto_field,
-                schema,
-            )
+            length_field_schema(&name, offset, &frame[body..end], depth, proto_field, schema)
         }
         3 | 4 => {
             return Err(ExecError::Unsupported(format!(
@@ -534,11 +527,9 @@ fn varint(frame: &[u8], at: usize) -> Result<(u64, usize), ExecError> {
         let byte = frame[index];
         // A malformed varint can carry set bits into the 64th position; shifting
         // them in would overflow (a debug panic, silent truncation in release).
-        let group = u64::from(byte & 0x7F)
-            .checked_shl(shift)
-            .ok_or_else(|| {
-                ExecError::Unsupported("a protobuf varint overflowed its 64 bits".to_string())
-            })?;
+        let group = u64::from(byte & 0x7F).checked_shl(shift).ok_or_else(|| {
+            ExecError::Unsupported("a protobuf varint overflowed its 64 bits".to_string())
+        })?;
         value |= group;
         used += 1;
         if byte & 0x80 == 0 {

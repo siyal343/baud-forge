@@ -126,7 +126,7 @@ impl XferSession {
     /// Total blocks in the file for this mode.
     pub fn total_blocks(&self) -> u32 {
         let size = self.block_size();
-        ((self.data.len() + size - 1) / size).max(1) as u32
+        (self.data.len().div_ceil(size)).max(1) as u32
     }
 
     fn build_block(&self, number: u32) -> Vec<u8> {
@@ -526,7 +526,7 @@ mod tests {
             file.clone(),
             t0(),
         );
-        assert_eq!(tx.total_blocks(), (1200 + 127) / 128);
+        assert_eq!(tx.total_blocks(), 1200_u32.div_ceil(128));
 
         let out = sink();
         let mut reply = reply_for(&out);

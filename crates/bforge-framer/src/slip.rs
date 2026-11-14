@@ -196,10 +196,9 @@ mod tests {
         // Nine END bytes encode to 18 wire bytes for a 13-byte frame; the old
         // bound counted wire bytes against the decoded limit, dropped the
         // frame, then unescaped the surviving tail into a bogus one (F-26).
-        let decoded: Vec<u8> = std::iter::once(b'A')
-            .chain(std::iter::repeat(END).take(9))
-            .chain([b'B', b'C', b'D'])
-            .collect();
+        let mut decoded = vec![b'A'];
+        decoded.resize(10, END); // 'A' followed by nine END bytes
+        decoded.extend_from_slice(b"BCD");
         let encoded = slip_encode(&decoded);
         let mut machine = Slip::new(16);
         assert_eq!(frames_of(&mut machine, &encoded), vec![decoded]);

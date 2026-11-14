@@ -446,19 +446,19 @@ pub fn read_dissector_file(file: &str) -> Result<String, TailError> {
     }
 
     // Try resolving relative to current executable directory ancestors
-    if let Ok(exe) = std::env::current_exe() {
-        if let Some(dir) = exe.parent() {
-            let candidates = [
-                dir.join(file),
-                dir.join("../../").join(file),
-                dir.join("../../../").join(file),
-            ];
-            for candidate in candidates {
-                if candidate.is_file() {
-                    return std::fs::read_to_string(&candidate).map_err(|error| {
-                        TailError::Settings(format!("cannot read {}: {error}", candidate.display()))
-                    });
-                }
+    if let Ok(exe) = std::env::current_exe()
+        && let Some(dir) = exe.parent()
+    {
+        let candidates = [
+            dir.join(file),
+            dir.join("../../").join(file),
+            dir.join("../../../").join(file),
+        ];
+        for candidate in candidates {
+            if candidate.is_file() {
+                return std::fs::read_to_string(&candidate).map_err(|error| {
+                    TailError::Settings(format!("cannot read {}: {error}", candidate.display()))
+                });
             }
         }
     }

@@ -35,10 +35,10 @@ impl FrameState {
     /// its failure counter (F-38).
     pub fn patched_bytes(&mut self) -> (Vec<u8>, Option<String>) {
         let mut bytes = self.bytes.clone();
-        if !self.changed.is_empty() {
-            if let Err(error) = encoder::patch(&self.ir, &mut bytes, &self.changed) {
-                return (self.bytes.clone(), Some(error.to_string()));
-            }
+        if !self.changed.is_empty()
+            && let Err(error) = encoder::patch(&self.ir, &mut bytes, &self.changed)
+        {
+            return (self.bytes.clone(), Some(error.to_string()));
         }
         (bytes, None)
     }
@@ -149,7 +149,7 @@ pub fn frame_table(lua: &Lua, state: Arc<Mutex<FrameState>>) -> mlua::Result<Tab
     frame.set(
         "bytes",
         lua.create_function(move |lua, _this: Table| {
-            let mut state = bytes_state.lock().unwrap();
+            let state = bytes_state.lock().unwrap();
             let mut bytes = state.bytes.clone();
             if state.changed() {
                 // A failed patch shows the originals, never a half-patched

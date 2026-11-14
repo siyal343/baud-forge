@@ -957,7 +957,9 @@ fn resolve_array_count(
     if token.is_empty() {
         return Err(CHeaderError {
             line,
-            message: "an unsized array `[]` is not supported: give the element count, or a #define of it".to_string(),
+            message:
+                "an unsized array `[]` is not supported: give the element count, or a #define of it"
+                    .to_string(),
         });
     }
     let text = defines.get(token).map(String::as_str).unwrap_or(token);
@@ -1075,10 +1077,8 @@ mod tests {
 
     #[test]
     fn hex_enum_initializers_keep_their_value() {
-        let header = parse(
-            "typedef enum { MODE_IDLE = 0, MODE_RUN = 0x01, FAULT = 0x80 } mode_t;",
-        )
-        .unwrap();
+        let header =
+            parse("typedef enum { MODE_IDLE = 0, MODE_RUN = 0x01, FAULT = 0x80 } mode_t;").unwrap();
         let mode = header
             .enums
             .iter()
@@ -1164,10 +1164,8 @@ mod tests {
 
     #[test]
     fn a_bitfield_wider_than_its_storage_unit_is_refused() {
-        let error = parse(
-            "struct __attribute__((packed)) P { uint8_t f : 100; uint8_t tail; };",
-        )
-        .unwrap_err();
+        let error = parse("struct __attribute__((packed)) P { uint8_t f : 100; uint8_t tail; };")
+            .unwrap_err();
         assert!(error.message.contains("100 bits wide"), "{}", error.message);
     }
 

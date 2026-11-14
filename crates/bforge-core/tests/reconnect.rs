@@ -267,7 +267,7 @@ fn a_cancelled_yield_takes_the_port_back_before_the_window_ends() {
         holder: Arc::clone(&holder),
         opens: Arc::clone(&opens),
     };
-    let mut pipeline = Pipeline::start(
+    let pipeline = Pipeline::start(
         PipelineConfig {
             port_id: 1,
             consumers: 1,
@@ -275,7 +275,6 @@ fn a_cancelled_yield_takes_the_port_back_before_the_window_ends() {
         },
         Box::new(transport),
     );
-    let mut logger = pipeline.take_consumers().remove(0);
 
     // The reader opened the port once at start-up.
     let deadline = Instant::now() + Duration::from_secs(2);

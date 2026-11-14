@@ -3085,17 +3085,17 @@ fn port_framing(stream: &mut TcpStream, shared: &Arc<Shared>, path: &str, body: 
     // Update shared.snapshot JSON if possible
     {
         let mut snap_guard = shared.snapshot.lock().unwrap();
-        if !snap_guard.is_empty() {
-            if let Ok(mut json_val) = serde_json::from_str::<serde_json::Value>(&snap_guard) {
-                if let Some(ports) = json_val.get_mut("ports").and_then(|p| p.as_array_mut()) {
-                    for p in ports {
-                        if p.get("id").and_then(|id| id.as_str()) == Some(port_id) {
-                            p["framing"] = serde_json::Value::String(mode.clone());
-                        }
+        if !snap_guard.is_empty()
+            && let Ok(mut json_val) = serde_json::from_str::<serde_json::Value>(&snap_guard)
+        {
+            if let Some(ports) = json_val.get_mut("ports").and_then(|p| p.as_array_mut()) {
+                for p in ports {
+                    if p.get("id").and_then(|id| id.as_str()) == Some(port_id) {
+                        p["framing"] = serde_json::Value::String(mode.clone());
                     }
                 }
-                *snap_guard = json_val.to_string();
             }
+            *snap_guard = json_val.to_string();
         }
     }
 
@@ -3260,7 +3260,7 @@ mod tests {
             .run(Session::review(), Some(Duration::from_millis(900)))
             .expect("the run must end cleanly");
         recorder.join().unwrap();
-        assert!(stats.chunks >= 0);
+        let _ = stats.chunks;
 
         let activity_path = std::path::PathBuf::from(format!("{}.activity.jsonl", vault.display()));
         let text = std::fs::read_to_string(&activity_path)
