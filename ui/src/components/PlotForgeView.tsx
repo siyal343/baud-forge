@@ -1046,15 +1046,26 @@ export const PlotForgeView: React.FC = () => {
       toast.warn('Nothing to export', 'add visible channels with samples first');
       return;
     }
-    const master = plotEngine.getWindowSamples(vis[0].id, win.tMinUs, win.tMaxUs, 100_000);
+    const MAX_ROWS = 100_000;
+    const master = plotEngine.getWindowSamples(vis[0].id, win.tMinUs, win.tMaxUs, MAX_ROWS);
     if (master.length === 0) {
       toast.warn('No samples in the current window');
       return;
     }
-    // Median inter-sample gap doubles as the nearest-sample alignment
-    // tolerance for the secondary channels' columns.
-    const mid = Math.floor(master.length / 2);
-    const medDt = master.length > 1 ? Math.abs(master[mid].tUs - master[mid - 1].tUs) : 1e6;
+    // Median inter-sample gap of the RAW ring doubles as the nearest-sample
+    // alignment tolerance for the secondary channels' columns. The export
+    // strides the rows, so the old single-gap estimate rode the stride and let
+    // the alignment pull samples several real gaps away from each row (F-46):
+    // take a true median over the diffs and divide the stride back out.
+    const rawCount = plotEngine.getWindowSampleCount(vis[0].id, win.tMinUs, win.tMaxUs);
+    const stride = Math.max(1, Math.ceil(rawCount / MAX_ROWS));
+    const diffs: number[] = [];
+    const diffStep = Math.max(1, Math.floor(master.length / 512));
+    for (let i = 1; i < master.length; i += diffStep) {
+      diffs.push(Math.abs(master[i].tUs - master[i - 1].tUs));
+    }
+    diffs.sort((a, b) => a - b);
+    const medDt = diffs.length ? diffs[Math.floor(diffs.length / 2)] / stride : 1e6;
     const esc = (s: string): string => (/[",\n]/.test(s) ? `"${s.replace(/"/g, '""')}"` : s);
     const lines: string[] = [`t_us,${vis.map((c) => esc(`${c.label}${c.unit ? ` (${c.unit})` : ''}`)).join(',')}`];
     for (const m of master) {

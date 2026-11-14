@@ -353,17 +353,20 @@ export class EngineApiClient {
     }
   }
 
-  /** Hardware serial ports currently visible to the OS (GET /api/devices). */
+  /** Hardware serial ports currently visible to the OS (GET /api/devices).
+   * Returns `null` when the engine could not be reached — distinct from an
+   * empty list, so a port rescan can say "engine down" instead of "no
+   * hardware found" (F-6). */
   async getDevices(): Promise<
-    Array<{ device_path: string; vid_pid?: string | null; serial?: string | null }>
+    Array<{ device_path: string; vid_pid?: string | null; serial?: string | null }> | null
   > {
     try {
       const res = await this.fetchWithTimeout('/api/devices');
-      if (!res.ok) return [];
+      if (!res.ok) return null;
       const data = await res.json();
       return Array.isArray(data) ? data : [];
     } catch {
-      return [];
+      return null;
     }
   }
 

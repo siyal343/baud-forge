@@ -49,13 +49,18 @@ export const TooltipOverlay: React.FC = () => {
         hideTimerRef.current = null;
       }
 
-      // Suppress browser default OS tooltip by migrating title to data-tooltip
+      // Suppress the browser's OS tooltip while the custom one shows by
+      // moving title into a data attribute — and put it back when the pointer
+      // leaves (see handleMouseOut). The old code removed the title
+      // permanently, and React never re-sets an unchanged prop, so Tooltips
+      // OFF lost its native fallback entirely (F-21).
       let text = target.getAttribute('data-tooltip');
       const titleAttr = target.getAttribute('title');
       if (!text && titleAttr) {
         text = titleAttr;
         target.setAttribute('data-tooltip', titleAttr);
         target.removeAttribute('title');
+        target.dataset.bforgeTitleMigrated = '1';
       }
 
       if (!text || !text.trim()) {
@@ -77,6 +82,14 @@ export const TooltipOverlay: React.FC = () => {
     const handleMouseOut = (e: MouseEvent) => {
       const currentTarget = activeTargetRef.current;
       if (!currentTarget) return;
+
+      // Restore the native title the migration removed, so Tooltips OFF keeps
+      // its browser fallback (F-21).
+      if (currentTarget.dataset.bforgeTitleMigrated === '1') {
+        const migrated = currentTarget.getAttribute('data-tooltip');
+        if (migrated) currentTarget.setAttribute('title', migrated);
+        delete currentTarget.dataset.bforgeTitleMigrated;
+      }
 
       const related = e.relatedTarget as Node | null;
       // Only hide if mouse actually left the target element and its descendants

@@ -940,12 +940,21 @@ export const OscilloscopeView: React.FC = () => {
     return () => cancelAnimationFrame(animId);
   }, [renderCanvas]);
 
-  // Zoom timebase via mouse wheel
-  const handleWheel = (e: React.WheelEvent<HTMLCanvasElement>) => {
-    e.preventDefault();
-    const factor = e.deltaY < 0 ? 1.25 : 0.8;
-    setZoomLevel((prev) => Math.min(10.0, Math.max(0.2, Math.round(prev * factor * 100) / 100)));
-  };
+  // Zoom timebase via mouse wheel. React 19 registers root wheel listeners as
+  // passive, so an onWheel preventDefault is a no-op — the browser logged a
+  // warning per tick and an ancestor could scroll under the zoom. PlotForge
+  // attaches this listener natively with passive:false for the same reason.
+  useEffect(() => {
+    const canvas = canvasRef.current;
+    if (!canvas) return;
+    const onWheel = (e: WheelEvent) => {
+      e.preventDefault();
+      const factor = e.deltaY < 0 ? 1.25 : 0.8;
+      setZoomLevel((prev) => Math.min(10.0, Math.max(0.2, Math.round(prev * factor * 100) / 100)));
+    };
+    canvas.addEventListener('wheel', onWheel, { passive: false });
+    return () => canvas.removeEventListener('wheel', onWheel);
+  }, []);
 
   // Mouse Down
   const handleMouseDown = (e: React.MouseEvent<HTMLCanvasElement>) => {
@@ -1856,7 +1865,6 @@ export const OscilloscopeView: React.FC = () => {
       <div className="relative flex-1 w-full overflow-hidden">
         <canvas
           ref={canvasRef}
-          onWheel={handleWheel}
           onMouseDown={handleMouseDown}
           onMouseMove={handleMouseMove}
           onMouseUp={handleMouseUp}

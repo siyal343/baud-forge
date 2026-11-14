@@ -364,6 +364,12 @@ export const useWorkstationStore = create<WorkstationState>((set, get) => ({
     set({ isScanningPorts: true });
     try {
       const devices = await engineApi.getDevices();
+      if (devices === null) {
+        // The engine did not answer: sending the user hunting for a cable or
+        // driver problem would be a lie (F-6).
+        toast.error('Engine unreachable', 'The port scan could not reach the engine — is it running?');
+        return;
+      }
       if (devices.length > 0) {
         set({
           availablePorts: devices.map((d) => ({
@@ -548,9 +554,14 @@ export const useWorkstationStore = create<WorkstationState>((set, get) => ({
     stopReplayTimer();
     const { packets, selectedPacket } = get();
     if (!packets.length) return;
-    const currentIndex = selectedPacket
+    // The selected frame can be evicted from the rolling buffer while paused:
+    // findIndex then answers -1, which teleported forward-presses to the
+    // buffer start and made backward-presses silently no-op (F-7). Re-anchor
+    // to the newest buffered frame — the closest thing to where the user was.
+    const foundIndex = selectedPacket
       ? packets.findIndex((p) => p.seqId === selectedPacket.seqId)
       : packets.length - 1;
+    const currentIndex = foundIndex === -1 ? packets.length - 1 : foundIndex;
 
     let nextIndex = currentIndex;
     if (direction === 'forward' && currentIndex < packets.length - 1) {
@@ -646,7 +657,11 @@ export const useWorkstationStore = create<WorkstationState>((set, get) => ({
   },
 
   clearStream: () => {
-    set({ packets: [], scopeSamples: [], selectedPacket: null, selectedField: null });
+    // Trace lanes clear with the stream: leaving the old series would plot a
+    // line across the time gap the clear created, straight onto the first
+    // post-clear frame (F-5) — plotEngine.clearData() drops its ring for the
+    // same reason.
+    set({ packets: [], scopeSamples: [], traceSeries: {}, selectedPacket: null, selectedField: null });
   },
 
   loadSampleCapture: () => {

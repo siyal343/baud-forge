@@ -47,7 +47,12 @@ export const UartConfigModal: React.FC<UartConfigModalProps> = ({ isOpen, onClos
       }
     };
     const handleKeyDown = (e: KeyboardEvent) => {
-      if (e.key === 'Escape') onClose();
+      if (e.key === 'Escape') {
+        // The modal owns this Escape: stop it from also reaching App's window
+        // handler, which clears the stream filter under the user's cursor (F-20).
+        e.stopPropagation();
+        onClose();
+      }
     };
     document.addEventListener('mousedown', handleOutsideClick);
     document.addEventListener('keydown', handleKeyDown);

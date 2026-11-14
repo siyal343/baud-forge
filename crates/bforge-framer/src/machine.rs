@@ -186,7 +186,15 @@ impl ByteMachine for Cobs {
             if byte == 0 {
                 if !self.buffer.is_empty() {
                     match cobs_decode(&self.buffer) {
-                        Some(frame) if !frame.is_empty() => frames.push(frame),
+                        // The limit is on the DECODED frame: the wire bound
+                        // carries COBS's own headroom, so a block decoding just
+                        // past the configured limit used to slip through (F-30).
+                        Some(frame) if !frame.is_empty() && frame.len() <= self.max_frame_bytes => {
+                            frames.push(frame)
+                        }
+                        Some(frame) if frame.len() > self.max_frame_bytes => {
+                            self.dropped_overlong += 1;
+                        }
                         Some(_) => {}
                         None => self.invalid_blocks += 1,
                     }
@@ -375,6 +383,21 @@ mod tests {
         let mut machine = Cobs::new(4096);
         assert!(frames_of(&mut machine, &[0x05, 0x01, 0x00]).is_empty());
         assert_eq!(machine.invalid_blocks(), 1);
+    }
+
+    #[test]
+    fn a_block_decoding_just_over_the_limit_is_dropped() {
+        // [0x02, 0x01] pairs decode 1 byte each with a zero between: 514 pairs
+        // decode to 1027 bytes — over a 1024 limit, while the wire bound
+        // (max + max/254 + 1 = 1029) accepted the whole block (F-30).
+        let mut stream = Vec::new();
+        for _ in 0..514 {
+            stream.extend_from_slice(&[0x02, 0x01]);
+        }
+        stream.push(0);
+        let mut machine = Cobs::new(1024);
+        assert!(frames_of(&mut machine, &stream).is_empty());
+        assert_eq!(machine.dropped_overlong(), 1);
     }
 
     #[test]

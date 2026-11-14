@@ -1194,7 +1194,7 @@ typedef struct {
 
       {/* Add Command Popup Entry Modal (Without HEX/ASCII toggle per User Request 0) */}
       {isModalOpen && (
-        <div className="fixed inset-0 z-50 bg-black/75 backdrop-blur-xs flex items-center justify-center p-4">
+        <div className="fixed inset-0 z-[999998] bg-black/75 backdrop-blur-xs flex items-center justify-center p-4">
           <div className="bg-bf-head border border-bf-cyan/40 rounded-lg shadow-[0_0_25px_rgb(var(--bf-shadow-rgb)/0.8)] w-full max-w-md p-4 flex flex-col gap-3 font-mono text-[11px]">
             {/* Modal Header */}
             <div className="flex items-center justify-between pb-2 border-b border-bf-line">

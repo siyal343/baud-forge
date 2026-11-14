@@ -352,6 +352,14 @@ export class PlotEngine {
     return out;
   }
 
+  /** Raw sample count in [tMin, tMax] — the pre-stride row count. */
+  getWindowSampleCount(channelId: string, tMinUs: number, tMaxUs: number): number {
+    const rt = this.channels.get(channelId);
+    if (!rt || rt.ring.length === 0) return 0;
+    const { lo, hi } = rt.ring.rangeFor(tMinUs, tMaxUs);
+    return Math.max(0, hi - lo);
+  }
+
   /** Min-max decimated series for painting a [tMin, tMax] µs window. */
   getSeries(channelId: string, tMinUs: number, tMaxUs: number, buckets: number): DecimatedPoint[] {
     const rt = this.channels.get(channelId);
