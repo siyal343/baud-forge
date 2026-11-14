@@ -29,6 +29,12 @@ pub enum TcpEndpoint {
 pub struct TcpConfig {
     pub endpoint: TcpEndpoint,
     pub read_timeout: Duration,
+    /// Per-attempt connect deadline. The blocking default can park ~21 s on a
+    /// blackholed peer and destroy the reader's reconnect budget (F-28).
+    pub connect_timeout: Duration,
+    /// Write deadline: a peer that stops reading must not park the reader
+    /// thread forever inside `write_all` (F-25).
+    pub write_timeout: Duration,
 }
 
 impl TcpConfig {
@@ -36,6 +42,8 @@ impl TcpConfig {
         Self {
             endpoint: TcpEndpoint::Client(address.into()),
             read_timeout: Duration::from_millis(50),
+            connect_timeout: Duration::from_secs(1),
+            write_timeout: Duration::from_secs(5),
         }
     }
 
@@ -43,6 +51,8 @@ impl TcpConfig {
         Self {
             endpoint: TcpEndpoint::Server(bind.into()),
             read_timeout: Duration::from_millis(50),
+            connect_timeout: Duration::from_secs(1),
+            write_timeout: Duration::from_secs(5),
         }
     }
 }
@@ -93,15 +103,39 @@ impl TcpTransport {
     }
 }
 
+/// Connect with a per-attempt deadline. `TcpStream::connect` can park for the
+/// OS SYN timeout (~21 s on Windows), which turns the reader's reconnect budget
+/// into hours on a blackholed peer (F-28).
+fn connect_with_timeout(address: &str, timeout: Duration) -> std::io::Result<TcpStream> {
+    use std::net::ToSocketAddrs;
+    let mut last_error: Option<std::io::Error> = None;
+    for socket_address in address.to_socket_addrs()? {
+        match TcpStream::connect_timeout(&socket_address, timeout) {
+            Ok(stream) => return Ok(stream),
+            Err(error) => last_error = Some(error),
+        }
+    }
+    Err(last_error.unwrap_or_else(|| {
+        std::io::Error::new(
+            std::io::ErrorKind::AddrNotAvailable,
+            "the address resolved to nothing",
+        )
+    }))
+}
+
 impl TransportDriver for TcpTransport {
     fn open(&mut self) -> Result<(), TransportError> {
         let io = |error: std::io::Error| TransportError::Io(error.to_string());
         match &self.config.endpoint {
             TcpEndpoint::Client(address) => {
-                let stream = TcpStream::connect(address).map_err(io)?;
+                let stream =
+                    connect_with_timeout(address, self.config.connect_timeout).map_err(io)?;
                 stream.set_nodelay(true).map_err(io)?;
                 stream
                     .set_read_timeout(Some(self.config.read_timeout))
+                    .map_err(io)?;
+                stream
+                    .set_write_timeout(Some(self.config.write_timeout))
                     .map_err(io)?;
                 if self.local_addr.is_none() {
                     self.local_addr = stream.local_addr().ok();
@@ -143,6 +177,7 @@ impl TransportDriver for TcpTransport {
                     Ok((stream, _peer)) => {
                         let _ = stream.set_nodelay(true);
                         let _ = stream.set_read_timeout(Some(self.config.read_timeout));
+                        let _ = stream.set_write_timeout(Some(self.config.write_timeout));
                         self.stream = Some(stream);
                     }
                     Err(error) if error.kind() == std::io::ErrorKind::WouldBlock => {
@@ -244,6 +279,26 @@ mod tests {
             client.read_slab(&mut buffer),
             Err(TransportError::Disconnected)
         );
+    }
+
+    /// A blackholed address must fail within the configured connect deadline,
+    /// not the OS SYN timeout (~21 s on Windows).
+    #[test]
+    fn a_blackholed_connect_times_out_within_the_deadline() {
+        let mut client = TcpTransport::new(TcpConfig {
+            endpoint: TcpEndpoint::Client("10.255.255.1:9".into()),
+            read_timeout: Duration::from_millis(50),
+            connect_timeout: Duration::from_millis(500),
+            write_timeout: Duration::from_secs(5),
+        });
+        let started = std::time::Instant::now();
+        assert!(client.open().is_err());
+        let elapsed = started.elapsed();
+        assert!(
+            elapsed < Duration::from_secs(10),
+            "connect took {elapsed:?}; the deadline did not bite"
+        );
+        assert_eq!(client.state(), PortState::Closed);
     }
 
     #[test]

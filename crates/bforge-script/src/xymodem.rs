@@ -388,6 +388,13 @@ impl XmodemSender {
 
     /// Process a single incoming byte from the receiver.
     pub fn process_byte(&mut self, byte: u8) -> Result<(), ModemError> {
+        // Terminal states absorb everything, like the receiver's guard does:
+        // a CAN CAN that lands after the final ACK (an aborting receiver, or
+        // line noise) must not flip a finished transfer into a cancelled one
+        // (F-37).
+        if matches!(self.state, SenderState::Complete | SenderState::Cancelled) {
+            return Ok(());
+        }
         if byte == CAN {
             self.can_count += 1;
             if self.can_count >= 2 {

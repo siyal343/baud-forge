@@ -54,7 +54,11 @@ pub fn crc_xmodem(data: &[u8]) -> u16 {
     for &b in data {
         crc ^= u16::from(b) << 8;
         for _ in 0..8 {
-            crc = if crc & 0x8000 != 0 { (crc << 1) ^ 0x1021 } else { crc << 1 };
+            crc = if crc & 0x8000 != 0 {
+                (crc << 1) ^ 0x1021
+            } else {
+                crc << 1
+            };
         }
     }
     crc
@@ -70,6 +74,9 @@ pub struct XferSession {
     pub data: Vec<u8>,
     /// Send: block in flight. Recv: last accepted block number.
     pub block: u32,
+    /// Recv: any block has been accepted. Block numbers wrap at 256, so block 0
+    /// is a legitimate accepted value and "block > 0" cannot mean "started" (F-12).
+    started: bool,
     pub phase: XferPhase,
     pub bytes_done: u64,
     pub retries: u32,
@@ -98,6 +105,7 @@ impl XferSession {
             name,
             data,
             block: 0,
+            started: false,
             phase: XferPhase::Handshake,
             bytes_done: 0,
             retries: 0,
@@ -128,7 +136,11 @@ impl XferSession {
         let mut body = vec![0u8; size];
         body[..end - start].copy_from_slice(&self.data[start..end]);
         let crc = crc_xmodem(&body);
-        let mut block = vec![if size == LARGE { STX } else { SOH }, number as u8, !(number as u8)];
+        let mut block = vec![
+            if size == LARGE { STX } else { SOH },
+            number as u8,
+            !(number as u8),
+        ];
         block.extend_from_slice(&body);
         block.push((crc >> 8) as u8);
         block.push((crc & 0xff) as u8);
@@ -144,8 +156,7 @@ impl XferSession {
         }
         self.awaiting_ack = true;
         reply(self.build_block(self.block));
-        self.bytes_done =
-            (self.block as usize * self.block_size()).min(self.data.len()) as u64;
+        self.bytes_done = (self.block as usize * self.block_size()).min(self.data.len()) as u64;
         self.phase = XferPhase::Transferring;
     }
 
@@ -274,13 +285,17 @@ impl XferSession {
                 return;
             }
             self.block = u32::from(number);
+            self.started = true;
             self.data.extend_from_slice(body);
             self.bytes_done = self.data.len() as u64;
             self.retries = 0;
             reply(vec![ACK]);
-        } else if number == self.block as u8 && self.block > 0 {
+        } else if number == self.block as u8 && self.started {
             // Duplicate: our ACK was lost on the wire. Re-acknowledge without
-            // re-appending — this is what makes device retries safe.
+            // re-appending — this is what makes device retries safe. The
+            // started flag, not "block > 0", guards it: block numbers wrap at
+            // 256, and after the wrap a re-sent block 0 must still be
+            // acknowledged (F-12).
             reply(vec![ACK]);
         } else {
             reply(vec![NAK]);
@@ -317,7 +332,11 @@ impl XferSession {
                 }
             }
             XferPhase::Finishing => {
-                eprintln!("xfer[{}]: finishing tick, elapsed {:?}", self.port_id, now.duration_since(self.last_event));
+                eprintln!(
+                    "xfer[{}]: finishing tick, elapsed {:?}",
+                    self.port_id,
+                    now.duration_since(self.last_event)
+                );
                 if now.duration_since(self.last_event) >= IDLE_TIMEOUT {
                     self.phase = XferPhase::Failed("EOT not acknowledged".into());
                 }
@@ -370,6 +389,46 @@ mod tests {
     }
 
     #[test]
+    fn a_re_sent_wrapped_block_zero_is_re_acknowledged() {
+        // Block numbers wrap at 256: after the 256th block (wire number 0), a
+        // re-sent block 0 must be re-ACKed as a duplicate, not NAK'd forever —
+        // the old "block > 0" guard broke at the wrap (F-12).
+        let mut rx = XferSession::new(
+            "devA",
+            XferDirection::Recv,
+            XferMode::Crc128,
+            "fw.bin".into(),
+            Vec::new(),
+            t0(),
+        );
+        rx.phase = XferPhase::Transferring;
+        rx.block = 255;
+        rx.started = true;
+
+        let body = [0xABu8; SMALL];
+        let mut wrapped = vec![SOH, 0, !0u8];
+        wrapped.extend_from_slice(&body);
+        let crc = crc_xmodem(&body);
+        wrapped.push((crc >> 8) as u8);
+        wrapped.push((crc & 0xFF) as u8);
+
+        let out = sink();
+        let mut reply = reply_for(&out);
+        let now = t0();
+
+        // The 256th block carries wire number 0 after the wrap: accepted.
+        rx.on_chunk(&wrapped, now, &mut reply);
+        assert_eq!(wire(&out).last(), Some(&ACK));
+        assert_eq!(rx.block, 0);
+
+        // Its retransmission (a lost ACK) is re-ACKed without re-appending.
+        let before = rx.data.len();
+        rx.on_chunk(&wrapped, now, &mut reply);
+        assert_eq!(wire(&out).last(), Some(&ACK));
+        assert_eq!(rx.data.len(), before);
+    }
+
+    #[test]
     fn receiver_accepts_a_full_crc_transfer() {
         let file: Vec<u8> = (0..300u32).map(|i| (i % 251) as u8).collect(); // 3 blocks
         let mut rx = XferSession::new(
@@ -391,7 +450,11 @@ mod tests {
         for number in 1u32..=3 {
             let before = wire(&out).len();
             rx.on_chunk(&block_for(&file, number), now, &mut reply);
-            assert_eq!(&wire(&out)[before..], &[ACK], "block {number} must be ACKed");
+            assert_eq!(
+                &wire(&out)[before..],
+                &[ACK],
+                "block {number} must be ACKed"
+            );
         }
 
         rx.on_chunk(&[EOT], now, &mut reply);

@@ -1074,7 +1074,6 @@ fn a_vault_without_a_workspace_reads_as_records() {
     assert!(stats.requests >= 1, "{stats:?}");
 }
 
-
 #[test]
 fn devices_and_quick_connect_and_export() {
     let server = Server::bind("127.0.0.1:0".parse().unwrap()).expect("bind");
@@ -1087,7 +1086,10 @@ fn devices_and_quick_connect_and_export() {
         // GET /api/devices
         let (status, body) = get(&address, "/api/devices");
         assert!(status.contains("200"), "devices status: {status}");
-        assert!(body.starts_with('[') && body.ends_with(']'), "devices body: {body}");
+        assert!(
+            body.starts_with('[') && body.ends_with(']'),
+            "devices body: {body}"
+        );
 
         // POST /api/quick-connect — an honest 501: a running session's ports
         // are fixed (the desktop launcher's Tauri quick-connect is the path
@@ -1100,7 +1102,10 @@ fn devices_and_quick_connect_and_export() {
         );
         assert!(status.contains("501"), "quick-connect status: {status}");
         assert!(body.contains("\"ok\":false"), "quick-connect body: {body}");
-        assert!(body.contains("ports are fixed"), "quick-connect body: {body}");
+        assert!(
+            body.contains("ports are fixed"),
+            "quick-connect body: {body}"
+        );
 
         // POST /api/workspace/export
         let (status, body) = post(&address, "/api/workspace/export", "{}");

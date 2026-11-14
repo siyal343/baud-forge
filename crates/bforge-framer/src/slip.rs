@@ -55,7 +55,15 @@ impl ByteMachine for Slip {
             if byte == END {
                 if !self.buffer.is_empty() {
                     match unescape(&self.buffer) {
-                        Some(frame) if !frame.is_empty() => frames.push(frame),
+                        // The limit is on the DECODED frame: escape expansion
+                        // means the wire bytes can outnumber it, so a frame
+                        // within the decoded limit must survive (F-26).
+                        Some(frame) if !frame.is_empty() && frame.len() <= self.max_frame_bytes => {
+                            frames.push(frame)
+                        }
+                        Some(frame) if frame.len() > self.max_frame_bytes => {
+                            self.dropped_overlong += 1;
+                        }
                         Some(_) => {}
                         None => self.invalid_frames += 1,
                     }
@@ -65,7 +73,9 @@ impl ByteMachine for Slip {
             }
 
             self.buffer.push(byte);
-            if self.buffer.len() > self.max_frame_bytes {
+            // A SLIP-encoded frame never exceeds twice its decoded size, so
+            // this wire bound cannot drop a frame the decoded limit accepts.
+            if self.buffer.len() > self.max_frame_bytes.saturating_mul(2) {
                 self.dropped_overlong += 1;
                 self.buffer.clear();
             }
@@ -172,8 +182,27 @@ mod tests {
 
     #[test]
     fn an_overlong_frame_is_dropped_and_counted() {
+        // The limit is on the decoded frame: 12 bytes exceed the 8-byte limit
+        // even though they carry no escapes.
+        let mut stream = vec![7u8; 12];
+        stream.push(END);
         let mut machine = Slip::new(8);
-        assert!(frames_of(&mut machine, &[7u8; 12]).is_empty());
+        assert!(frames_of(&mut machine, &stream).is_empty());
         assert_eq!(machine.dropped_overlong(), 1);
+    }
+
+    #[test]
+    fn escape_expansion_does_not_drop_a_frame_within_the_decoded_limit() {
+        // Nine END bytes encode to 18 wire bytes for a 13-byte frame; the old
+        // bound counted wire bytes against the decoded limit, dropped the
+        // frame, then unescaped the surviving tail into a bogus one (F-26).
+        let decoded: Vec<u8> = std::iter::once(b'A')
+            .chain(std::iter::repeat(END).take(9))
+            .chain([b'B', b'C', b'D'])
+            .collect();
+        let encoded = slip_encode(&decoded);
+        let mut machine = Slip::new(16);
+        assert_eq!(frames_of(&mut machine, &encoded), vec![decoded]);
+        assert_eq!(machine.dropped_overlong(), 0);
     }
 }

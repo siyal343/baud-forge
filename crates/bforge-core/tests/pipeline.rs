@@ -206,9 +206,9 @@ fn stats_report_a_rate() {
     pipeline.stop();
 }
 
-/// DTR and RTS reach the transport, and a pulse clears them again.
+/// DTR and RTS reach the transport, and a pulse restores the pre-pulse line.
 #[test]
-fn pins_reach_the_transport_and_a_pulse_lets_go() {
+fn pins_reach_the_transport_and_a_pulse_restores_the_line() {
     let config = PipelineConfig {
         port_id: 3,
         queue_chunks: 8,
@@ -226,8 +226,18 @@ fn pins_reach_the_transport_and_a_pulse_lets_go() {
         bforge_hal::PinStateFlags::DTR.0,
         "the transport saw DTR"
     );
+    pipeline
+        .set_pins(bforge_hal::PinStateFlags::RTS, None, Duration::from_secs(2))
+        .expect("the reader drives RTS");
+    assert_eq!(
+        pins.load(std::sync::atomic::Ordering::Relaxed) & bforge_hal::PinStateFlags::RTS.0,
+        bforge_hal::PinStateFlags::RTS.0,
+        "the transport saw RTS"
+    );
 
-    // A pulse holds the pin and then lets go before the caller is answered.
+    // A pulse holds the requested pin while keeping the rest of the line as it
+    // was, then restores that line exactly: the old code cleared every pin at
+    // the end of a pulse, so a DTR reset pulse wiped a held RTS (F-11).
     let started = Instant::now();
     pipeline
         .set_pins(
@@ -241,9 +251,15 @@ fn pins_reach_the_transport_and_a_pulse_lets_go() {
         "the pulse lasted its window: {:?}",
         started.elapsed()
     );
+    let after = pins.load(std::sync::atomic::Ordering::Relaxed);
     assert_eq!(
-        pins.load(std::sync::atomic::Ordering::Relaxed),
+        after & bforge_hal::PinStateFlags::RTS.0,
+        bforge_hal::PinStateFlags::RTS.0,
+        "the pulse kept the held RTS"
+    );
+    assert_eq!(
+        after & bforge_hal::PinStateFlags::DTR.0,
         0,
-        "the pulse cleared the pins it set"
+        "the pulse released the pulsed DTR"
     );
 }

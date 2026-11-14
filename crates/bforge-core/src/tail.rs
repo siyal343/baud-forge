@@ -157,6 +157,12 @@ impl Stream {
         &self.port
     }
 
+    /// Drop the partial data the framing machine holds. A reconnect invalidates
+    /// it: the machine must not concatenate bytes from two connections (F-24).
+    pub fn reset_machine(&mut self) {
+        self.machine.reset();
+    }
+
     /// Feed bytes that arrived at `timestamp_ns` and return the frames they finish.
     pub fn feed(&mut self, timestamp_ns: u64, bytes: &[u8]) -> Vec<TailRow> {
         let mut frames = Vec::new();
@@ -458,10 +464,15 @@ pub fn read_dissector_file(file: &str) -> Result<String, TailError> {
     }
 
     // Try resolving relative to CARGO_MANIFEST_DIR (dev / test mode)
-    let manifest_candidate = PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../../").join(file);
+    let manifest_candidate = PathBuf::from(env!("CARGO_MANIFEST_DIR"))
+        .join("../../")
+        .join(file);
     if manifest_candidate.is_file() {
         return std::fs::read_to_string(&manifest_candidate).map_err(|error| {
-            TailError::Settings(format!("cannot read {}: {error}", manifest_candidate.display()))
+            TailError::Settings(format!(
+                "cannot read {}: {error}",
+                manifest_candidate.display()
+            ))
         });
     }
 
@@ -632,11 +643,7 @@ fn decoder_from_config(port: &PortConfig) -> Result<Option<Decoder>, TailError> 
 }
 
 /// A decoder built from UPLOADED schema text instead of a file path (spec 2.2).
-pub fn decoder_from_text(
-    kind: &str,
-    text: &str,
-    root: Option<&str>,
-) -> Result<Decoder, TailError> {
+pub fn decoder_from_text(kind: &str, text: &str, root: Option<&str>) -> Result<Decoder, TailError> {
     match kind {
         "c_header" => {
             let header = bforge_dissect::cheader::parse(text)
@@ -647,15 +654,14 @@ pub fn decoder_from_text(
             let root = match root {
                 Some(root) => root.to_string(),
                 None => {
-                    let names: Vec<&str> =
-                        header.structs.iter().map(|s| s.name.as_str()).collect();
+                    let names: Vec<&str> = header.structs.iter().map(|s| s.name.as_str()).collect();
                     match names.as_slice() {
                         [only] => (*only).to_string(),
                         _ => {
                             return Err(TailError::Settings(format!(
                                 "c_header needs a root_struct (declared: {})",
                                 names.join(", ")
-                            )))
+                            )));
                         }
                     }
                 }

@@ -7,9 +7,9 @@
 //! Setup only: the schema parses, nothing acts on it yet.
 
 pub mod assert;
-pub mod xmodem;
-pub mod crash;
+pub mod contract;
 pub mod control;
+pub mod crash;
 pub mod diff;
 pub mod fault;
 pub mod logs;
@@ -21,7 +21,7 @@ pub mod session;
 pub mod slab;
 pub mod symbolize;
 pub mod tail;
-pub mod contract;
+pub mod xmodem;
 pub use contract as ui;
 pub mod validate;
 

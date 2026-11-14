@@ -50,6 +50,11 @@ pub struct DiffReport {
     pub changed_fields: Vec<FieldDiff>,
     pub missing_from_a: usize,
     pub missing_from_b: usize,
+    /// Records the decoder could not attribute: a vault records its ports by
+    /// session-local index, and a workspace configuration that lists different
+    /// ports cannot name them. Skipped records are never mislabeled (F-14).
+    #[serde(default)]
+    pub notes: Vec<String>,
 }
 
 /// Why session diff could not complete.
@@ -108,11 +113,17 @@ fn locate_sidecar(path: &Path) -> Option<PathBuf> {
     None
 }
 
-/// Decode all frames from a vault using the workspace ports.
+/// Decode all frames from a vault using the workspace ports. Returns the rows
+/// and how many records could not be attributed to any configured port.
+///
+/// A vault names its ports by session-local index and does not record that list,
+/// so a configuration listing different (or fewer) ports cannot map it exactly.
+/// Out-of-range records are skipped, never clamped onto the last port — a
+/// guessed stream decodes plausible-looking rows from the wrong bytes (F-14).
 fn decode_frames(
     reader: &mut LogReader,
     config: &ProjectConfig,
-) -> Result<Vec<TailRow>, DecodeError> {
+) -> Result<(Vec<TailRow>, u64), DecodeError> {
     let mut streams: Vec<Stream> = Vec::with_capacity(config.ports.len());
     for port in &config.ports {
         let cfg = tail_config(port)?;
@@ -120,6 +131,7 @@ fn decode_frames(
     }
 
     let mut rows = Vec::new();
+    let mut skipped = 0u64;
     let total_chunks = reader.chunks();
     let mut frame_index = 0u64;
 
@@ -129,17 +141,19 @@ fn decode_frames(
             break;
         }
         for record in &window {
-            let stream_idx = (record.chunk.port_id as usize).min(streams.len().saturating_sub(1));
-            if let Some(stream) = streams.get_mut(stream_idx) {
-                for mut row in stream.feed(record.chunk.timestamp_ns, &record.payload) {
-                    row.direction = record.chunk.direction;
-                    rows.push(row);
-                }
+            let stream_idx = record.chunk.port_id as usize;
+            let Some(stream) = streams.get_mut(stream_idx) else {
+                skipped += 1;
+                continue;
+            };
+            for mut row in stream.feed(record.chunk.timestamp_ns, &record.payload) {
+                row.direction = record.chunk.direction;
+                rows.push(row);
             }
         }
         frame_index += window.len() as u64;
     }
-    Ok(rows)
+    Ok((rows, skipped))
 }
 
 /// Compare two `.bflog` vaults.
@@ -203,9 +217,18 @@ pub fn diff_vaults(
     let records_b = reader_b.chunks();
 
     if let Some(cfg) = active_config.filter(|c| !c.ports.is_empty()) {
-        let rows_a = decode_frames(&mut reader_a, cfg)?;
-        let rows_b = decode_frames(&mut reader_b, cfg)?;
-        diff_decoded_frames(records_a, records_b, &rows_a, &rows_b)
+        let (rows_a, skipped_a) = decode_frames(&mut reader_a, cfg)?;
+        let (rows_b, skipped_b) = decode_frames(&mut reader_b, cfg)?;
+        let mut report = diff_decoded_frames(records_a, records_b, &rows_a, &rows_b)?;
+        for (side, path, skipped) in [("a", a, skipped_a), ("b", b, skipped_b)] {
+            if skipped > 0 {
+                report.notes.push(format!(
+                    "{skipped} record(s) in vault {side} ({}) name ports this configuration does not list; they were skipped, not decoded against a guessed port",
+                    path.display()
+                ));
+            }
+        }
+        Ok(report)
     } else {
         diff_raw_records(&mut reader_a, &mut reader_b, records_a, records_b)
     }
@@ -382,6 +405,7 @@ fn diff_decoded_frames(
         changed_fields,
         missing_from_a,
         missing_from_b,
+        notes: Vec::new(),
     })
 }
 
@@ -508,6 +532,7 @@ fn diff_raw_records(
         changed_fields,
         missing_from_a,
         missing_from_b,
+        notes: Vec::new(),
     })
 }
 

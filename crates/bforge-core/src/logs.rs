@@ -11,8 +11,8 @@
 
 use serde::{Deserialize, Serialize};
 use std::collections::VecDeque;
-use std::sync::atomic::{AtomicU64, Ordering};
 use std::sync::Mutex;
+use std::sync::atomic::{AtomicU64, Ordering};
 
 /// How many entries a serve session keeps in memory. Two thousand covers a
 /// dense debugging window; anything older is in the previous activity file.
@@ -160,7 +160,8 @@ impl LogRing {
         let mut text = String::with_capacity(entries.len() * 96);
         for entry in &entries {
             text.push_str(
-                &serde_json::to_string(entry).unwrap_or_else(|_| "{\"event\":\"unserializable\"}".to_string()),
+                &serde_json::to_string(entry)
+                    .unwrap_or_else(|_| "{\"event\":\"unserializable\"}".to_string()),
             );
             text.push('\n');
         }
@@ -207,7 +208,10 @@ mod tests {
 
         let warn_and_up = logs.since(0, LogLevel::Warn);
         assert_eq!(
-            warn_and_up.iter().map(|entry| entry.event.as_str()).collect::<Vec<_>>(),
+            warn_and_up
+                .iter()
+                .map(|entry| entry.event.as_str())
+                .collect::<Vec<_>>(),
             vec!["w", "e"]
         );
         // `since` only returns what came after the cursor.
@@ -218,7 +222,12 @@ mod tests {
     fn jsonl_round_trips() {
         let logs = ring();
         logs.log(LogLevel::Info, LogSource::Engine, "engine_start", "2 ports");
-        logs.log(LogLevel::Error, LogSource::Ui, "send_failed", "port not open");
+        logs.log(
+            LogLevel::Error,
+            LogSource::Ui,
+            "send_failed",
+            "port not open",
+        );
         let dir = std::env::temp_dir().join(format!("bforge-logs-{}", std::process::id()));
         std::fs::create_dir_all(&dir).unwrap();
         let path = dir.join("capture.bflog.activity.jsonl");

@@ -246,9 +246,6 @@ mod tests {
         register_ring(&first);
         register_ring(&second);
         let context = context().lock().unwrap();
-        assert!(Arc::ptr_eq(
-            context.ring.as_ref().unwrap(),
-            &second
-        ));
+        assert!(Arc::ptr_eq(context.ring.as_ref().unwrap(), &second));
     }
 }

@@ -618,7 +618,13 @@ fn read_loop(
                 "the port was yielded before the write went out",
             );
             state.transport.close();
-            yield_port(state.transport, &counters, &stop, window, &yield_request.cancel);
+            yield_port(
+                state.transport,
+                &counters,
+                &stop,
+                window,
+                &yield_request.cancel,
+            );
             // Writes that arrived while the port was lent out get the same
             // answer, whether or not the reclaim succeeded.
             drain_pending_writes(
@@ -683,7 +689,13 @@ impl ReaderLoopState<'_> {
                 return true;
             }
             Ok(len) => len,
-            Err(TransportError::Disconnected) => {
+            Err(error @ (TransportError::Disconnected | TransportError::NotOpen)) => {
+                // NotOpen reaches here after a failed yield reclaim: the
+                // transport is closed and the flash tool still holds the port.
+                // It recovers through the same reopen budget as a disconnect —
+                // the old code spun on NotOpen with zero reopen attempts until
+                // the session restarted (F-29).
+                let _ = error;
                 self.counters.read_errors.fetch_add(1, Ordering::Relaxed);
                 self.counters
                     .state
@@ -914,13 +926,25 @@ fn set_pins_one(
     stop: &AtomicBool,
 ) {
     let reply = request.reply;
+    // A pulse holds the requested pins high while keeping the rest of the line
+    // as it was, then restores that line exactly (F-11): the old code set and
+    // cleared the requested pins alone, so a DTR reset pulse wiped a held RTS
+    // on the wire and in the pin matrix.
+    let previous = bforge_hal::PinStateFlags(
+        u16::try_from(counters.pins_out.load(Ordering::Relaxed)).unwrap_or(0),
+    );
+    let applied = if request.pulse.is_some() {
+        bforge_hal::PinStateFlags(previous.0 | request.pins.0)
+    } else {
+        request.pins
+    };
     let mut result = transport
-        .set_pins(request.pins)
+        .set_pins(applied)
         .map_err(|error| error.to_string());
     if result.is_ok() {
         counters
             .pins_out
-            .store(u64::from(request.pins.0), Ordering::Relaxed);
+            .store(u64::from(applied.0), Ordering::Relaxed);
     }
     if let Some(pulse) = request.pulse
         && result.is_ok()
@@ -929,11 +953,12 @@ fn set_pins_one(
         while Instant::now() < until && !stop.load(Ordering::Relaxed) {
             thread::sleep(Duration::from_millis(5));
         }
-        // Clear only the pins this pulse set: a request that also held RTS keeps it.
-        if let Err(error) = transport.set_pins(bforge_hal::PinStateFlags(0)) {
+        if let Err(error) = transport.set_pins(previous) {
             result = Err(error.to_string());
         }
-        counters.pins_out.store(0, Ordering::Relaxed);
+        counters
+            .pins_out
+            .store(u64::from(previous.0), Ordering::Relaxed);
     }
     if let Some(reply) = reply {
         let _ = reply.send(result);

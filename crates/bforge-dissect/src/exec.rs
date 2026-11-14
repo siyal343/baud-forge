@@ -168,6 +168,14 @@ fn run_named(
             let unit_bytes = u32::from(bit_offset.saturating_add(*width))
                 .div_ceil(8)
                 .max(1);
+            // The parser refuses bitfields wider than their storage unit, but a
+            // hand-built IR must not panic the decoder either: a unit wider
+            // than a u64 cannot be read (F-36).
+            if unit_bytes > 8 {
+                return Err(ExecError::Unsupported(format!(
+                    "bitfield `{name}` spans {unit_bytes} bytes, which cannot be read into a u64"
+                )));
+            }
             let at = checked(base, *offset, unit_bytes as u8, unit_bytes, name, frame)?;
             let unit = read_uint(&frame[at..at + unit_bytes as usize], *big_endian);
             let mask = if *width >= 64 {

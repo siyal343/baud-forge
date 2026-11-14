@@ -27,19 +27,20 @@ impl FrameState {
         }
     }
 
-    /// The bytes after the script's changes, or the originals on a failed patch.
+    /// The bytes after the script's changes, plus the patch failure if any
+    /// field could not be written.
     ///
-    /// Takes `&self` on purpose: the Lua closures hold their own reference to this
-    /// state, so unwrapping it after the call is not possible and would silently drop
-    /// every change.
-    pub fn patched_bytes(&self) -> Vec<u8> {
+    /// A failed patch returns the originals — never a half-patched frame — and
+    /// the failure is the caller's to report, which the runtime does through
+    /// its failure counter (F-38).
+    pub fn patched_bytes(&mut self) -> (Vec<u8>, Option<String>) {
         let mut bytes = self.bytes.clone();
-        if !self.changed.is_empty() && encoder::patch(&self.ir, &mut bytes, &self.changed).is_err()
-        {
-            // The original is the honest answer; the caller counts the failure.
-            return self.bytes.clone();
+        if !self.changed.is_empty() {
+            if let Err(error) = encoder::patch(&self.ir, &mut bytes, &self.changed) {
+                return (self.bytes.clone(), Some(error.to_string()));
+            }
         }
-        bytes
+        (bytes, None)
     }
 
     pub fn changed(&self) -> bool {
@@ -120,10 +121,16 @@ pub fn frame_table(lua: &Lua, state: Arc<Mutex<FrameState>>) -> mlua::Result<Tab
                 ));
             }
             // The checksum must cover the fields the script just changed, so the patch
-            // is folded in before the bytes are summed.
+            // is folded in before the bytes are summed. A patch that cannot apply is
+            // a loud failure: folding a half-patched frame and dropping the rest of
+            // the script's changes would corrupt silently (F-38).
             if !state.changed.is_empty() {
                 let mut patched = state.bytes.clone();
-                let _ = encoder::patch(&state.ir, &mut patched, &state.changed);
+                if let Err(error) = encoder::patch(&state.ir, &mut patched, &state.changed) {
+                    return Err(mlua::Error::runtime(format!(
+                        "recalc_crc could not apply the frame changes: {error}"
+                    )));
+                }
                 state.bytes = patched;
                 state.changed.clear();
             }
@@ -142,10 +149,14 @@ pub fn frame_table(lua: &Lua, state: Arc<Mutex<FrameState>>) -> mlua::Result<Tab
     frame.set(
         "bytes",
         lua.create_function(move |lua, _this: Table| {
-            let state = bytes_state.lock().unwrap();
+            let mut state = bytes_state.lock().unwrap();
             let mut bytes = state.bytes.clone();
             if state.changed() {
-                let _ = encoder::patch(&state.ir, &mut bytes, &state.changed);
+                // A failed patch shows the originals, never a half-patched
+                // frame; the failure surfaces when the frame is sent (F-38).
+                if encoder::patch(&state.ir, &mut bytes, &state.changed).is_err() {
+                    bytes = state.bytes.clone();
+                }
             }
             lua.create_string(crate::runtime::hex_of(&bytes))
         })?,
@@ -178,7 +189,8 @@ mod tests {
         state
             .changed
             .insert("v_batt_mv".to_string(), FieldValue::Number(7400.0));
-        let patched = state.patched_bytes();
+        let (patched, error) = state.patched_bytes();
+        assert_eq!(error, None);
         assert_eq!(&patched[0..2], &[0x55, 0xAA], "the sync word is untouched");
         assert_eq!(
             &patched[8..10],
@@ -189,12 +201,14 @@ mod tests {
     }
 
     #[test]
-    fn a_name_the_schema_does_not_have_leaves_the_frame_alone() {
+    fn a_name_the_schema_does_not_have_returns_the_originals_and_the_failure() {
         let bytes = vec![1u8; 19];
         let mut state = FrameState::new(imu(), &bytes);
         state
             .changed
             .insert("nope".to_string(), FieldValue::Number(1.0));
-        assert_eq!(state.patched_bytes(), bytes);
+        let (patched, error) = state.patched_bytes();
+        assert_eq!(patched, bytes);
+        assert!(error.is_some(), "the patch failure must be reported (F-38)");
     }
 }

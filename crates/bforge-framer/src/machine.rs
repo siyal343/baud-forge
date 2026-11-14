@@ -131,7 +131,10 @@ impl ByteMachine for Delimiter {
                 continue;
             }
 
-            if self.buffer.len() > self.max_frame_bytes {
+            if self.buffer.len() > self.max_frame_bytes + self.delimiter.len() {
+                // The buffer also holds a partial delimiter, so the content
+                // limit gets its length as headroom: a frame whose content is
+                // exactly max_frame_bytes must survive its own delimiter (F-27).
                 self.dropped_overlong += 1;
                 self.buffer.clear();
             }
@@ -294,10 +297,24 @@ mod tests {
     fn empty_frames_and_overlong_frames_are_dropped() {
         let mut machine = Delimiter::new(b"\n".to_vec(), 8);
         assert_eq!(frames_of(&mut machine, b"\n\nok\n"), vec![b"ok".to_vec()]);
+        // Ten bytes without a delimiter is over the limit; the run is dropped
+        // whole. The limit carries the delimiter's own bytes as headroom (F-27).
         assert!(frames_of(&mut machine, b"0123456789").is_empty());
         assert_eq!(machine.dropped_overlong(), 1);
-        // The byte after the drop starts a new frame and waits for its delimiter.
-        assert_eq!(machine.pending(), 1);
+        assert_eq!(machine.pending(), 0);
+        // The next bytes start a fresh frame and wait for their delimiter.
+        assert_eq!(frames_of(&mut machine, b"xy\n"), vec![b"xy".to_vec()]);
+    }
+
+    #[test]
+    fn content_at_the_limit_survives_a_multibyte_delimiter() {
+        // A frame whose content is exactly max_frame_bytes completes when its
+        // delimiter arrives; the old bound counted the delimiter's own bytes,
+        // dropped the frame, and leaked half the delimiter into the next one.
+        let mut machine = Delimiter::new(b"\r\n".to_vec(), 8);
+        let frames = frames_of(&mut machine, b"ABCDEFGH\r\nxyz\r\n");
+        assert_eq!(frames, vec![b"ABCDEFGH".to_vec(), b"xyz".to_vec()]);
+        assert_eq!(machine.dropped_overlong(), 0);
     }
 
     #[test]

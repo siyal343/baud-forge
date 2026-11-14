@@ -790,45 +790,54 @@ fn diff_cmd(args: &[String]) -> ExitCode {
 
     if json {
         println!("{}", serde_json::to_string_pretty(&report).unwrap());
-    } else if report.identical {
-        println!(
-            "identical: {} records, {} frame(s)",
-            report.records_a, report.frames_a
-        );
     } else {
-        println!(
-            "different: {} vs {} records, {} vs {} frames",
-            report.records_a, report.records_b, report.frames_a, report.frames_b
-        );
-        if let Some(divergence) = &report.first_divergence {
+        for note in &report.notes {
+            println!("note: {note}");
+        }
+        if report.identical {
             println!(
-                "  first divergence at index {} (port {}): {}",
-                divergence.index, divergence.port, divergence.reason
+                "identical: {} records, {} frame(s)",
+                report.records_a, report.frames_a
             );
-            for field in &divergence.field_diffs {
+        } else {
+            println!(
+                "different: {} vs {} records, {} vs {} frames",
+                report.records_a, report.records_b, report.frames_a, report.frames_b
+            );
+            if let Some(divergence) = &report.first_divergence {
                 println!(
-                    "    field `{}`: `{}` vs `{}`",
-                    field.field_name, field.value_a, field.value_b
+                    "  first divergence at index {} (port {}): {}",
+                    divergence.index, divergence.port, divergence.reason
                 );
+                for field in &divergence.field_diffs {
+                    println!(
+                        "    field `{}`: `{}` vs `{}`",
+                        field.field_name, field.value_a, field.value_b
+                    );
+                }
             }
-        }
-        if !report.changed_fields.is_empty() {
-            println!("  changed fields ({} total):", report.changed_fields.len());
-            for field in report.changed_fields.iter().take(10) {
-                println!(
-                    "    [{}] {}.{}: `{}` -> `{}`",
-                    field.frame_index, field.port, field.field_name, field.value_a, field.value_b
-                );
+            if !report.changed_fields.is_empty() {
+                println!("  changed fields ({} total):", report.changed_fields.len());
+                for field in report.changed_fields.iter().take(10) {
+                    println!(
+                        "    [{}] {}.{}: `{}` -> `{}`",
+                        field.frame_index,
+                        field.port,
+                        field.field_name,
+                        field.value_a,
+                        field.value_b
+                    );
+                }
+                if report.changed_fields.len() > 10 {
+                    println!("    ... and {} more", report.changed_fields.len() - 10);
+                }
             }
-            if report.changed_fields.len() > 10 {
-                println!("    ... and {} more", report.changed_fields.len() - 10);
+            if report.missing_from_a > 0 {
+                println!("  missing from a: {} frame(s)", report.missing_from_a);
             }
-        }
-        if report.missing_from_a > 0 {
-            println!("  missing from a: {} frame(s)", report.missing_from_a);
-        }
-        if report.missing_from_b > 0 {
-            println!("  missing from b: {} frame(s)", report.missing_from_b);
+            if report.missing_from_b > 0 {
+                println!("  missing from b: {} frame(s)", report.missing_from_b);
+            }
         }
     }
 

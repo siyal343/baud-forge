@@ -178,10 +178,16 @@ impl ScriptRuntime {
         match answer {
             // Returning the frame sends the patched bytes.
             Ok(Value::Table(_)) => {
-                let next = state
+                let (next, patch_error) = state
                     .lock()
-                    .map(|state| state.patched_bytes())
-                    .unwrap_or_else(|_| bytes.to_vec());
+                    .map(|mut state| state.patched_bytes())
+                    .unwrap_or_else(|_| (bytes.to_vec(), None));
+                // A patch the schema refused is counted like any other script
+                // failure: the rig transmits the originals, and the UI shows
+                // why nothing was injected (F-38).
+                if let Some(error) = patch_error {
+                    self.fail(format!("frame patch failed: {error}"));
+                }
                 if next != bytes {
                     self.changed += 1;
                 }

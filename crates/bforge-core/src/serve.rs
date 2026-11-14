@@ -9,8 +9,8 @@
 //! would be more code than the protocol. `shortcut: GET only and no
 //! authentication, upgrade when a socket transport other than loopback is served`.
 
-use crate::session::{Session, SessionError};
 use crate::contract::UiEvent;
+use crate::session::{Session, SessionError};
 use std::io::{BufRead, BufReader, Read, Write};
 use std::net::{SocketAddr, TcpListener, TcpStream};
 use std::sync::atomic::{AtomicBool, AtomicU64, Ordering};
@@ -260,23 +260,20 @@ struct Shared {
 
 impl Shared {
     /// Append an engine-side entry to the activity ring.
-    fn log(
-        &self,
-        level: crate::logs::LogLevel,
-        event: &str,
-        detail: impl std::fmt::Display,
-    ) {
-        self.logs
-            .log(level, crate::logs::LogSource::Engine, event, detail.to_string());
+    fn log(&self, level: crate::logs::LogLevel, event: &str, detail: impl std::fmt::Display) {
+        self.logs.log(
+            level,
+            crate::logs::LogSource::Engine,
+            event,
+            detail.to_string(),
+        );
     }
 
     /// Write the ring to the session's `<vault>.activity.jsonl`, if a session
     /// vault is known and the ring holds anything. Callers must hold
     /// [`Shared::activity_lock`] so a periodic flush and the shutdown write
     /// never interleave.
-    fn write_activity_file_locked(
-        &self,
-    ) -> Option<std::io::Result<(std::path::PathBuf, usize)>> {
+    fn write_activity_file_locked(&self) -> Option<std::io::Result<(std::path::PathBuf, usize)>> {
         let vault = self.activity_path.lock().unwrap().clone()?;
         if self.logs.is_empty() {
             return None;
@@ -496,7 +493,11 @@ impl Server {
                     Ok(_) => shared.log(
                         crate::logs::LogLevel::Info,
                         "tx",
-                        format!("{}: {size} B{}", job.port, if paced { " (paced)" } else { "" }),
+                        format!(
+                            "{}: {size} B{}",
+                            job.port,
+                            if paced { " (paced)" } else { "" }
+                        ),
                     ),
                     Err(error) => shared.log(
                         crate::logs::LogLevel::Error,
@@ -562,11 +563,7 @@ impl Server {
                             format!("{}: released for {} s", job.port, job.seconds),
                         );
                     } else {
-                        shared.log(
-                            crate::logs::LogLevel::Warn,
-                            "yield_unknown_port",
-                            &job.port,
-                        );
+                        shared.log(crate::logs::LogLevel::Warn, "yield_unknown_port", &job.port);
                     }
                     released
                 };
@@ -585,7 +582,15 @@ impl Server {
                     Ok(()) => shared.log(
                         crate::logs::LogLevel::Info,
                         "fault",
-                        format!("{}: {}", job.port, if job.profile.is_some() { "profile armed" } else { "profile cleared" }),
+                        format!(
+                            "{}: {}",
+                            job.port,
+                            if job.profile.is_some() {
+                                "profile armed"
+                            } else {
+                                "profile cleared"
+                            }
+                        ),
                     ),
                     Err(error) => shared.log(
                         crate::logs::LogLevel::Error,
@@ -617,7 +622,11 @@ impl Server {
                     }
                     Err(error) => shared.log(
                         crate::logs::LogLevel::Error,
-                        if starting { "rec_start_failed" } else { "rec_stop_failed" },
+                        if starting {
+                            "rec_start_failed"
+                        } else {
+                            "rec_stop_failed"
+                        },
                         error,
                     ),
                 }
@@ -648,9 +657,7 @@ impl Server {
                                 .join(", ")
                         ),
                     ),
-                    Err(error) => {
-                        shared.log(crate::logs::LogLevel::Error, "bridge_failed", error)
-                    }
+                    Err(error) => shared.log(crate::logs::LogLevel::Error, "bridge_failed", error),
                 }
                 let _ = job.reply.send(result);
             }
@@ -675,7 +682,12 @@ impl Server {
                     Ok(()) => shared.log(
                         crate::logs::LogLevel::Info,
                         "schema_apply",
-                        format!("{}: {} ({} B of source)", job.port, job.kind, job.text.len()),
+                        format!(
+                            "{}: {} ({} B of source)",
+                            job.port,
+                            job.kind,
+                            job.text.len()
+                        ),
                     ),
                     Err(error) => shared.log(
                         crate::logs::LogLevel::Error,
@@ -687,11 +699,22 @@ impl Server {
             }
             while let Ok(job) = transfer_rx.try_recv() {
                 let (event, detail) = match &job.action {
-                    TransferAction::Arm { port, direction, mode, name, data, expected_len } => (
+                    TransferAction::Arm {
+                        port,
+                        direction,
+                        mode,
+                        name,
+                        data,
+                        expected_len,
+                    } => (
                         "transfer_arm",
                         format!(
                             "{port}: {} {name} ({mode:?}), {} B{}",
-                            if matches!(direction, crate::xmodem::XferDirection::Send) { "send" } else { "recv" },
+                            if matches!(direction, crate::xmodem::XferDirection::Send) {
+                                "send"
+                            } else {
+                                "recv"
+                            },
                             data.len(),
                             expected_len
                                 .map(|expected| format!(", expecting {expected} B"))
@@ -712,9 +735,9 @@ impl Server {
                     } => session
                         .start_transfer(&port, direction, mode, name, data, expected_len)
                         .map(|()| Vec::new()),
-                    TransferAction::Cancel { port } => session
-                        .cancel_transfer(&port)
-                        .map(|()| Vec::new()),
+                    TransferAction::Cancel { port } => {
+                        session.cancel_transfer(&port).map(|()| Vec::new())
+                    }
                     TransferAction::Drain { port } => session.take_transfer_data(&port),
                 }
                 .map_err(|error| error.to_string());
@@ -727,7 +750,9 @@ impl Server {
                         };
                         shared.log(crate::logs::LogLevel::Info, event, detail);
                     }
-                    Err(error) => shared.log(crate::logs::LogLevel::Error, "transfer_failed", error),
+                    Err(error) => {
+                        shared.log(crate::logs::LogLevel::Error, "transfer_failed", error)
+                    }
                 }
                 let _ = job.reply.send(result);
             }
@@ -806,11 +831,14 @@ impl Server {
         let activity_guard = shared.activity_lock.lock().unwrap();
         match shared.write_activity_file_locked() {
             Some(Ok((path, count))) => {
-                eprintln!("bforge-serve: activity log: {count} entries -> {}", path.display())
+                eprintln!(
+                    "bforge-serve: activity log: {count} entries -> {}",
+                    path.display()
+                )
             }
-            Some(Err(error)) => eprintln!(
-                "bforge-serve: the activity log could not be written: {error}"
-            ),
+            Some(Err(error)) => {
+                eprintln!("bforge-serve: the activity log could not be written: {error}")
+            }
             None => {}
         }
         drop(activity_guard);
@@ -852,30 +880,46 @@ fn event_json(event: &UiEvent) -> String {
 fn log_ui_event(shared: &Arc<Shared>, event: &UiEvent) {
     use crate::logs::LogLevel as Level;
     match event {
-        UiEvent::Started { ports, vault, .. } => {
-            shared.log(Level::Info, "session_started", format!("{ports} port(s), vault {vault}"))
-        }
+        UiEvent::Started { ports, vault, .. } => shared.log(
+            Level::Info,
+            "session_started",
+            format!("{ports} port(s), vault {vault}"),
+        ),
         UiEvent::PortStateChanged { port, state, .. } => {
             shared.log(Level::Info, "port_state", format!("{port}: {state}"))
         }
-        UiEvent::Overrun { port, total, .. } => {
-            shared.log(Level::Warn, "overrun", format!("{port}: {total} slab(s) dropped"))
-        }
-        UiEvent::DamagedTail { port, .. } => {
-            shared.log(Level::Warn, "damaged_tail", format!("{port}: tail repaired from raw slab"))
-        }
-        UiEvent::Stopped { chunks, payload_bytes, .. } => shared.log(
+        UiEvent::Overrun { port, total, .. } => shared.log(
+            Level::Warn,
+            "overrun",
+            format!("{port}: {total} slab(s) dropped"),
+        ),
+        UiEvent::DamagedTail { port, .. } => shared.log(
+            Level::Warn,
+            "damaged_tail",
+            format!("{port}: tail repaired from raw slab"),
+        ),
+        UiEvent::Stopped {
+            chunks,
+            payload_bytes,
+            ..
+        } => shared.log(
             Level::Info,
             "session_stopped",
             format!("{chunks} chunk(s), {payload_bytes} B payload"),
         ),
-        UiEvent::Transfer { port, name, phase, block, total_blocks, bytes_done, .. } => {
-            shared.log(
-                Level::Info,
-                "transfer_progress",
-                format!("{port} {name}: {phase}, block {block}/{total_blocks}, {bytes_done} B"),
-            )
-        }
+        UiEvent::Transfer {
+            port,
+            name,
+            phase,
+            block,
+            total_blocks,
+            bytes_done,
+            ..
+        } => shared.log(
+            Level::Info,
+            "transfer_progress",
+            format!("{port} {name}: {phase}, block {block}/{total_blocks}, {bytes_done} B"),
+        ),
         UiEvent::Stats { .. } => {}
     }
 }
@@ -893,6 +937,10 @@ fn sse(event: &str, data: &str) -> String {
 fn handle(mut stream: TcpStream, shared: Arc<Shared>, stop: Arc<AtomicBool>) {
     shared.requests.fetch_add(1, Ordering::Relaxed);
     let _ = stream.set_read_timeout(Some(Duration::from_secs(5)));
+    // A peer that stops reading (a suspended tab keeping the socket open) must
+    // not park a thread in a write forever: the write times out, the handler
+    // exits, and the client is reclaimed by the next broadcast (F-13).
+    let _ = stream.set_write_timeout(Some(Duration::from_secs(30)));
     let reader_stream = match stream.try_clone() {
         Ok(clone) => clone,
         Err(_) => return,
@@ -1323,22 +1371,24 @@ fn send(stream: &mut TcpStream, shared: &Arc<Shared>, body: &[u8]) {
     let typed = request.values.clone();
     let mut bytes = match &typed {
         Some(_) => Vec::new(),
-        None => if let Some(raw) = request.bytes {
-            raw
-        } else {
-            match parse_hex(&request.hex) {
-                Ok(bytes) => bytes,
-                Err(error) => {
-                    let body = format!("{{\"error\":\"{error}\"}}");
-                    return respond(
-                        stream,
-                        "400 Bad Request",
-                        "application/json",
-                        body.as_bytes(),
-                    );
+        None => {
+            if let Some(raw) = request.bytes {
+                raw
+            } else {
+                match parse_hex(&request.hex) {
+                    Ok(bytes) => bytes,
+                    Err(error) => {
+                        let body = format!("{{\"error\":\"{error}\"}}");
+                        return respond(
+                            stream,
+                            "400 Bad Request",
+                            "application/json",
+                            body.as_bytes(),
+                        );
+                    }
                 }
             }
-        },
+        }
     };
     if typed.is_none()
         && let Some(name) = &request.crc
@@ -1601,8 +1651,16 @@ fn query(target: &str) -> std::collections::HashMap<String, String> {
 /// Size and shape of the vault, so a scrubber knows its own range.
 fn vault_info(stream: &mut TcpStream, shared: &Arc<Shared>, target: &str) {
     let query_map = query(target);
-    let default_path = shared.vault.lock().unwrap().as_ref().map(|s| s.path.clone());
-    let path = query_map.get("path").map(std::path::PathBuf::from).or(default_path);
+    let default_path = shared
+        .vault
+        .lock()
+        .unwrap()
+        .as_ref()
+        .map(|s| s.path.clone());
+    let path = query_map
+        .get("path")
+        .map(std::path::PathBuf::from)
+        .or(default_path);
     let Some(path) = path else {
         return respond(
             stream,
@@ -1638,8 +1696,16 @@ fn vault_info(stream: &mut TcpStream, shared: &Arc<Shared>, target: &str) {
 /// capture ever needs to be larger than the memory it is served from.
 fn vault_export(stream: &mut TcpStream, shared: &Arc<Shared>, target: &str) {
     let query = query(target);
-    let default_path = shared.vault.lock().unwrap().as_ref().map(|s| s.path.clone());
-    let path = query.get("path").map(std::path::PathBuf::from).or(default_path);
+    let default_path = shared
+        .vault
+        .lock()
+        .unwrap()
+        .as_ref()
+        .map(|s| s.path.clone());
+    let path = query
+        .get("path")
+        .map(std::path::PathBuf::from)
+        .or(default_path);
     let Some(path) = path else {
         return respond(
             stream,
@@ -2142,7 +2208,11 @@ fn record(stream: &mut TcpStream, shared: &Arc<Shared>, body: &[u8]) {
     }
     match answer.recv_timeout(Duration::from_secs(5)) {
         Ok(Ok(path)) => {
-            let body = format!("{{\"recording\":{},\"vault\":{}}}", request.action == "start", serde_json::json!(path));
+            let body = format!(
+                "{{\"recording\":{},\"vault\":{}}}",
+                request.action == "start",
+                serde_json::json!(path)
+            );
             respond(stream, "200 OK", "application/json", body.as_bytes());
         }
         Ok(Err(error)) => {
@@ -2181,16 +2251,31 @@ fn elf_upload(stream: &mut TcpStream, shared: &Arc<Shared>, body: &[u8]) {
         && let Err(error) = std::fs::create_dir_all(parent)
     {
         let body = format!("{{\"error\":{}}}", serde_json::json!(error.to_string()));
-        return respond(stream, "500 Internal Server Error", "application/json", body.as_bytes());
+        return respond(
+            stream,
+            "500 Internal Server Error",
+            "application/json",
+            body.as_bytes(),
+        );
     }
     if let Err(error) = std::fs::write(&path, body) {
         let body = format!("{{\"error\":{}}}", serde_json::json!(error.to_string()));
-        return respond(stream, "500 Internal Server Error", "application/json", body.as_bytes());
+        return respond(
+            stream,
+            "500 Internal Server Error",
+            "application/json",
+            body.as_bytes(),
+        );
     }
     let sender = shared.elf_request.lock().unwrap().clone();
     let Some(sender) = sender else {
         let body = "{\"error\":\"the pump is not running\"}";
-        return respond(stream, "503 Service Unavailable", "application/json", body.as_bytes());
+        return respond(
+            stream,
+            "503 Service Unavailable",
+            "application/json",
+            body.as_bytes(),
+        );
     };
     let (reply, answer) = std::sync::mpsc::sync_channel(1);
     if sender
@@ -2201,7 +2286,12 @@ fn elf_upload(stream: &mut TcpStream, shared: &Arc<Shared>, body: &[u8]) {
         .is_err()
     {
         let body = "{\"error\":\"the pump has stopped\"}";
-        return respond(stream, "503 Service Unavailable", "application/json", body.as_bytes());
+        return respond(
+            stream,
+            "503 Service Unavailable",
+            "application/json",
+            body.as_bytes(),
+        );
     }
     match answer.recv_timeout(Duration::from_secs(5)) {
         Ok(Ok(stored)) => {
@@ -2214,11 +2304,21 @@ fn elf_upload(stream: &mut TcpStream, shared: &Arc<Shared>, body: &[u8]) {
         }
         Ok(Err(error)) => {
             let body = format!("{{\"error\":{}}}", serde_json::json!(error));
-            respond(stream, "400 Bad Request", "application/json", body.as_bytes());
+            respond(
+                stream,
+                "400 Bad Request",
+                "application/json",
+                body.as_bytes(),
+            );
         }
         Err(_) => {
             let body = "{\"error\":\"no answer from the pump\"}";
-            respond(stream, "504 Gateway Timeout", "application/json", body.as_bytes());
+            respond(
+                stream,
+                "504 Gateway Timeout",
+                "application/json",
+                body.as_bytes(),
+            );
         }
     }
 }
@@ -2248,7 +2348,12 @@ fn schema(stream: &mut TcpStream, shared: &Arc<Shared>, body: &[u8]) {
         Ok(request) => request,
         Err(error) => {
             let body = format!("{{\"error\":\"bad request: {error}\"}}");
-            return respond(stream, "400 Bad Request", "application/json", body.as_bytes());
+            return respond(
+                stream,
+                "400 Bad Request",
+                "application/json",
+                body.as_bytes(),
+            );
         }
     };
     let kind = request.kind.as_deref().unwrap_or("c_header").to_string();
@@ -2276,7 +2381,12 @@ fn schema(stream: &mut TcpStream, shared: &Arc<Shared>, body: &[u8]) {
             }
             Err(error) => {
                 let body = format!("{{\"error\":{}}}", serde_json::json!(error.to_string()));
-                respond(stream, "400 Bad Request", "application/json", body.as_bytes());
+                respond(
+                    stream,
+                    "400 Bad Request",
+                    "application/json",
+                    body.as_bytes(),
+                );
             }
         },
         "decode" => match built {
@@ -2284,41 +2394,70 @@ fn schema(stream: &mut TcpStream, shared: &Arc<Shared>, body: &[u8]) {
                 let hex = request.hex.unwrap_or_default();
                 let bytes = crate::validate::parse_hex(&hex).unwrap_or_default();
                 let reply = match &decoder {
-                    crate::tail::Decoder::Ir { ir, .. } => bforge_dissect::exec::execute(ir, &bytes)
-                        .map(|fields| crate::tail::flatten(&fields, "")),
+                    crate::tail::Decoder::Ir { ir, .. } => {
+                        bforge_dissect::exec::execute(ir, &bytes)
+                            .map(|fields| crate::tail::flatten(&fields, ""))
+                    }
                     crate::tail::Decoder::Pack(pack) => pack
                         .decode(&bytes)
                         .map(|fields| crate::tail::flatten(&fields, "")),
                 };
                 match reply {
                     Ok(rows) => {
-                        let body = serde_json::to_string(&rows).unwrap_or_else(|_| "[]".to_string());
+                        let body =
+                            serde_json::to_string(&rows).unwrap_or_else(|_| "[]".to_string());
                         respond(stream, "200 OK", "application/json", body.as_bytes());
                     }
                     Err(error) => {
-                        let body = format!("{{\"error\":{}}}", serde_json::json!(error.to_string()));
-                        respond(stream, "400 Bad Request", "application/json", body.as_bytes());
+                        let body =
+                            format!("{{\"error\":{}}}", serde_json::json!(error.to_string()));
+                        respond(
+                            stream,
+                            "400 Bad Request",
+                            "application/json",
+                            body.as_bytes(),
+                        );
                     }
                 }
             }
             Err(error) => {
                 let body = format!("{{\"error\":{}}}", serde_json::json!(error.to_string()));
-                respond(stream, "400 Bad Request", "application/json", body.as_bytes());
+                respond(
+                    stream,
+                    "400 Bad Request",
+                    "application/json",
+                    body.as_bytes(),
+                );
             }
         },
         "apply" => {
             let Some(port) = request.port.clone() else {
                 let body = "{\"error\":\"apply needs a port\"}";
-                return respond(stream, "400 Bad Request", "application/json", body.as_bytes());
+                return respond(
+                    stream,
+                    "400 Bad Request",
+                    "application/json",
+                    body.as_bytes(),
+                );
             };
             if let Err(error) = built {
                 let body = format!("{{\"error\":{}}}", serde_json::json!(error.to_string()));
-                return respond(stream, "400 Bad Request", "application/json", body.as_bytes());
+                return respond(
+                    stream,
+                    "400 Bad Request",
+                    "application/json",
+                    body.as_bytes(),
+                );
             }
             let sender = shared.schema_request.lock().unwrap().clone();
             let Some(sender) = sender else {
                 let body = "{\"error\":\"the pump is not running\"}";
-                return respond(stream, "503 Service Unavailable", "application/json", body.as_bytes());
+                return respond(
+                    stream,
+                    "503 Service Unavailable",
+                    "application/json",
+                    body.as_bytes(),
+                );
             };
             let (reply, answer) = std::sync::mpsc::sync_channel(1);
             let job = SchemaJob {
@@ -2330,7 +2469,12 @@ fn schema(stream: &mut TcpStream, shared: &Arc<Shared>, body: &[u8]) {
             };
             if sender.send(job).is_err() {
                 let body = "{\"error\":\"the pump has stopped\"}";
-                return respond(stream, "503 Service Unavailable", "application/json", body.as_bytes());
+                return respond(
+                    stream,
+                    "503 Service Unavailable",
+                    "application/json",
+                    body.as_bytes(),
+                );
             }
             match answer.recv_timeout(Duration::from_secs(3)) {
                 Ok(Ok(())) => respond(stream, "200 OK", "application/json", b"{\"ok\":true}"),
@@ -2340,15 +2484,24 @@ fn schema(stream: &mut TcpStream, shared: &Arc<Shared>, body: &[u8]) {
                 }
                 Err(_) => {
                     let body = "{\"error\":\"no answer from the pump\"}";
-                    respond(stream, "504 Gateway Timeout", "application/json", body.as_bytes());
+                    respond(
+                        stream,
+                        "504 Gateway Timeout",
+                        "application/json",
+                        body.as_bytes(),
+                    );
                 }
             }
         }
         other => {
-            let body = format!(
-                "{{\"error\":\"unknown action `{other}`; use parse, decode or apply\"}}"
+            let body =
+                format!("{{\"error\":\"unknown action `{other}`; use parse, decode or apply\"}}");
+            respond(
+                stream,
+                "400 Bad Request",
+                "application/json",
+                body.as_bytes(),
             );
-            respond(stream, "400 Bad Request", "application/json", body.as_bytes());
         }
     }
 }
@@ -2391,7 +2544,12 @@ fn transfer_control(stream: &mut TcpStream, shared: &Arc<Shared>, body: &[u8]) {
         Ok(request) => request,
         Err(error) => {
             let body = format!("{{\"error\":\"bad request: {error}\"}}");
-            return respond(stream, "400 Bad Request", "application/json", body.as_bytes());
+            return respond(
+                stream,
+                "400 Bad Request",
+                "application/json",
+                body.as_bytes(),
+            );
         }
     };
     let action = match request.action.as_str() {
@@ -2400,9 +2558,8 @@ fn transfer_control(stream: &mut TcpStream, shared: &Arc<Shared>, body: &[u8]) {
                 Some("send") => crate::xmodem::XferDirection::Send,
                 Some("recv") | None => crate::xmodem::XferDirection::Recv,
                 Some(other) => {
-                    let body = format!(
-                        "{{\"error\":\"unknown direction `{other}`; use send or recv\"}}"
-                    );
+                    let body =
+                        format!("{{\"error\":\"unknown direction `{other}`; use send or recv\"}}");
                     return respond(
                         stream,
                         "400 Bad Request",
@@ -2452,31 +2609,41 @@ fn transfer_control(stream: &mut TcpStream, shared: &Arc<Shared>, body: &[u8]) {
             port: request.port.clone(),
         },
         other => {
-            let body = format!(
-                "{{\"error\":\"unknown action `{other}`; use arm or cancel\"}}"
+            let body = format!("{{\"error\":\"unknown action `{other}`; use arm or cancel\"}}");
+            return respond(
+                stream,
+                "400 Bad Request",
+                "application/json",
+                body.as_bytes(),
             );
-            return respond(stream, "400 Bad Request", "application/json", body.as_bytes());
         }
     };
     let sender = shared.transfer_request.lock().unwrap().clone();
     let Some(sender) = sender else {
         let body = "{\"error\":\"the pump is not running\"}";
-        return respond(stream, "503 Service Unavailable", "application/json", body.as_bytes());
+        return respond(
+            stream,
+            "503 Service Unavailable",
+            "application/json",
+            body.as_bytes(),
+        );
     };
     let (reply, answer) = std::sync::mpsc::sync_channel(1);
-    if sender
-        .send(TransferJob {
-            action,
-            reply,
-        })
-        .is_err()
-    {
+    if sender.send(TransferJob { action, reply }).is_err() {
         let body = "{\"error\":\"the pump has stopped\"}";
-        return respond(stream, "503 Service Unavailable", "application/json", body.as_bytes());
+        return respond(
+            stream,
+            "503 Service Unavailable",
+            "application/json",
+            body.as_bytes(),
+        );
     }
     match answer.recv_timeout(Duration::from_secs(5)) {
         Ok(Ok(_bytes)) => {
-            let body = format!("{{\"ok\":true,\"port\":{}}}", serde_json::json!(request.port));
+            let body = format!(
+                "{{\"ok\":true,\"port\":{}}}",
+                serde_json::json!(request.port)
+            );
             respond(stream, "200 OK", "application/json", body.as_bytes());
         }
         Ok(Err(error)) => {
@@ -2485,7 +2652,12 @@ fn transfer_control(stream: &mut TcpStream, shared: &Arc<Shared>, body: &[u8]) {
         }
         Err(_) => {
             let body = "{\"error\":\"no answer from the pump\"}";
-            respond(stream, "504 Gateway Timeout", "application/json", body.as_bytes());
+            respond(
+                stream,
+                "504 Gateway Timeout",
+                "application/json",
+                body.as_bytes(),
+            );
         }
     }
 }
@@ -2537,7 +2709,12 @@ fn transfer_data(stream: &mut TcpStream, shared: &Arc<Shared>, target: &str) {
     let sender = shared.transfer_request.lock().unwrap().clone();
     let Some(sender) = sender else {
         let body = "{\"error\":\"the pump is not running\"}";
-        return respond(stream, "503 Service Unavailable", "application/json", body.as_bytes());
+        return respond(
+            stream,
+            "503 Service Unavailable",
+            "application/json",
+            body.as_bytes(),
+        );
     };
     let (reply, answer) = std::sync::mpsc::sync_channel(1);
     if sender
@@ -2548,7 +2725,12 @@ fn transfer_data(stream: &mut TcpStream, shared: &Arc<Shared>, target: &str) {
         .is_err()
     {
         let body = "{\"error\":\"the pump has stopped\"}";
-        return respond(stream, "503 Service Unavailable", "application/json", body.as_bytes());
+        return respond(
+            stream,
+            "503 Service Unavailable",
+            "application/json",
+            body.as_bytes(),
+        );
     }
     match answer.recv_timeout(Duration::from_secs(5)) {
         Ok(Ok(bytes)) => {
@@ -2560,7 +2742,12 @@ fn transfer_data(stream: &mut TcpStream, shared: &Arc<Shared>, target: &str) {
         }
         Err(_) => {
             let body = "{\"error\":\"no answer from the pump\"}";
-            respond(stream, "504 Gateway Timeout", "application/json", body.as_bytes());
+            respond(
+                stream,
+                "504 Gateway Timeout",
+                "application/json",
+                body.as_bytes(),
+            );
         }
     }
 }
@@ -2654,7 +2841,13 @@ fn bridge(stream: &mut TcpStream, shared: &Arc<Shared>, body: &[u8]) {
         );
     };
     let (reply, answer) = std::sync::mpsc::sync_channel(1);
-    if sender.send(BridgeJob { bridges: request.bridges, reply }).is_err() {
+    if sender
+        .send(BridgeJob {
+            bridges: request.bridges,
+            reply,
+        })
+        .is_err()
+    {
         let body = "{\"error\":\"the pump has stopped\"}";
         return respond(
             stream,
@@ -2805,7 +2998,12 @@ fn quick_connect(stream: &mut TcpStream, shared: &Arc<Shared>, body: &[u8]) {
     // carries it) and answer honestly — this is NOT a port open.
     *shared.config.lock().unwrap() = Some(config);
     let body = "{\"ok\":false,\"error\":\"a running session's ports are fixed; restart the engine with the device in the workspace, or use the desktop launcher's quick connect\"}";
-    respond(stream, "501 Not Implemented", "application/json", body.as_bytes());
+    respond(
+        stream,
+        "501 Not Implemented",
+        "application/json",
+        body.as_bytes(),
+    );
 }
 
 fn workspace_export(stream: &mut TcpStream, shared: &Arc<Shared>) {
@@ -3064,8 +3262,7 @@ mod tests {
         recorder.join().unwrap();
         assert!(stats.chunks >= 0);
 
-        let activity_path =
-            std::path::PathBuf::from(format!("{}.activity.jsonl", vault.display()));
+        let activity_path = std::path::PathBuf::from(format!("{}.activity.jsonl", vault.display()));
         let text = std::fs::read_to_string(&activity_path)
             .expect("the activity file must exist next to the vault");
         let entries: Vec<crate::logs::LogEntry> = text
@@ -3112,7 +3309,11 @@ mod tests {
         // like a trail.
         assert!(shared.write_activity_file_locked().is_none());
 
-        shared.log(crate::logs::LogLevel::Error, "flush_probe", "before the crash");
+        shared.log(
+            crate::logs::LogLevel::Error,
+            "flush_probe",
+            "before the crash",
+        );
         let (path, count) = shared
             .write_activity_file_locked()
             .expect("a non-empty ring with a vault must write")

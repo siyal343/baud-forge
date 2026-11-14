@@ -128,11 +128,24 @@ fn field_operations(
                 line: 0,
                 message: format!("struct `{struct_name}` is not declared in the header"),
             })?;
+        // An array of nested structs expands per element with indexed labels
+        // (`gains.1.p`): flattening element 0 alone while the layout reserved
+        // every element silently dropped the rest of the array from decode and
+        // encode (F-35). A single nested struct keeps its plain dotted name.
+        let count = field.array.unwrap_or(1);
         let mut ops = Vec::new();
-        for member in &definition.fields {
-            let mut shifted = member.clone();
-            shifted.offset += field.offset;
-            ops.extend(field_operations(header, &shifted, &format!("{name}."))?);
+        for element in 0..u32::from(count) {
+            let element_offset = field.offset + element * definition.size;
+            let prefix = if count > 1 {
+                format!("{name}.{element}.")
+            } else {
+                format!("{name}.")
+            };
+            for member in &definition.fields {
+                let mut shifted = member.clone();
+                shifted.offset += element_offset;
+                ops.extend(field_operations(header, &shifted, &prefix)?);
+            }
         }
         return Ok(ops);
     }
@@ -801,6 +814,18 @@ impl Parser {
                             ),
                         });
                     }
+                    if bits > size * 8 {
+                        // A bitfield wider than its storage unit cannot compile:
+                        // the decoder would read past a u64 and panic (F-36).
+                        return Err(CHeaderError {
+                            line,
+                            message: format!(
+                                "bitfield `{}` is {bits} bits wide; its storage unit holds {} bits",
+                                declarator.name,
+                                size * 8
+                            ),
+                        });
+                    }
                     if !in_bitfield || size != bit_unit_size || bit_cursor + bits > size * 8 {
                         // A new storage unit starts at the current byte position.
                         bit_unit_offset = offset;
@@ -1096,6 +1121,54 @@ mod tests {
         assert!(error.message.contains("UNDEFINED"), "{}", error.message);
         let error = parse("struct P { uint8_t payload[70000]; };").unwrap_err();
         assert!(error.message.contains("70000"), "{}", error.message);
+    }
+
+    #[test]
+    fn an_array_of_nested_structs_expands_every_element() {
+        let header = parse(
+            "typedef struct { uint16_t p; uint16_t i; } Gains;\n\
+             struct __attribute__((packed)) P { uint8_t len; Gains gains[4]; };",
+        )
+        .unwrap();
+        let ir = compile(&header, "P", "p.h").unwrap();
+        let mut names: Vec<String> = Vec::new();
+        let mut gains_2_p_offset = None;
+        for op in &ir.ops {
+            if let IrOp::Label { name, op } = op {
+                names.push(name.clone());
+                if name == "gains.2.p"
+                    && let IrOp::UInt { offset, .. } = op.as_ref()
+                {
+                    gains_2_p_offset = Some(*offset);
+                }
+            }
+        }
+        for expected in [
+            "gains.0.p",
+            "gains.0.i",
+            "gains.1.p",
+            "gains.1.i",
+            "gains.2.p",
+            "gains.2.i",
+            "gains.3.p",
+            "gains.3.i",
+        ] {
+            assert!(
+                names.contains(&expected.to_string()),
+                "missing {expected} in {names:?}"
+            );
+        }
+        // Packed: len at 0, element stride 4, so element 2's `p` sits at 9.
+        assert_eq!(gains_2_p_offset, Some(9));
+    }
+
+    #[test]
+    fn a_bitfield_wider_than_its_storage_unit_is_refused() {
+        let error = parse(
+            "struct __attribute__((packed)) P { uint8_t f : 100; uint8_t tail; };",
+        )
+        .unwrap_err();
+        assert!(error.message.contains("100 bits wide"), "{}", error.message);
     }
 
     #[test]

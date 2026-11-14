@@ -4,6 +4,9 @@
 //! `pump_once` moves whatever is ready from the ports into the vault. That keeps
 //! the recording path free of a second thread and keeps the counters honest.
 
+use crate::contract::{
+    BridgeView, CONTRACT_VERSION, EventBus, PinsView, PortView, SessionView, UiEvent, UiSnapshot,
+};
 use crate::control::{ControlServer, ControlTarget};
 use crate::fault::{FaultOutcome, FaultProfile, Injector};
 pub use crate::pipeline::PinStep;
@@ -11,9 +14,6 @@ use crate::pipeline::{Pipeline, PipelineConfig, YieldRequest};
 use crate::series::{SeriesSet, SeriesUpdate};
 use crate::symbolize::symbolize;
 use crate::tail::{Stream, TailError, TailRow, tail_config};
-use crate::contract::{
-    BridgeView, CONTRACT_VERSION, EventBus, PinsView, PortView, SessionView, UiEvent, UiSnapshot,
-};
 use crate::{BridgeConfig, PortConfig, ProjectConfig};
 use bforge_hal::tcp::{TcpConfig, TcpTransport};
 use bforge_hal::uart::{UartConfig, UartTransport, available};
@@ -23,6 +23,7 @@ use bforge_script::{FrameVerdict, ScriptRuntime};
 use bforge_storage::{LogHeader, LogReader, LogSummary, LogWriter, RawChunk, StorageError};
 use std::path::{Path, PathBuf};
 use std::sync::Arc;
+use std::sync::atomic::AtomicU64;
 use std::time::{Duration, Instant, SystemTime, UNIX_EPOCH};
 
 /// How often the pump publishes a stats event.
@@ -124,6 +125,11 @@ pub struct Session {
     yield_requests: Vec<(String, Arc<YieldRequest>)>,
     /// One entry per port, in port order. Empty until `enable_decode` is called.
     streams: Vec<Option<Stream>>,
+    /// The reconnect/yield generation each port's framing machine was last
+    /// reset at. A new generation invalidates the machine's buffered bytes
+    /// (F-24): bytes from before a transport drop must not concatenate with
+    /// the first bytes of the new connection.
+    transport_generations: Vec<(u64, u64)>,
     /// Armed fault profiles, by port id. A send applies its port's profile.
     faults: std::sync::Mutex<std::collections::HashMap<String, Injector>>,
     /// The firmware image, when the workspace names one. Frames get address badges.
@@ -304,6 +310,7 @@ impl Session {
             control,
             yield_requests,
             streams: Vec::new(),
+            transport_generations: Vec::new(),
             faults: std::sync::Mutex::new(std::collections::HashMap::new()),
             image: None,
             bridges: Vec::new(),
@@ -375,11 +382,11 @@ impl Session {
                 let summary = writer.seal()?;
                 let path = self.vault.clone();
                 self.vault = String::new();
-        self.bus.publish(UiEvent::Stopped {
-            at_ms: self.started.elapsed().as_millis() as u64,
-            chunks: summary.chunks,
-            payload_bytes: summary.payload_bytes,
-        });
+                self.bus.publish(UiEvent::Stopped {
+                    at_ms: self.started.elapsed().as_millis() as u64,
+                    chunks: summary.chunks,
+                    payload_bytes: summary.payload_bytes,
+                });
                 Ok(path)
             }
             None => Err(SessionError::NotRecording),
@@ -408,6 +415,7 @@ impl Session {
             control: None,
             yield_requests: Vec::new(),
             streams: Vec::new(),
+            transport_generations: Vec::new(),
             faults: std::sync::Mutex::new(std::collections::HashMap::new()),
             image: None,
             bridges: Vec::new(),
@@ -524,9 +532,7 @@ impl Session {
             .find(|config| config.id == port_id)
             .cloned()
             .ok_or_else(|| {
-                SessionError::Settings(format!(
-                    "port `{port_id}` has no decode config to override"
-                ))
+                SessionError::Settings(format!("port `{port_id}` has no decode config to override"))
             })?;
         config.dissector = Some(crate::DissectorConfig {
             kind: kind.to_string(),
@@ -538,7 +544,13 @@ impl Session {
             .map_err(|error| SessionError::Settings(error.to_string()))?;
         let decoder = crate::tail::decoder_from_text(kind, text, root)
             .map_err(|error| SessionError::Settings(error.to_string()))?;
-        self.streams[index] = Some(Stream::new(port_id, crate::tail::TailConfig { machine, dissector: Some(decoder) }));
+        self.streams[index] = Some(Stream::new(
+            port_id,
+            crate::tail::TailConfig {
+                machine,
+                dissector: Some(decoder),
+            },
+        ));
         Ok(())
     }
 
@@ -945,20 +957,35 @@ impl Session {
 
         let pipeline = &running.pipeline;
         let pace = Duration::from_millis(pace_ms);
-        let chunks_count = if chunk_size > 0 {
-            bytes.len().div_ceil(chunk_size)
-        } else {
-            1
-        };
-        let wait = Duration::from_millis(pace_ms.saturating_mul(chunks_count as u64))
-            + Duration::from_secs(5);
 
-        if let Some(delay) = outcome.delay {
-            std::thread::sleep(delay);
+        // Chunks leave on the reader thread with per-chunk deadlines instead of
+        // sleeping on the pump: a 10 s fault delay or a minutes-long paced
+        // paste used to freeze the whole workbench and answer 504s while the
+        // bytes kept leaving (F-15). The caller is told the bytes were accepted
+        // for paced transmission; a chunk that cannot land counts in the port's
+        // read_errors stat instead of failing a request that already returned.
+        let settled = Arc::new(AtomicU64::new(0));
+        let failed = Arc::new(AtomicU64::new(0));
+        let mut due = outcome.delay;
+        outcome.sent = bytes.len();
+        if chunk_size == 0 || bytes.len() <= chunk_size {
+            pipeline
+                .post_after(bytes, settled, failed, due)
+                .map_err(SessionError::Write)?;
+            return Ok(outcome);
         }
-        outcome.sent = pipeline
-            .write_paced(bytes, chunk_size, pace, wait)
-            .map_err(SessionError::Write)?;
+        for chunk_start in (0..bytes.len()).step_by(chunk_size) {
+            let chunk_end = (chunk_start + chunk_size).min(bytes.len());
+            pipeline
+                .post_after(
+                    bytes[chunk_start..chunk_end].to_vec(),
+                    Arc::clone(&settled),
+                    Arc::clone(&failed),
+                    due,
+                )
+                .map_err(SessionError::Write)?;
+            due = Some(due.map_or(pace, |delay| delay + pace));
+        }
 
         Ok(outcome)
     }
@@ -993,6 +1020,22 @@ impl Session {
 
     /// Move ready chunks into the vault. Returns how many moved.
     pub fn pump_once(&mut self) -> Result<usize, SessionError> {
+        // A reconnect (or a yield/reclaim cycle) invalidates whatever the
+        // framing machine buffered: drop it before any post-reconnect slab is
+        // fed, checked before the drain so the reset always wins the race (F-24).
+        if self.transport_generations.len() < self.ports.len() {
+            self.transport_generations.resize(self.ports.len(), (0, 0));
+        }
+        for index in 0..self.ports.len() {
+            let stats = self.ports[index].pipeline.stats();
+            let generation = (stats.reconnects, stats.yields);
+            if generation != self.transport_generations[index] {
+                self.transport_generations[index] = generation;
+                if let Some(Some(stream)) = self.streams.get_mut(index) {
+                    stream.reset_machine();
+                }
+            }
+        }
         let mut moved = 0;
         let mut crossed: Vec<Vec<u8>> = vec![Vec::new(); self.ports.len()];
         #[allow(clippy::needless_range_loop)] // `crossed` exists only to be indexed here
