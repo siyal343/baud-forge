@@ -4,14 +4,17 @@ import {
   AlertTriangle,
   BookOpen,
   CheckCircle2,
+  ChevronDown,
   Code2,
   Download,
+  HelpCircle,
   LineChart,
   Play,
   Power,
   RotateCcw,
   ShieldAlert,
   ShieldCheck,
+  SlidersHorizontal,
   Terminal,
   Upload,
   Zap,
@@ -157,6 +160,8 @@ export const ScriptLabView: React.FC = () => {
 
   const [rightTab, setRightTab] = useState<'dryrun' | 'watch'>('dryrun');
   const [showApiRef, setShowApiRef] = useState(false);
+  const [showGuide, setShowGuide] = useState(false);
+  const [showVmMenu, setShowVmMenu] = useState(false);
   const [showQuickFaults, setShowQuickFaults] = useState(false);
   const [quickFaultKind, setQuickFaultKind] = useState<QuickFaultKind>('bit_flip');
   const [backendMode, setBackendMode] = useState<'engine' | 'offline'>(
@@ -182,6 +187,9 @@ export const ScriptLabView: React.FC = () => {
     );
     return match ?? 'custom';
   }, [scriptSource, scriptName]);
+
+  const activeTemplate =
+    selectedTemplateId !== 'custom' ? SCRIPT_TEMPLATES[selectedTemplateId] : null;
 
   const activeInputHex = useMemo(() => {
     if (!useManualHex && selectedPacket?.rawHex) {
@@ -337,6 +345,7 @@ export const ScriptLabView: React.FC = () => {
       } else if (res.status) {
         setScriptStatus(res.status);
       }
+      setRightTab('watch');
       toast.success(
         'Script armed',
         res.offline
@@ -522,7 +531,7 @@ export const ScriptLabView: React.FC = () => {
       className="h-full w-full bg-bf-panel text-bf-body flex flex-col overflow-hidden select-none"
     >
       {/* Header Toolbar */}
-      <div className="bg-bf-subpanel border-b border-bf-line px-2.5 py-1 flex flex-wrap items-center justify-between gap-2 shrink-0">
+      <div className="bg-bf-subpanel border-b border-bf-line px-2.5 py-1.5 flex flex-wrap items-center justify-between gap-2 shrink-0 relative">
         <div className="flex flex-wrap items-center gap-1.5">
           <Code2 className="w-3.5 h-3.5 text-bf-cyan shrink-0" />
           <span className="font-mono font-semibold text-bf-body tracking-wide text-[11px]">
@@ -530,6 +539,11 @@ export const ScriptLabView: React.FC = () => {
           </span>
           <span
             data-testid="script-backend-badge"
+            title={
+              backendMode === 'engine'
+                ? 'Running in the native Rust Lua 5.4 VM (bforge-script)'
+                : 'Engine disconnected: running in the browser offline Lua simulator'
+            }
             className={`text-[10px] px-1.5 py-0.5 rounded font-mono border ${
               backendMode === 'engine'
                 ? 'bg-bf-ok/15 text-bf-ok border-bf-ok/40'
@@ -546,9 +560,7 @@ export const ScriptLabView: React.FC = () => {
               ARMED
             </span>
           )}
-        </div>
 
-        <div className="flex flex-wrap items-center gap-1.5">
           <select
             aria-label="Lua script template"
             data-testid="script-template-select"
@@ -577,35 +589,28 @@ export const ScriptLabView: React.FC = () => {
             {selectedTemplateId === 'custom' && <option value="custom">Custom Buffer</option>}
           </select>
 
-          <select
-            aria-label="Error handling policy"
-            data-testid="script-policy-select"
-            value={scriptPolicy}
-            onChange={(e) =>
-              setScriptDraft({ policy: e.target.value as 'fail_open' | 'fail_closed' })
-            }
-            className="h-6 px-1.5 bg-bf-panel border border-bf-line rounded text-[11px] font-mono text-bf-body focus:outline-none focus:border-bf-cyan"
+          <button
+            type="button"
+            onClick={() => setShowGuide((v) => !v)}
+            title="Show 4-step workflow guide"
+            className={`h-6 px-1.5 rounded border text-[10px] font-mono flex items-center gap-1 ${
+              showGuide
+                ? 'border-bf-cyan/50 bg-bf-cyan/15 text-bf-cyan'
+                : 'border-bf-line bg-bf-panel hover:bg-bf-hover text-bf-mute hover:text-bf-body'
+            }`}
           >
-            <option value="fail_open">FAIL-OPEN</option>
-            <option value="fail_closed">FAIL-CLOSED</option>
-          </select>
+            <HelpCircle className="w-3 h-3" />
+            HOW IT WORKS
+          </button>
+        </div>
 
-          <label className="flex items-center gap-1 text-[10px] font-mono text-bf-mute">
-            <span>SEED</span>
-            <input
-              aria-label="PRNG seed"
-              type="number"
-              value={scriptSeed}
-              onChange={(e) => setScriptDraft({ seed: Number(e.target.value) || 0 })}
-              className="h-6 w-14 px-1 bg-bf-panel border border-bf-line rounded text-[11px] font-mono text-bf-body tabular-nums focus:outline-none focus:border-bf-cyan"
-            />
-          </label>
-
+        <div className="flex flex-wrap items-center gap-1.5">
           <button
             type="button"
             data-testid="script-compile-btn"
             disabled={busyAction !== null}
             onClick={() => void handleCompile()}
+            title="Check Lua syntax and list registered hooks"
             className="h-6 px-2 rounded border border-bf-line bg-bf-panel hover:bg-bf-hover text-[11px] font-mono text-bf-body flex items-center gap-1 disabled:opacity-50"
           >
             <CheckCircle2 className="w-3 h-3 text-bf-cyan" />
@@ -617,8 +622,8 @@ export const ScriptLabView: React.FC = () => {
             data-testid="script-dryrun-btn"
             disabled={busyAction !== null}
             onClick={() => void handleDryRun()}
-            title="Dry-run against current packet (Ctrl+Enter)"
-            className="h-6 px-2 rounded border border-bf-cyan/50 bg-bf-cyan/15 hover:bg-bf-cyan/25 text-[11px] font-mono font-semibold text-bf-cyan flex items-center gap-1 disabled:opacity-50"
+            title="Safely test once against 1 packet without affecting live traffic (Ctrl+Enter)"
+            className="h-6 px-2.5 rounded border border-bf-cyan/50 bg-bf-cyan/15 hover:bg-bf-cyan/25 text-[11px] font-mono font-semibold text-bf-cyan flex items-center gap-1 disabled:opacity-50"
           >
             <Play className="w-3 h-3" />
             DRY-RUN PACKET
@@ -629,26 +634,19 @@ export const ScriptLabView: React.FC = () => {
             data-testid="script-arm-btn"
             disabled={busyAction !== null}
             onClick={() => void handleArmToggle()}
-            className={`h-6 px-2 rounded border text-[11px] font-mono font-semibold flex items-center gap-1 disabled:opacity-50 ${
+            title={
+              isArmed
+                ? 'Detach script from live RX/TX/MITM frame path'
+                : 'Attach script to intercept and process live frames'
+            }
+            className={`h-6 px-2.5 rounded border text-[11px] font-mono font-semibold flex items-center gap-1 disabled:opacity-50 ${
               isArmed
                 ? 'border-bf-fault/60 bg-bf-fault/15 hover:bg-bf-fault/25 text-bf-fault'
                 : 'border-bf-ok/50 bg-bf-ok/15 hover:bg-bf-ok/25 text-bf-ok'
             }`}
           >
             <Power className="w-3 h-3" />
-            {isArmed ? 'DISARM' : 'ARM SCRIPT'}
-          </button>
-
-          <button
-            type="button"
-            data-testid="script-reset-btn"
-            disabled={busyAction !== null}
-            onClick={() => void handleReset()}
-            title="Reset VM counters and metrics"
-            className="h-6 px-1.5 rounded border border-bf-line bg-bf-panel hover:bg-bf-hover text-[11px] font-mono text-bf-mute hover:text-bf-body flex items-center gap-1 disabled:opacity-50"
-          >
-            <RotateCcw className="w-3 h-3" />
-            RESET
+            {isArmed ? 'DISARM' : 'ARM ON LIVE BUS'}
           </button>
 
           <input
@@ -658,29 +656,101 @@ export const ScriptLabView: React.FC = () => {
             onChange={handleLoadFile}
             className="hidden"
           />
-          <button
-            type="button"
-            onClick={() => fileInputRef.current?.click()}
-            title="Load .lua script from disk"
-            className="h-6 px-1.5 rounded border border-bf-line bg-bf-panel hover:bg-bf-hover text-[11px] font-mono text-bf-mute hover:text-bf-body flex items-center gap-1"
-          >
-            <Upload className="w-3 h-3" />
-            LOAD
-          </button>
-          <button
-            type="button"
-            onClick={handleSaveFile}
-            title="Download current script as .lua"
-            className="h-6 px-1.5 rounded border border-bf-line bg-bf-panel hover:bg-bf-hover text-[11px] font-mono text-bf-mute hover:text-bf-body flex items-center gap-1"
-          >
-            <Download className="w-3 h-3" />
-            SAVE
-          </button>
+
+          <div className="relative">
+            <button
+              type="button"
+              onClick={() => setShowVmMenu((v) => !v)}
+              title="VM error policy, PRNG seed, reset, and .lua file import/export"
+              className={`h-6 px-2 rounded border text-[11px] font-mono flex items-center gap-1 ${
+                showVmMenu
+                  ? 'border-bf-cyan/50 bg-bf-cyan/15 text-bf-cyan'
+                  : 'border-bf-line bg-bf-panel hover:bg-bf-hover text-bf-mute hover:text-bf-body'
+              }`}
+            >
+              <SlidersHorizontal className="w-3 h-3" />
+              VM &amp; FILE
+              <ChevronDown className="w-3 h-3" />
+            </button>
+
+            {showVmMenu && (
+              <div className="absolute right-0 top-7 z-30 w-64 bg-bf-subpanel border border-bf-line rounded shadow-lg p-2.5 space-y-2.5 font-mono text-[11px]">
+                <div className="space-y-1">
+                  <div className="text-[10px] text-bf-mute">ON SCRIPT ERROR / BUDGET EXCEEDED</div>
+                  <select
+                    aria-label="Error handling policy"
+                    data-testid="script-policy-select"
+                    value={scriptPolicy}
+                    onChange={(e) =>
+                      setScriptDraft({ policy: e.target.value as 'fail_open' | 'fail_closed' })
+                    }
+                    className="w-full h-6 px-1.5 bg-bf-panel border border-bf-line rounded text-[11px] text-bf-body focus:outline-none focus:border-bf-cyan"
+                  >
+                    <option value="fail_open">FAIL-OPEN (forward original frame)</option>
+                    <option value="fail_closed">FAIL-CLOSED (drop frame on error)</option>
+                  </select>
+                </div>
+
+                <div className="flex items-center justify-between gap-2">
+                  <span className="text-[10px] text-bf-mute">PRNG SEED (bforge.rand)</span>
+                  <input
+                    aria-label="PRNG seed"
+                    type="number"
+                    value={scriptSeed}
+                    onChange={(e) => setScriptDraft({ seed: Number(e.target.value) || 0 })}
+                    className="h-6 w-20 px-1.5 bg-bf-panel border border-bf-line rounded text-[11px] text-bf-body tabular-nums focus:outline-none focus:border-bf-cyan"
+                  />
+                </div>
+
+                <div className="pt-1.5 border-t border-bf-line grid grid-cols-3 gap-1.5">
+                  <button
+                    type="button"
+                    data-testid="script-reset-btn"
+                    disabled={busyAction !== null}
+                    onClick={() => {
+                      void handleReset();
+                      setShowVmMenu(false);
+                    }}
+                    title="Reset VM counters and metrics"
+                    className="h-6 px-1.5 rounded border border-bf-line bg-bf-panel hover:bg-bf-hover text-[10px] text-bf-body flex items-center justify-center gap-1 disabled:opacity-50"
+                  >
+                    <RotateCcw className="w-3 h-3" />
+                    RESET
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => {
+                      fileInputRef.current?.click();
+                      setShowVmMenu(false);
+                    }}
+                    title="Load .lua script from disk"
+                    className="h-6 px-1.5 rounded border border-bf-line bg-bf-panel hover:bg-bf-hover text-[10px] text-bf-body flex items-center justify-center gap-1"
+                  >
+                    <Upload className="w-3 h-3" />
+                    LOAD
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => {
+                      handleSaveFile();
+                      setShowVmMenu(false);
+                    }}
+                    title="Download current script as .lua"
+                    className="h-6 px-1.5 rounded border border-bf-line bg-bf-panel hover:bg-bf-hover text-[10px] text-bf-body flex items-center justify-center gap-1"
+                  >
+                    <Download className="w-3 h-3" />
+                    SAVE
+                  </button>
+                </div>
+              </div>
+            )}
+          </div>
+
           <button
             type="button"
             data-testid="script-quick-faults-toggle"
             onClick={() => setShowQuickFaults((v) => !v)}
-            title="Toggle inline Quick Hardware Fault Injection controls"
+            title="Non-Lua static hardware fault controls (or open full Fault Rig)"
             className={`h-6 px-1.5 rounded border text-[11px] font-mono flex items-center gap-1 ${
               showQuickFaults || isFaultArmed
                 ? 'border-bf-fault/60 bg-bf-fault/15 text-bf-fault font-semibold'
@@ -692,6 +762,58 @@ export const ScriptLabView: React.FC = () => {
           </button>
         </div>
       </div>
+
+      {/* Collapsible 4-Step Workflow Guide */}
+      {showGuide && (
+        <div className="bg-bf-head border-b border-bf-line px-2.5 py-2 grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-2 shrink-0 font-mono text-[10px]">
+          <div className="bg-bf-panel border border-bf-line rounded p-1.5 space-y-0.5">
+            <div className="text-bf-cyan font-semibold">1. PICK OR WRITE A HOOK</div>
+            <div className="text-bf-mute">
+              Choose a template or write a hook like <span className="text-bf-body">bforge.on_rx_frame</span> to intercept frames.
+            </div>
+          </div>
+          <div className="bg-bf-panel border border-bf-line rounded p-1.5 space-y-0.5">
+            <div className="text-bf-cyan font-semibold">2. DRY-RUN ON 1 FRAME</div>
+            <div className="text-bf-mute">
+              Click <span className="text-bf-body">DRY-RUN PACKET</span> to preview byte/field diffs safely without touching live traffic.
+            </div>
+          </div>
+          <div className="bg-bf-panel border border-bf-line rounded p-1.5 space-y-0.5">
+            <div className="text-bf-ok font-semibold">3. ARM ON LIVE BUS</div>
+            <div className="text-bf-mute">
+              Click <span className="text-bf-body">ARM ON LIVE BUS</span> to run the script on every live RX/TX/MITM frame.
+            </div>
+          </div>
+          <div className="bg-bf-panel border border-bf-line rounded p-1.5 space-y-0.5">
+            <div className="text-bf-amber font-semibold">4. WATCH &amp; ASSERT</div>
+            <div className="text-bf-mute">
+              Track live counters, <span className="text-bf-body">bforge.metric</span>, <span className="text-bf-body">bforge.assert</span>, and console logs.
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Active Live Interception Banner */}
+      {isArmed && (
+        <div className="bg-bf-ok/10 border-b border-bf-ok/30 px-2.5 py-1 flex flex-wrap items-center justify-between gap-2 shrink-0 font-mono text-[11px]">
+          <div className="flex items-center gap-2 min-w-0">
+            <span className="w-2 h-2 rounded-full bg-bf-ok animate-pulse shrink-0" />
+            <span className="text-bf-ok font-semibold">LIVE INTERCEPTION ACTIVE</span>
+            <span className="text-bf-body truncate">
+              {scriptName || 'script.lua'} · hooks: {displayedHooks.join(', ') || 'none'} · policy:{' '}
+              {scriptPolicy === 'fail_open' ? 'fail-open' : 'fail-closed'}
+            </span>
+          </div>
+          <button
+            type="button"
+            disabled={busyAction !== null}
+            onClick={() => void handleArmToggle()}
+            className="h-5 px-2 rounded border border-bf-fault/50 bg-bf-fault/15 hover:bg-bf-fault/25 text-bf-fault text-[10px] font-semibold shrink-0"
+          >
+            DISARM NOW
+          </button>
+        </div>
+      )}
 
       {/* Collapsible Inline Quick Hardware Fault Strip */}
       {showQuickFaults && (
@@ -823,6 +945,19 @@ export const ScriptLabView: React.FC = () => {
               API REF
             </button>
           </div>
+
+          {/* Template Summary Strip */}
+          {activeTemplate && (
+            <div className="bg-bf-subpanel/70 border-b border-bf-line px-2.5 py-1 flex flex-wrap items-center justify-between gap-2 shrink-0 font-mono text-[10px]">
+              <span className="text-bf-mute truncate" title={activeTemplate.description}>
+                <span className="text-bf-body font-semibold">{activeTemplate.name}:</span>{' '}
+                {activeTemplate.description}
+              </span>
+              <span className="px-1.5 py-0.2 rounded bg-bf-panel border border-bf-line text-bf-cyan shrink-0">
+                hook: {activeTemplate.hook}
+              </span>
+            </div>
+          )}
 
           {/* API Cheatsheet Drawer */}
           {showApiRef && (
@@ -963,20 +1098,42 @@ export const ScriptLabView: React.FC = () => {
               {/* Input Frame Selector */}
               <div className="bg-bf-subpanel border border-bf-line rounded p-2 space-y-1.5">
                 <div className="flex flex-wrap items-center justify-between gap-2 text-[10px] font-mono">
-                  <span className="text-bf-mute">
-                    {!useManualHex && selectedPacket
-                      ? `TEST TARGET: #${selectedPacket.seqId} · ${selectedPacket.port} · ${selectedPacket.direction} (${selectedPacket.length} B)`
-                      : `TEST TARGET: MANUAL HEX · ${activePort}`}
-                  </span>
-                  {selectedPacket && useManualHex && (
-                    <button
-                      type="button"
-                      onClick={() => setUseManualHex(false)}
-                      className="text-bf-cyan hover:underline"
+                  <span className="text-bf-mute flex items-center gap-1.5">
+                    <span
+                      className={`px-1 py-0.2 rounded border ${
+                        !useManualHex && selectedPacket
+                          ? 'bg-bf-cyan/10 text-bf-cyan border-bf-cyan/30'
+                          : 'bg-bf-panel text-bf-mute border-bf-line'
+                      }`}
                     >
-                      USE SELECTED (#{selectedPacket.seqId})
-                    </button>
-                  )}
+                      {!useManualHex && selectedPacket ? 'PACKET STREAM' : 'SAMPLE / CUSTOM HEX'}
+                    </span>
+                    <span>
+                      {!useManualHex && selectedPacket
+                        ? `#${selectedPacket.seqId} · ${selectedPacket.port} · ${selectedPacket.direction} (${selectedPacket.length} B)`
+                        : `${activePort} · RX`}
+                    </span>
+                  </span>
+                  <div className="flex items-center gap-2">
+                    {useManualHex && manualHex !== DEFAULT_TEST_FRAME_HEX && (
+                      <button
+                        type="button"
+                        onClick={() => setManualHex(DEFAULT_TEST_FRAME_HEX)}
+                        className="text-bf-mute hover:text-bf-body hover:underline"
+                      >
+                        RESET SAMPLE
+                      </button>
+                    )}
+                    {selectedPacket && useManualHex && (
+                      <button
+                        type="button"
+                        onClick={() => setUseManualHex(false)}
+                        className="text-bf-cyan hover:underline"
+                      >
+                        USE SELECTED (#{selectedPacket.seqId})
+                      </button>
+                    )}
+                  </div>
                 </div>
                 <input
                   aria-label="Test frame hex payload"
@@ -990,13 +1147,24 @@ export const ScriptLabView: React.FC = () => {
               </div>
 
               {!dryRunResult ? (
-                <div className="bg-bf-subpanel border border-bf-line rounded p-4 text-center space-y-1.5">
+                <div className="bg-bf-subpanel border border-bf-line rounded p-4 text-center space-y-2">
                   <Zap className="w-5 h-5 text-bf-cyan mx-auto" />
                   <div className="text-[12px] font-mono text-bf-body">
-                    Press DRY-RUN PACKET (or Ctrl+Enter) to preview mutations &amp; VM cost.
+                    Test this script safely on one packet before arming it live.
                   </div>
                   <div className="text-[11px] font-mono text-bf-mute">
-                    Dry-run executes once in isolation without modifying armed live counters.
+                    Dry-run shows byte diffs, decoded field changes, and VM cost without affecting live traffic.
+                  </div>
+                  <div>
+                    <button
+                      type="button"
+                      disabled={busyAction !== null}
+                      onClick={() => void handleDryRun()}
+                      className="h-6 px-3 rounded border border-bf-cyan/50 bg-bf-cyan/15 hover:bg-bf-cyan/25 text-[11px] font-mono font-semibold text-bf-cyan inline-flex items-center gap-1.5"
+                    >
+                      <Play className="w-3 h-3" />
+                      RUN DRY-RUN NOW (Ctrl+Enter)
+                    </button>
                   </div>
                 </div>
               ) : (
@@ -1219,6 +1387,14 @@ export const ScriptLabView: React.FC = () => {
           ) : (
             /* LIVE VM & WATCH Tab */
             <div className="flex-1 min-h-0 overflow-y-auto p-2.5 space-y-2.5">
+              {!isArmed && (scriptStatus?.invocations ?? 0) === 0 && (
+                <div className="bg-bf-subpanel border border-bf-line rounded px-2.5 py-2 flex flex-wrap items-center justify-between gap-2 font-mono text-[11px]">
+                  <span className="text-bf-mute">
+                    Script is not armed. Click <span className="text-bf-ok font-semibold">ARM ON LIVE BUS</span> to intercept live frames and populate counters.
+                  </span>
+                </div>
+              )}
+
               {/* Counters Grid */}
               <div className="grid grid-cols-2 sm:grid-cols-4 gap-1.5">
                 {[
