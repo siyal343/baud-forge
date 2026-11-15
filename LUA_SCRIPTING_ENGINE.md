@@ -333,13 +333,16 @@ Adding a dedicated **Script Lab** panel (or upgrading `FaultRigView.tsx` with `[
   - `ui/src/components/WorkstationDock.tsx` (`scriptLab` registered in `components`, `CANONICAL_DECK_ORDERS`, `PANEL_ORIGIN_HOMES`, `fallbacks`, `buildDefaultLayout`, `buildHilLayout`, `titles`), `ui/src/components/GlobalRibbon.tsx` (`PANEL_CATALOG`), `ui/src/components/FaultRigView.tsx` (`OPEN IN SCRIPT LAB →`), `ui/src/components/BridgePanel.tsx` (`OPEN IN SCRIPT LAB →`)
   - `ui/scripts/ui-smoke.mjs` (`T15`)
 
-### Measured Verification & Gaps
-All checks below were executed cleanly and passed (`exit 0`); changes remain uncommitted in the local working tree (`HEAD` at `51ddcf0`).
-- **UI unit tests (after tutorial 01–15 integration)** (`Set-Location ui; pnpm test` via `vitest run`): **16 passed (16)** files, **187 passed (187)** tests (`pnpm exec tsc --noEmit` also passed). *Note:* the earlier Wave 1–3 build & smoke measurements below ran against the pre-tutorial `176`-test Wave 3 UI state.
-- **UI typecheck & production build** (`Set-Location ui; pnpm exec tsc --noEmit; pnpm run build`): passed (`2114 modules transformed`; `dist/index.html` `1.51 kB`, `dist/assets/index-DbwjnwII.css` `209.60 kB`, `dist/assets/index-DR6ay7zi.js` `1,205.44 kB`); synced `ui/dist` to `target/release/ui`.
-- **Headless browser smoke gate** (`node scripts/smoke-gate.mjs` via `chrome-headless-shell`): **41/41 checks passed** (including `T15`: Lua 5.4 Script Lab opens, compiles template, and renders dry-run verdict & diffs). *Timing note:* executed directly before `cargo fmt --all`, which formatted only Rust source files.
+### Measured Verification, CI & Windows Artifacts
+Committed and pushed on `main` at `d1c0122` (following architecture commit `51ddcf0`); GitHub Actions CI run `43721247956` passed **10/10 jobs**.
+- **UI unit tests** (`Set-Location ui; pnpm test` via `vitest run`): **16 passed (16)** files, **187 passed (187)** tests.
+- **UI typecheck & production build** (`Set-Location ui; pnpm exec tsc --noEmit; pnpm run build` during Wave B & CI `ui unit, build and headless smoke`): passed (`2114` modules; `dist/index.html` `1.51 kB`, `dist/assets/index-DbwjnwII.css` `209.60 kB`, `dist/assets/index-DHpNpOy1.js` `1,247.68 kB`).
+- **Headless browser smoke gate** (`node scripts/smoke-gate.mjs` via `chrome-headless-shell`): **41/41 checks passed** (including `T15`: Lua 5.4 Script Lab opens, compiles template, and renders dry-run verdict & diffs).
 - **Rust formatting, lint & workspace tests**:
   - `cargo fmt --all --check`: passed.
   - `cargo clippy --workspace --all-targets --locked -- -D warnings`: passed (`0` warnings).
-  - `cargo test --workspace --locked`: passed (`33` test summary lines: `targets=33 passed=398`, `0 failed`, `0 ignored`), covering `bforge_script` (`33` unit tests), `bforge_core` (`62` unit tests + `20` tests in `tests/serve.rs`), `bforge_dissect` (`76` unit tests), `bforge_cli` (`12 + 4 + 5`), and `bforge_storage` (`3 + 6 + 14`).
-- **Not verified live**: Launching `bforge-desktop.exe` (WebView2 desktop binary) connected to physical USB serial/CAN hardware executing live `/api/script` traffic.
+  - `cargo test --workspace --locked`: passed (`33` test summary lines: `targets=33 passed=401`, `0 failed`, `0 ignored`), including `bforge_script` (`35` unit tests covering `multi_form_api_overloads_work` and `all_fifteen_tutorial_scripts_compile_and_execute_cleanly`), `bforge_core` (`62` unit tests + `20` tests in `tests/serve.rs` + `9` in `tests/session.rs` including `wildcard_and_empty_port_actions_target_primary_port`), `bforge_dissect` (`76` + `38` + `27` + `15` + `6` + `4`), `bforge_cli` (`12 + 4 + 5`), and `bforge_storage` (`3 + 6 + 14`).
+- **Downloaded Windows CI Binaries (`run 43721247956`)**:
+  - Desktop bundle (`bforge-desktop-windows-x86_64`): `F:\Datapack\Personal\Programa\baud-forge-ci\desktop-x86_64\bforge-desktop.exe` (`13,241,344` bytes + `ui/`), also copied to `target\release\bforge-desktop.exe` (+ `target\release\ui\`).
+  - CLI (`bforge-windows-x86_64`): `F:\Datapack\Personal\Programa\baud-forge-ci\cli-x86_64\bforge-windows-x86_64.exe` (`4,813,312` bytes, verified `bforge 0.8.0` via `--version`).
+- **Not verified live**: Launching `bforge-desktop.exe` (WebView2 desktop GUI) against physical USB serial/CAN hardware executing live `/api/script` traffic.
