@@ -8,6 +8,7 @@
 //! a field only with a new version.
 
 use serde::{Deserialize, Serialize};
+use std::collections::BTreeMap;
 use std::sync::Mutex;
 use std::sync::mpsc::{Receiver, Sender, channel};
 
@@ -23,6 +24,9 @@ pub struct UiSnapshot {
     /// Port pairs joined by the engine (spec 0025).
     pub bridges: Vec<BridgeView>,
     pub transfers: Vec<TransferView>,
+    /// Armed Lua 5.4 script status and telemetry, or `null` when disarmed.
+    #[serde(default)]
+    pub script: Option<ScriptStatusView>,
 }
 
 /// One bridge, as the ribbon draws it.
@@ -156,6 +160,108 @@ pub enum UiEvent {
         total_blocks: u32,
         bytes_done: u64,
     },
+}
+
+/// One script assertion entry reported in script status and dry-run views.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct ScriptAssertionView {
+    pub name: String,
+    pub passed: u64,
+    pub failed: u64,
+    pub last_error: Option<String>,
+}
+
+/// Live telemetry for the armed Lua 5.4 script.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct ScriptStatusView {
+    pub armed: bool,
+    pub name: String,
+    /// `"fail_open"` or `"fail_closed"`.
+    pub policy: String,
+    pub hooks: Vec<String>,
+    pub invocations: u64,
+    pub changed: u64,
+    pub dropped: u64,
+    pub delayed: u64,
+    pub injected_tx: u64,
+    pub failures: u64,
+    pub logs_suppressed: u64,
+    pub assertions_passed: u64,
+    pub assertions_failed: u64,
+    pub memory_bytes: usize,
+    pub memory_limit_bytes: usize,
+    pub last_instructions: u32,
+    pub last_exec_us: u64,
+    pub max_exec_us: u64,
+    pub last_error: Option<String>,
+    pub metrics: BTreeMap<String, String>,
+    pub assertions: Vec<ScriptAssertionView>,
+}
+
+/// Field-level difference produced by a script hook during a dry run.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct ScriptFieldDiffView {
+    pub name: String,
+    pub before: Option<String>,
+    pub after: Option<String>,
+}
+
+/// Queued side-effect action emitted by a Lua script invocation.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[serde(tag = "kind", rename_all = "snake_case")]
+pub enum ScriptActionView {
+    Send {
+        port: String,
+        hex: String,
+        delay_ms: u16,
+    },
+    SetPins {
+        port: String,
+        dtr: bool,
+        rts: bool,
+    },
+    PulsePin {
+        port: String,
+        pin: String,
+        delay_ms: u16,
+    },
+    Plot {
+        series: String,
+        value: f64,
+        #[serde(skip_serializing_if = "Option::is_none")]
+        timestamp_us: Option<u64>,
+    },
+    Log {
+        level: String,
+        message: String,
+    },
+}
+
+/// One frame in a multi-frame burst returned by a script dry run.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct ScriptBurstFrameView {
+    pub hex: String,
+    pub delay_ms: u16,
+}
+
+/// Result of running a Lua script hook against a single test frame.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+pub struct ScriptDryRunView {
+    pub ok: bool,
+    pub verdict: String,
+    pub mutated: bool,
+    pub input_hex: String,
+    pub output_hex: String,
+    pub delay_ms: u16,
+    pub burst_frames: Vec<ScriptBurstFrameView>,
+    pub field_diffs: Vec<ScriptFieldDiffView>,
+    pub instructions: u32,
+    pub exec_us: u64,
+    pub memory_bytes: usize,
+    pub actions: Vec<ScriptActionView>,
+    pub metrics: BTreeMap<String, String>,
+    pub assertions: Vec<ScriptAssertionView>,
+    pub error: Option<String>,
 }
 
 /// Publishes an event to every current subscriber.

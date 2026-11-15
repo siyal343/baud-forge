@@ -1,7 +1,18 @@
 // BaudForge Rust Engine API & EventSource Client
 // Connects to crates/bforge-core/src/serve.rs over loopback HTTP & SSE
 
-import { UiSnapshot, UiEvent, PacketRow, BridgeView as BridgeViewResult } from '../types';
+import {
+  UiSnapshot,
+  UiEvent,
+  PacketRow,
+  BridgeView as BridgeViewResult,
+  ScriptDryRunView,
+  ScriptStatusView,
+} from '../types';
+import {
+  compileLuaScriptOffline,
+  dryRunLuaScriptOffline,
+} from './luaSandboxFallback';
 import { logEngineFailure } from './activityLog';
 
 /** One activity-log row, as GET /api/logs returns (spec: activity log). */
@@ -631,6 +642,302 @@ export class EngineApiClient {
     } catch {
       return null;
     }
+  }
+
+  /**
+   * Sends a POST /api/script action. Separates client-side 4xx engine errors
+   * (must NOT trigger offline simulation) from network/5xx unreachable states.
+   */
+  private async postScriptAction(
+    payload: Record<string, unknown>,
+    timeoutMs = 5000
+  ): Promise<
+    | { kind: 'ok'; body: any }
+    | { kind: 'http4xx'; error: string }
+    | { kind: 'unreachable' }
+  > {
+    try {
+      const res = await this.fetchWithTimeout(
+        '/api/script',
+        {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify(payload),
+        },
+        timeoutMs
+      );
+      if (res.status >= 500) {
+        return { kind: 'unreachable' };
+      }
+      let body: any = {};
+      try {
+        body = await res.json();
+      } catch {
+        body = {};
+      }
+      if (!res.ok) {
+        const msg =
+          typeof body?.error === 'string' && body.error
+            ? body.error
+            : `HTTP ${res.status}`;
+        return { kind: 'http4xx', error: msg };
+      }
+      return { kind: 'ok', body };
+    } catch {
+      return { kind: 'unreachable' };
+    }
+  }
+
+  /** Queries current engine Lua 5.4 script source and status (`GET /api/script`). */
+  async getScriptStatus(): Promise<{
+    ok: boolean;
+    source?: string;
+    status?: ScriptStatusView | null;
+    offline?: boolean;
+    error?: string;
+  }> {
+    try {
+      const res = await this.fetchWithTimeout('/api/script');
+      if (res.status >= 500) {
+        return { ok: false, status: null, offline: true };
+      }
+      const body = await res.json().catch(() => ({}));
+      if (!res.ok) {
+        return {
+          ok: false,
+          status: null,
+          offline: false,
+          error: typeof body?.error === 'string' ? body.error : `HTTP ${res.status}`,
+        };
+      }
+      return {
+        ok: body?.ok !== false,
+        source: typeof body?.source === 'string' ? body.source : undefined,
+        status: (body?.status ?? null) as ScriptStatusView | null,
+        offline: false,
+      };
+    } catch {
+      return { ok: false, status: null, offline: true };
+    }
+  }
+
+  /** Compiles a Lua 5.4 script on the engine, falling back offline ONLY when unreachable. */
+  async scriptCompile(
+    source: string,
+    name?: string
+  ): Promise<{
+    ok: boolean;
+    hooks: string[];
+    status?: ScriptStatusView | null;
+    error: string | null;
+    offline: boolean;
+  }> {
+    const res = await this.postScriptAction({ action: 'compile', source, name });
+    if (res.kind === 'unreachable') {
+      const offline = compileLuaScriptOffline(source);
+      return { ...offline, status: null, offline: true };
+    }
+    if (res.kind === 'http4xx') {
+      this.failure('script.compile', res.error);
+      return { ok: false, hooks: [], status: null, error: res.error, offline: false };
+    }
+    const body = res.body ?? {};
+    const status = (body.status ?? null) as ScriptStatusView | null;
+    const hooks = Array.isArray(body.hooks)
+      ? body.hooks
+      : Array.isArray(status?.hooks)
+      ? status!.hooks
+      : [];
+    const ok = body.ok !== false && !body.error;
+    return {
+      ok,
+      hooks,
+      status,
+      error: typeof body.error === 'string' ? body.error : null,
+      offline: false,
+    };
+  }
+
+  /** Dry-runs a Lua script against a single test frame (`POST /api/script`). */
+  async scriptTestFrame(params: {
+    source: string;
+    name?: string;
+    port?: string;
+    direction?: string;
+    hex: string;
+    seq_id?: number;
+    timestamp_us?: number;
+    bridge?: string;
+    policy?: 'fail_open' | 'fail_closed';
+    seed?: number;
+  }): Promise<ScriptDryRunView & { offline: boolean; hooks?: string[] }> {
+    const res = await this.postScriptAction({ action: 'test_frame', ...params });
+    if (res.kind === 'unreachable') {
+      return dryRunLuaScriptOffline(
+        params.source,
+        params.hex,
+        params.port ?? 'COM8',
+        params.policy ?? 'fail_open',
+        {
+          seed: params.seed,
+          name: params.name,
+          direction: params.direction,
+          seqId: params.seq_id,
+          timestampUs: params.timestamp_us,
+          bridge: params.bridge,
+        }
+      );
+    }
+    if (res.kind === 'http4xx') {
+      this.failure('script.test_frame', res.error);
+      return {
+        ok: false,
+        verdict: 'error',
+        mutated: false,
+        input_hex: params.hex,
+        output_hex: params.hex,
+        delay_ms: 0,
+        burst_frames: [],
+        field_diffs: [],
+        instructions: 0,
+        exec_us: 0,
+        memory_bytes: 0,
+        actions: [],
+        metrics: {},
+        assertions: [],
+        error: res.error,
+        offline: false,
+      };
+    }
+    const body = res.body ?? {};
+    const raw = (body.dry_run ?? body.result ?? body) as Partial<ScriptDryRunView>;
+    return {
+      ok: raw.ok ?? body.ok !== false,
+      verdict: raw.verdict ?? 'pass',
+      mutated: Boolean(raw.mutated),
+      input_hex: raw.input_hex ?? params.hex,
+      output_hex: raw.output_hex ?? params.hex,
+      delay_ms: raw.delay_ms ?? 0,
+      burst_frames: raw.burst_frames ?? [],
+      field_diffs: raw.field_diffs ?? [],
+      instructions: raw.instructions ?? 0,
+      exec_us: raw.exec_us ?? 0,
+      memory_bytes: raw.memory_bytes ?? 0,
+      actions: raw.actions ?? [],
+      metrics: raw.metrics ?? {},
+      assertions: raw.assertions ?? [],
+      error: raw.error ?? (typeof body.error === 'string' ? body.error : null),
+      hooks: Array.isArray(body.hooks) ? body.hooks : undefined,
+      offline: false,
+    };
+  }
+
+  /** Arms the Lua script in the live engine session (or offline simulator when unreachable). */
+  async scriptArm(params: {
+    source: string;
+    name?: string;
+    policy?: 'fail_open' | 'fail_closed';
+    seed?: number;
+    memory_limit_bytes?: number;
+  }): Promise<{
+    ok: boolean;
+    status?: ScriptStatusView | null;
+    hooks?: string[];
+    error: string | null;
+    offline: boolean;
+  }> {
+    const res = await this.postScriptAction({ action: 'arm', ...params });
+    if (res.kind === 'unreachable') {
+      const compiled = compileLuaScriptOffline(params.source);
+      if (!compiled.ok) {
+        return { ok: false, status: null, hooks: compiled.hooks, error: compiled.error, offline: true };
+      }
+      const status: ScriptStatusView = {
+        armed: true,
+        name: params.name || 'script.lua',
+        policy: params.policy ?? 'fail_open',
+        hooks: compiled.hooks,
+        invocations: 0,
+        changed: 0,
+        dropped: 0,
+        delayed: 0,
+        injected_tx: 0,
+        failures: 0,
+        logs_suppressed: 0,
+        assertions_passed: 0,
+        assertions_failed: 0,
+        memory_bytes: 24_576 + params.source.length * 4,
+        memory_limit_bytes: params.memory_limit_bytes ?? 4 * 1024 * 1024,
+        last_instructions: 0,
+        last_exec_us: 0,
+        max_exec_us: 0,
+        last_error: null,
+        metrics: {},
+        assertions: [],
+      };
+      return { ok: true, status, hooks: compiled.hooks, error: null, offline: true };
+    }
+    if (res.kind === 'http4xx') {
+      this.failure('script.arm', res.error);
+      return { ok: false, status: null, error: res.error, offline: false };
+    }
+    const body = res.body ?? {};
+    const status = (body.status ?? null) as ScriptStatusView | null;
+    return {
+      ok: body.ok !== false && !body.error,
+      status,
+      hooks: Array.isArray(body.hooks) ? body.hooks : status?.hooks,
+      error: typeof body.error === 'string' ? body.error : null,
+      offline: false,
+    };
+  }
+
+  /** Disarms the currently armed Lua script (`POST /api/script { action: 'disarm' }`). */
+  async scriptDisarm(): Promise<{
+    ok: boolean;
+    status?: ScriptStatusView | null;
+    error: string | null;
+    offline: boolean;
+  }> {
+    const res = await this.postScriptAction({ action: 'disarm' });
+    if (res.kind === 'unreachable') {
+      return { ok: true, status: null, error: null, offline: true };
+    }
+    if (res.kind === 'http4xx') {
+      this.failure('script.disarm', res.error);
+      return { ok: false, status: null, error: res.error, offline: false };
+    }
+    const body = res.body ?? {};
+    return {
+      ok: body.ok !== false,
+      status: (body.status ?? null) as ScriptStatusView | null,
+      error: typeof body.error === 'string' ? body.error : null,
+      offline: false,
+    };
+  }
+
+  /** Resets live VM invocation counters, metrics, and assertions (`POST /api/script`). */
+  async scriptResetStats(): Promise<{
+    ok: boolean;
+    status?: ScriptStatusView | null;
+    error: string | null;
+    offline: boolean;
+  }> {
+    const res = await this.postScriptAction({ action: 'reset_stats' });
+    if (res.kind === 'unreachable') {
+      return { ok: true, status: null, error: null, offline: true };
+    }
+    if (res.kind === 'http4xx') {
+      this.failure('script.reset_stats', res.error);
+      return { ok: false, status: null, error: res.error, offline: false };
+    }
+    const body = res.body ?? {};
+    return {
+      ok: body.ok !== false,
+      status: (body.status ?? null) as ScriptStatusView | null,
+      error: typeof body.error === 'string' ? body.error : null,
+      offline: false,
+    };
   }
 }
 

@@ -923,6 +923,54 @@ try {
     // Hygiene: leave a clean plot config for anything that runs later.
     await page.evaluate(() => window.__bforgePlotStore?.getState().resetPanel());
   }
+
+  // T15: Lua 5.4 Script Lab — panel opens, switches template, compiles, and
+  // dry-runs against a packet cleanly in offline simulated sandbox mode.
+  {
+    await page.evaluate(() => window.__bforgeStore.getState().requestOpenPanel('scriptLab'));
+    await sleep(600);
+    const opened = await page.evaluate(() => {
+      const panel = document.querySelector('[data-testid="script-lab-panel"]');
+      const tab = [...document.querySelectorAll('[role="tab"]')].find((x) =>
+        x.textContent.includes('LUA SCRIPT LAB')
+      );
+      return Boolean(panel && tab);
+    });
+
+    await page.select('[data-testid="script-template-select"]', 'mitm_glitch');
+    await page.waitForSelector('[data-testid="script-compile-btn"]:not([disabled])', { timeout: 8000 });
+    await page.click('[data-testid="script-compile-btn"]');
+    await page.waitForSelector('[data-testid="script-dryrun-btn"]:not([disabled])', { timeout: 8000 });
+    await page.click('[data-testid="script-dryrun-btn"]');
+    await page.waitForSelector('[data-testid="script-verdict-badge"]', { timeout: 8000 });
+    await sleep(200);
+
+    const dryRun = await page.evaluate(() => {
+      const panel = document.querySelector('[data-testid="script-lab-panel"]');
+      const verdict = document.querySelector('[data-testid="script-verdict-badge"]')?.textContent || '';
+      const sandbox = document.querySelector('[data-testid="script-sandbox-badge"]')?.textContent || '';
+      const cost = document.querySelector('[data-testid="script-vm-cost"]')?.textContent || '';
+      const text = panel?.textContent || '';
+      return {
+        verdict,
+        sandbox,
+        cost,
+        hasFieldDiff: text.includes('v_batt_mv'),
+        hasMetric: text.includes('mitm_glitched'),
+      };
+    });
+
+    check(
+      'Lua 5.4 Script Lab opens, compiles template, and renders dry-run verdict & diffs',
+      opened &&
+        dryRun.verdict.includes('DELAYED') &&
+        dryRun.sandbox.includes('SIMULATED SANDBOX') &&
+        dryRun.cost.includes('VM COST:') &&
+        dryRun.hasFieldDiff &&
+        dryRun.hasMetric,
+      `opened=${opened} verdict="${dryRun.verdict}" sandbox="${dryRun.sandbox}" diff=${dryRun.hasFieldDiff} metric=${dryRun.hasMetric}`
+    );
+  }
 } finally {
   await browser.close();
 }

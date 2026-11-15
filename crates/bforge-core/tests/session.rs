@@ -275,3 +275,64 @@ fn a_session_refuses_to_overwrite_an_existing_vault() {
     let _ = std::fs::remove_file(&path);
     let _ = std::fs::remove_file(bforge_storage::index_path(&path));
 }
+
+#[test]
+fn wildcard_and_empty_port_actions_target_primary_port() {
+    let transport = MockTransport::new(0);
+    let pins = transport.pins_handle();
+    let ports = vec![SessionPort {
+        id: "primary".to_string(),
+        device: "mock:primary".to_string(),
+        baud_rate: 115_200,
+        framing: "cobs".to_string(),
+        checksum: Some("crc32c".to_string()),
+        transport: Box::new(transport),
+    }];
+    let mut session = Session::start(ports, None, None).expect("session starts");
+
+    let send_star = session
+        .send("*", vec![0xAA, 0x55], Duration::from_secs(1))
+        .expect("send('*') targets primary port");
+    assert_eq!(send_star.sent, 2);
+
+    let send_empty = session
+        .send("", vec![0x01, 0x02, 0x03], Duration::from_secs(1))
+        .expect("send('') targets primary port");
+    assert_eq!(send_empty.sent, 3);
+
+    session
+        .set_pins("*", true, false, None)
+        .expect("set_pins('*') targets primary port");
+    assert_eq!(
+        pins.load(std::sync::atomic::Ordering::Relaxed) & bforge_hal::PinStateFlags::DTR.0,
+        bforge_hal::PinStateFlags::DTR.0
+    );
+
+    session
+        .arm_script_source(
+            r#"
+            bforge.on_init(function()
+              bforge.send("*", "AA 55")
+              bforge.set_pins(false, true)
+              bforge.pulse_pin("RTS", 5)
+            end)
+            "#,
+            "wildcard_actions.lua",
+            "fail_open",
+            None,
+            None,
+        )
+        .expect("arm script with wildcard actions");
+    let logs = session.take_script_logs();
+    assert!(
+        logs.is_empty(),
+        "wildcard script actions must not log failures: {logs:?}"
+    );
+    assert!(
+        session
+            .send("missing", vec![1], Duration::from_secs(1))
+            .is_err()
+    );
+
+    let _ = session.seal();
+}

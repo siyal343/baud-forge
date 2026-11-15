@@ -1,11 +1,41 @@
 import { create } from 'zustand';
-import { PacketRow, DissectedField, ScopeSignalSample, PinsView, PortView, BridgeView } from '../types';
+import {
+  PacketRow,
+  DissectedField,
+  ScopeSignalSample,
+  PinsView,
+  PortView,
+  BridgeView,
+  ScriptAssertionView,
+  ScriptStatusView,
+  UiSnapshot,
+} from '../types';
 import { generateSampleImuPacket, generateScopeSample } from '../services/simulationEngine';
 import { engineApi } from '../services/engineApi';
 import { logAction } from '../services/activityLog';
 import { isDesktopShell } from '../components/Launcher';
 import { toast } from './useToastStore';
 import { useSettingsStore } from './useSettingsStore';
+import {
+  SCRIPT_TEMPLATES,
+  ScriptTemplateId,
+  compileLuaScriptOffline,
+  dryRunLuaScriptOffline,
+  parseHexBytes,
+} from '../services/luaSandboxFallback';
+import { plotEngine } from '../plot/engine';
+
+export interface OfflineArmedScript {
+  source: string;
+  name: string;
+  policy: 'fail_open' | 'fail_closed';
+}
+
+export interface ScriptLogEntry {
+  level: string;
+  message: string;
+  timestamp_us: number;
+}
 
 interface WorkstationState {
   // Connection & Port
@@ -86,6 +116,16 @@ interface WorkstationState {
   openPanelId: string | null;
   resetLayoutTrigger: number;
 
+  // Lua 5.4 Script Lab
+  scriptStatus: ScriptStatusView | null;
+  scriptSource: string;
+  scriptName: string;
+  scriptPolicy: 'fail_open' | 'fail_closed';
+  scriptSeed: number;
+  requestedScriptTemplate: string | null;
+  offlineArmedScript: OfflineArmedScript | null;
+  scriptLogs: ScriptLogEntry[];
+
   // Actions
   setExportModalOpen: (open: boolean) => void;
   setActivePreset: (preset: 'default' | 'dissector' | 'scope' | 'hil') => void;
@@ -139,6 +179,22 @@ interface WorkstationState {
   updatePins: (pins: Partial<PinsView>) => void;
   updateSnapshot: (ports: PortView[], bridges?: BridgeView[]) => void;
   updateSession: (session: { mode: string; vault: string; file_bytes: number; chunks: number }) => void;
+  applySnapshot: (snapshot: UiSnapshot) => void;
+  setScriptDraft: (
+    draft: Partial<{
+      source: string;
+      name: string;
+      policy: 'fail_open' | 'fail_closed';
+      seed: number;
+    }>
+  ) => void;
+  setScriptStatus: (status: ScriptStatusView | null) => void;
+  openScriptLabWithTemplate: (templateId: string) => void;
+  clearRequestedScriptTemplate: () => void;
+  setOfflineArmedScript: (armed: OfflineArmedScript | null) => void;
+  appendScriptLogs: (entries: ScriptLogEntry[]) => void;
+  resetOfflineScriptStats: () => void;
+  clearScriptState: () => void;
 }
 
 // Ring depths are live Settings (Settings dialog → Performance), read at
@@ -163,6 +219,182 @@ let replayIdx = 0;
 // wrong DVR stepping. Every packet entering the store is renumbered here.
 let nextSeqId = 1;
 const withUniqueSeqId = (pkt: PacketRow): PacketRow => ({ ...pkt, seqId: nextSeqId++ });
+
+let offlineScriptLocals: Record<string, number | string | boolean | null> = {};
+
+function createBlankScriptStatus(
+  armed: OfflineArmedScript,
+  hooks: string[],
+  isArmed = true
+): ScriptStatusView {
+  return {
+    armed: isArmed,
+    name: armed.name,
+    policy: armed.policy,
+    hooks,
+    invocations: 0,
+    changed: 0,
+    dropped: 0,
+    delayed: 0,
+    injected_tx: 0,
+    failures: 0,
+    logs_suppressed: 0,
+    assertions_passed: 0,
+    assertions_failed: 0,
+    memory_bytes: 24_576 + armed.source.length * 4,
+    memory_limit_bytes: 4 * 1024 * 1024,
+    last_instructions: 0,
+    last_exec_us: 0,
+    max_exec_us: 0,
+    last_error: null,
+    metrics: {},
+    assertions: [],
+  };
+}
+
+function mergeScriptAssertions(
+  prev: ScriptAssertionView[],
+  incoming: ScriptAssertionView[]
+): ScriptAssertionView[] {
+  const map = new Map<string, ScriptAssertionView>();
+  for (const a of prev) map.set(a.name, { ...a });
+  for (const a of incoming) {
+    const existing = map.get(a.name);
+    if (existing) {
+      existing.passed += a.passed;
+      existing.failed += a.failed;
+      if (a.last_error) existing.last_error = a.last_error;
+    } else {
+      map.set(a.name, { ...a });
+    }
+  }
+  return Array.from(map.values());
+}
+
+/**
+ * Evaluates an armed Lua script in Simulated Mode on an incoming packet, updating
+ * synthetic VM counters, metrics, assertions, logs, and Plot Forge series.
+ */
+function runOfflineScriptOnPacket(
+  rawPkt: PacketRow,
+  armed: OfflineArmedScript,
+  seed: number,
+  prevStatus: ScriptStatusView | null
+): {
+  pkt: PacketRow;
+  dropped: boolean;
+  nextStatus: ScriptStatusView;
+  logs: ScriptLogEntry[];
+  plotPoints: Array<{ series: string; value: number }>;
+} {
+  const dry = dryRunLuaScriptOffline(armed.source, rawPkt, rawPkt.port, armed.policy, {
+    locals: offlineScriptLocals,
+    seed,
+  });
+
+  const base =
+    prevStatus && prevStatus.name === armed.name
+      ? prevStatus
+      : createBlankScriptStatus(armed, dry.hooks, true);
+
+  const dropped = dry.ok ? dry.verdict === 'drop' : armed.policy === 'fail_closed';
+  const sentCount = dry.actions.filter((a) => a.kind === 'send').length;
+  const assertions = mergeScriptAssertions(base.assertions, dry.assertions);
+  const assertions_passed = assertions.reduce((sum, a) => sum + a.passed, 0);
+  const assertions_failed = assertions.reduce((sum, a) => sum + a.failed, 0);
+
+  const nextStatus: ScriptStatusView = {
+    ...base,
+    armed: true,
+    policy: armed.policy,
+    hooks: dry.hooks.length ? dry.hooks : base.hooks,
+    invocations: base.invocations + 1,
+    changed: base.changed + (dry.ok && dry.mutated ? 1 : 0),
+    dropped: base.dropped + (dropped ? 1 : 0),
+    delayed: base.delayed + (dry.ok && dry.delay_ms > 0 ? 1 : 0),
+    injected_tx: base.injected_tx + sentCount,
+    failures: base.failures + (dry.ok ? 0 : 1),
+    assertions_passed,
+    assertions_failed,
+    memory_bytes: dry.memory_bytes || base.memory_bytes,
+    last_instructions: dry.instructions,
+    last_exec_us: dry.exec_us,
+    max_exec_us: Math.max(base.max_exec_us, dry.exec_us),
+    last_error: dry.error ?? base.last_error,
+    metrics: { ...base.metrics, ...dry.metrics },
+    assertions,
+  };
+
+  const logs: ScriptLogEntry[] = dry.actions
+    .filter((a) => a.kind === 'log' && a.message)
+    .map((a) => ({
+      level: a.level ?? 'info',
+      message: a.message!,
+      timestamp_us: a.timestamp_us ?? rawPkt.timestampUs,
+    }));
+  if (!dry.ok && dry.error) {
+    logs.push({ level: 'error', message: dry.error, timestamp_us: rawPkt.timestampUs });
+  }
+
+  const plotPoints = dry.actions
+    .filter((a) => a.kind === 'plot' && a.series && typeof a.value === 'number' && Number.isFinite(a.value))
+    .map((a) => ({ series: a.series!, value: a.value! }));
+
+  if (dropped) {
+    return { pkt: rawPkt, dropped: true, nextStatus, logs, plotPoints };
+  }
+
+  let updatedPkt = rawPkt;
+  if (dry.ok && dry.mutated && dry.output_hex) {
+    const mutBytes = parseHexBytes(dry.output_hex);
+    if (mutBytes.length > 0) {
+      const diffMap = new Map(dry.field_diffs.map((d) => [d.name, d]));
+      const nextFields = (rawPkt.dissectedFields ?? []).map((f) => {
+        const diff = diffMap.get(f.name);
+        const sliceHex =
+          f.offset >= 0 && f.offset + f.length <= mutBytes.length
+            ? mutBytes
+                .slice(f.offset, f.offset + f.length)
+                .map((b) => b.toString(16).padStart(2, '0').toUpperCase())
+                .join(' ')
+            : f.rawHex;
+        if (!diff) return f.rawHex !== sliceHex ? { ...f, rawHex: sliceHex, isMutated: true } : f;
+        return {
+          ...f,
+          rawHex: sliceHex,
+          decodedValue: diff.after ?? f.decodedValue,
+          isMutated: true,
+          originalValue: diff.before ?? String(f.decodedValue),
+        };
+      });
+      updatedPkt = {
+        ...rawPkt,
+        rawBytes: mutBytes,
+        rawHex: dry.output_hex,
+        length: mutBytes.length,
+        dissectedFields: nextFields,
+        isFaultInjected: true,
+      };
+    }
+  }
+
+  if (plotPoints.length > 0) {
+    const extraFields: DissectedField[] = plotPoints.map((pt) => ({
+      name: `script:${pt.series}`,
+      type: 'script_plot',
+      offset: 0,
+      length: 0,
+      rawHex: '',
+      decodedValue: pt.value,
+    }));
+    updatedPkt = {
+      ...updatedPkt,
+      dissectedFields: [...(updatedPkt.dissectedFields ?? []), ...extraFields],
+    };
+  }
+
+  return { pkt: updatedPkt, dropped: false, nextStatus, logs, plotPoints };
+}
 
 /** First numeric value of a named dissected field, or null when absent. */
 const FIELD_NUMBER = /-?\d+(?:\.\d+)?/;
@@ -361,6 +593,16 @@ export const useWorkstationStore = create<WorkstationState>((set, get) => ({
   activePreset: (localStorage.getItem('bforge_active_preset') as any) || 'default',
   openPanelId: null,
   resetLayoutTrigger: 0,
+
+  // Lua 5.4 Script Lab
+  scriptStatus: null,
+  scriptSource: SCRIPT_TEMPLATES.seu_bitflip.source,
+  scriptName: 'seu_bitflip.lua',
+  scriptPolicy: 'fail_open',
+  scriptSeed: 1,
+  requestedScriptTemplate: null,
+  offlineArmedScript: null,
+  scriptLogs: [],
 
   // Actions
   setExportModalOpen: (open: boolean) => set({ isExportModalOpen: open }),
@@ -774,7 +1016,43 @@ export const useWorkstationStore = create<WorkstationState>((set, get) => ({
   recordTx: (bytes) => set((state) => ({ txBytes: state.txBytes + bytes })),
 
   addPacket: (rawPkt) => {
-    const pkt = withUniqueSeqId(rawPkt);
+    const current = get();
+    let pkt = withUniqueSeqId(rawPkt);
+    let dropped = false;
+    let nextScriptStatus: ScriptStatusView | undefined;
+    let extraScriptLogs: ScriptLogEntry[] = [];
+    let scriptPlots: Array<{ series: string; value: number }> = [];
+
+    if (current.isSimulated && current.offlineArmedScript) {
+      const outcome = runOfflineScriptOnPacket(
+        pkt,
+        current.offlineArmedScript,
+        current.scriptSeed,
+        current.scriptStatus
+      );
+      pkt = outcome.pkt;
+      dropped = outcome.dropped;
+      nextScriptStatus = outcome.nextStatus;
+      extraScriptLogs = outcome.logs;
+      scriptPlots = outcome.plotPoints;
+    }
+
+    if (scriptPlots.length > 0 && (!plotEngine.isStarted || dropped)) {
+      for (const pt of scriptPlots) {
+        plotEngine.pushScriptMetric(pt.series, pkt.timestampUs, pt.value);
+      }
+    }
+
+    if (dropped) {
+      set((state) => ({
+        ...(nextScriptStatus ? { scriptStatus: nextScriptStatus } : {}),
+        ...(extraScriptLogs.length
+          ? { scriptLogs: [...state.scriptLogs, ...extraScriptLogs].slice(-100) }
+          : {}),
+      }));
+      return;
+    }
+
     rateTimestamps.push(Date.now());
     if (rateTimestamps.length > 400) rateTimestamps.splice(0, rateTimestamps.length - 400);
     set((state) => {
@@ -815,6 +1093,10 @@ export const useWorkstationStore = create<WorkstationState>((set, get) => ({
         // the newest frame, matching selectPacket's first-field behavior.
         selectedPacket: state.autoScroll ? pkt : state.selectedPacket,
         selectedField: state.autoScroll ? (pkt.dissectedFields?.[0] ?? null) : state.selectedField,
+        ...(nextScriptStatus ? { scriptStatus: nextScriptStatus } : {}),
+        ...(extraScriptLogs.length
+          ? { scriptLogs: [...state.scriptLogs, ...extraScriptLogs].slice(-100) }
+          : {}),
       };
     });
   },
@@ -915,6 +1197,101 @@ export const useWorkstationStore = create<WorkstationState>((set, get) => ({
       vaultPath: session.vault || get().vaultPath,
       vaultBytes: session.file_bytes,
       vaultChunks: session.chunks,
+    });
+  },
+
+  applySnapshot: (snapshot) => {
+    get().updateSnapshot(snapshot.ports, snapshot.bridges);
+    if (snapshot.session) {
+      get().updateSession(snapshot.session);
+    }
+    if ('script' in snapshot) {
+      set({
+        scriptStatus: snapshot.script ?? null,
+        ...(snapshot.script ? { offlineArmedScript: null } : {}),
+      });
+    }
+  },
+
+  setScriptDraft: (draft) => {
+    set((state) => ({
+      scriptSource: draft.source ?? state.scriptSource,
+      scriptName: draft.name ?? state.scriptName,
+      scriptPolicy: draft.policy ?? state.scriptPolicy,
+      scriptSeed: draft.seed ?? state.scriptSeed,
+    }));
+  },
+
+  setScriptStatus: (status) => set({ scriptStatus: status }),
+
+  openScriptLabWithTemplate: (templateId) => {
+    const tpl = SCRIPT_TEMPLATES[templateId as ScriptTemplateId];
+    if (tpl) {
+      set({
+        scriptSource: tpl.source,
+        scriptName: `${tpl.id}.lua`,
+        requestedScriptTemplate: tpl.id,
+        openPanelId: 'scriptLab',
+      });
+    } else {
+      set({
+        requestedScriptTemplate: templateId,
+        openPanelId: 'scriptLab',
+      });
+    }
+  },
+
+  clearRequestedScriptTemplate: () => set({ requestedScriptTemplate: null }),
+
+  setOfflineArmedScript: (armed) => {
+    offlineScriptLocals = {};
+    if (armed) {
+      const compiled = compileLuaScriptOffline(armed.source);
+      set({
+        offlineArmedScript: armed,
+        scriptStatus: createBlankScriptStatus(armed, compiled.hooks, true),
+        scriptLogs: [],
+      });
+    } else {
+      set((state) => ({
+        offlineArmedScript: null,
+        scriptStatus: state.scriptStatus ? { ...state.scriptStatus, armed: false } : null,
+      }));
+    }
+  },
+
+  appendScriptLogs: (entries) => {
+    if (!entries.length) return;
+    set((state) => ({
+      scriptLogs: [...state.scriptLogs, ...entries].slice(-100),
+    }));
+  },
+
+  resetOfflineScriptStats: () => {
+    offlineScriptLocals = {};
+    set((state) => ({
+      scriptLogs: [],
+      scriptStatus: state.scriptStatus
+        ? createBlankScriptStatus(
+            {
+              source: state.offlineArmedScript?.source ?? state.scriptSource,
+              name: state.scriptStatus.name,
+              policy: state.scriptStatus.policy,
+            },
+            state.scriptStatus.hooks,
+            state.scriptStatus.armed
+          )
+        : null,
+    }));
+  },
+
+  clearScriptState: () => {
+    offlineScriptLocals = {};
+    set({
+      scriptStatus: null,
+      offlineArmedScript: null,
+      requestedScriptTemplate: null,
+      scriptLogs: [],
     });
   },
 }));

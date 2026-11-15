@@ -37,31 +37,36 @@ impl SeriesSet {
         Self::default()
     }
 
+    /// Record one numeric sample directly under `(port, field)`.
+    pub fn push_custom(&mut self, port: &str, field: &str, value: f64) {
+        if !value.is_finite() {
+            return;
+        }
+        let key = (port.to_string(), field.to_string());
+        if !self.rings.contains_key(&key) {
+            if self.order.len() >= MAX_SERIES {
+                self.ignored += 1;
+                return;
+            }
+            self.order.push(key.clone());
+            self.rings
+                .insert(key.clone(), VecDeque::with_capacity(MAX_SAMPLES));
+        }
+        let ring = self.rings.get_mut(&key).expect("inserted above");
+        if ring.len() == MAX_SAMPLES {
+            ring.pop_front();
+        }
+        ring.push_back(value);
+        self.pending.entry(key).or_default().push(value);
+    }
+
     /// Sample every numeric leaf of one decoded frame.
     pub fn sample(&mut self, row: &TailRow) {
         for field in &row.fields {
             let Some(value) = field.value_num else {
                 continue;
             };
-            if !value.is_finite() {
-                continue;
-            }
-            let key = (row.port.clone(), field.name.clone());
-            if !self.rings.contains_key(&key) {
-                if self.order.len() >= MAX_SERIES {
-                    self.ignored += 1;
-                    continue;
-                }
-                self.order.push(key.clone());
-                self.rings
-                    .insert(key.clone(), VecDeque::with_capacity(MAX_SAMPLES));
-            }
-            let ring = self.rings.get_mut(&key).expect("inserted above");
-            if ring.len() == MAX_SAMPLES {
-                ring.pop_front();
-            }
-            ring.push_back(value);
-            self.pending.entry(key).or_default().push(value);
+            self.push_custom(&row.port, &field.name, value);
         }
     }
 
@@ -127,6 +132,7 @@ mod tests {
             }],
             decode_error: None,
             symbols: Vec::new(),
+            raw: vec![0, 0, 0, 0],
         }
     }
 
@@ -187,5 +193,17 @@ mod tests {
         assert_eq!(updates.len(), 2);
         assert_eq!(set.latest("a", "v"), Some(1.0));
         assert_eq!(set.latest("b", "v"), Some(2.0));
+    }
+
+    #[test]
+    fn push_custom_records_and_ignores_non_finite_values() {
+        let mut set = SeriesSet::new();
+        set.push_custom("script", "script:latency", f64::NAN);
+        set.push_custom("script", "script:latency", f64::INFINITY);
+        set.push_custom("script", "script:latency", 42.5);
+        assert_eq!(set.latest("script", "script:latency"), Some(42.5));
+        let updates = set.take();
+        assert_eq!(updates.len(), 1);
+        assert_eq!(updates[0].values, vec![42.5]);
     }
 }

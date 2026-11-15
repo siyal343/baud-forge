@@ -1,9 +1,10 @@
 # BaudForge Lua 5.4 HIL & Protocol Scripting Engine Architecture
 
-**Document Status:** Brainstorm & Architecture Specification (`RFC-002`)  
+**Document Status:** Implemented & Verified (`RFC-002`) — Waves 1–3 complete in working tree (`2026-11-15`)  
 **Date:** 2026-11-15  
 **Target Codebase:** `crates/bforge-script`, `crates/bforge-core`, `crates/bforge-dissect`, `crates/bforge-storage`, `ui/`  
-**Related Specs:** [`PLUGIN_ARCHITECTURE.md`](./PLUGIN_ARCHITECTURE.md) (`Tier 2`), [`specs/0034-script-fields.md`](./specs/0034-script-fields.md), [`specs/ADR & SRS.md`](./specs/ADR%20%26%20SRS.md) (`FR-SCR-01`, `FR-MITM-01`, `FR-FLT-01`)
+**Related Specs:** [`PLUGIN_ARCHITECTURE.md`](./PLUGIN_ARCHITECTURE.md) (`Tier 2`), [`specs/0034-script-fields.md`](./specs/0034-script-fields.md), [`specs/ADR & SRS.md`](./specs/ADR%20%26%20SRS.md) (`FR-SCR-01`, `FR-MITM-01`, `FR-FLT-01`)  
+**Tutorial & Examples:** [`docs/LUA_SCRIPTING_TUTORIAL.md`](./docs/LUA_SCRIPTING_TUTORIAL.md) · [`01_packet_filter_and_metadata.lua`](./examples/tutorials/01_packet_filter_and_metadata.lua)–[`15_fail_closed_safety_interlock_and_budget.lua`](./examples/tutorials/15_fail_closed_safety_interlock_and_budget.lua)
 
 ---
 
@@ -294,3 +295,51 @@ Adding a dedicated **Script Lab** panel (or upgrading `FaultRigView.tsx` with `[
 - Extend `ui/src/services/engineApi.ts` and `useWorkstationStore.ts` for `/api/script` and `UiSnapshot.script`.
 - Build `ScriptLabView.tsx` (registered in `WorkstationDock.tsx` + `GlobalRibbon.tsx`, or integrated tab in `FaultRigView.tsx`) with Lua templates, selected-packet dry-run diff tester, live `bforge.metric` watch table, assertions view, and VM latency/memory budget telemetry.
 - Ensure headless smoke coverage (`ui/scripts/ui-smoke.mjs`) verifies template loading, compile/dry-run UI feedback, and clean rendering.
+
+---
+
+## 10. Implementation & Verification Record (2026-11-15)
+
+### Resolved Design Decisions
+- **UI Placement**: Standalone Dockview panel `scriptLab` (`ui/src/components/ScriptLabView.tsx`, title `LUA SCRIPT LAB`) placed in the Bottom Subdeck, paired with `OPEN IN SCRIPT LAB →` quick-launch buttons in `FaultRigView.tsx` and `BridgePanel.tsx`.
+- **Default Fault Policy**: `FailOpen` (`"fail_open"`) across `TX`, `RX`, and `MITM` hooks (script errors increment `failures` and pass original bytes through), with an explicit UI selector for `FailClosed` (`"fail_closed"`, drops frames on error).
+- **Offline Fallback Boundary**: `ScriptLabView.tsx` targets `/api/script` when the Rust engine is reachable and activates `ui/src/services/luaSandboxFallback.ts` (`SIMULATED SANDBOX` badge) strictly on network/5xx failures; HTTP 4xx compile/runtime errors from Rust are surfaced without masking.
+
+### Implemented Files & Symbols
+
+#### Wave 1 — `crates/bforge-script/`
+- `crates/bforge-script/src/lib.rs`: Re-exports `FrameState`, `LuaFrame`, `CustomFieldEntry`, `crc16_modbus`, `FrameVerdict`, `FaultPolicy`, `HookKind`, `FrameMeta`, `ScriptAction`, `AssertionRecord`, `ScriptMetricValue`, `FieldDiffRecord`, `DryRunReport`, `ScriptSnapshot`, `DEFAULT_MEMORY_LIMIT_BYTES`, `MAX_MEMORY_LIMIT_BYTES`, `ScriptRuntime`, `ScriptError`, `hex_of`, and `parse_hex`.
+- `crates/bforge-script/src/frame.rs`: Updated `FrameState` with `ir: Option<DissectorIr>`, `schemas: Arc<BTreeMap<String, DissectorIr>>`, `meta: FrameMeta`, lazy `decoded_cache: Option<Vec<bforge_dissect::DecodedField>>`, `custom_fields`, `drop_requested`, and `delay_ms`. Implemented `mlua::UserData` on `LuaFrame` (lazy `hex`, `port`, `direction`, `seq_id`, `timestamp_us`, `len`, `bridge`, `get`/`set`/`fields`/`dissect`/`add_field`, zero-offset bounds-checked `u8`..`f64` readers/writers, `slice`/`raw`/`clone_bytes`/`bytes`/`xor_u8`/`xor_bit`, `recalc_crc` supporting `crc8`/`crc8_atm`/`crc16_ccitt_false`/`crc16_modbus`/`crc16_xmodem`/`crc32c`, `corrupt_crc`, and `delay_ms`/`forward_after_ms`/`drop`).
+- `crates/bforge-script/src/runtime.rs`: Implemented `FrameVerdict::{Send, Delay, Drop, Burst}`, `FaultPolicy`, `HookKind`, `DEFAULT_MEMORY_LIMIT_BYTES` (`4 MiB`), `MAX_MEMORY_LIMIT_BYTES` (`16 MiB`), `INSTRUCTION_BUDGET` (`200_000`), `HOOK_TICK` (`500`), `MAX_SENDS_PER_CALL` (`16`), `MAX_TIMERS` (`8`), `MIN_TIMER_INTERVAL_MS` (`10`), `LOG_BURST` (`20.0`), `LOG_RATE_PER_SEC` (`50.0`), multi-hooks (`on_frame`, `on_init`, `on_rx_frame`, `on_tx_frame`, `on_mitm_frame`, `on_raw_chunk`, `on_timer`, `on_alert`, `on_dissect`, `on_command`), deterministic xorshift64* `seed`/`rand`, monotonic `now_us`/`now_ms`, `send`, `set_pins`, `pulse_pin`, `trigger_pin`, `plot`, `metric`, `assert`, `crc`, `burst`, `compile_with_options`, `run_with_meta`, `tick_timers`, `trigger_alert`, `invoke_command`, `drain_actions`, `snapshot`, and `ScriptRuntime::dry_run` (retaining backward compatibility for `bforge.on_frame(fn)` without schema).
+
+#### Wave 2 — `crates/bforge-core/`
+- `crates/bforge-core/src/contract.rs`: Added `#[serde(default)] pub script: Option<ScriptStatusView>` on `UiSnapshot`, alongside `ScriptAssertionView`, `ScriptStatusView`, `ScriptFieldDiffView`, `ScriptActionView`, `ScriptBurstFrameView`, and `ScriptDryRunView`.
+- `crates/bforge-core/src/series.rs`: Added `SeriesSet::push_custom` (max 32 series, max 600 samples, skips non-finite values) and unit test `push_custom_records_and_ignores_non_finite_values`.
+- `crates/bforge-core/src/tail.rs`: Added `#[serde(skip)] pub raw: Vec<u8>` on `TailRow` and `Stream::redecode_row` to re-decode post-framer mutated frames.
+- `crates/bforge-core/src/session.rs`: Added `rebuild_schema_map` (`D-94` multi-schema fix synced to script runtime), `HookKind::RawChunk` pre-framer and `HookKind::Rx` post-framer execution using `ScriptHooksMask` (preventing legacy TX `on_frame` scripts from firing on RX), `HookKind::Mitm` in `Session::forward` (`Drop`/`Send`/`Delay`/`Burst` via `pipeline.post_after`), TX `Delay`/`Burst`, non-reentrant `send_from_script` (`MAX_SCRIPT_SENDS_PER_PUMP = 16`), `tick_timers` + `apply_script_actions`, and `arm_script_source`/`disarm_script`/`reset_script_stats`/`script_status`/`script_source`/`dry_run_script`/`take_script_logs`.
+- `crates/bforge-core/src/serve.rs`: Added `ScriptJob` pump handler, drained `script_logs` into `Shared.logs`, and added `GET /api/script` + `POST /api/script` (`compile`, `test_frame`, `arm`, `disarm`, `reset_stats`).
+- `crates/bforge-core/tests/serve.rs`: Added `script_http_lifecycle_compile_dry_run_arm_reset_disarm_and_snapshot`, `framed_rx_hook_redecodes_and_emits_script_plot_series_over_sse`, and `mitm_bridge_and_tx_delay_hooks_work_end_to_end`.
+
+#### Wave 3 — `ui/`
+- **Created**:
+  - [`docs/LUA_SCRIPTING_TUTORIAL.md`](./docs/LUA_SCRIPTING_TUTORIAL.md) (5-Part manual with Quick Reference Matrix and walkthroughs covering all 15 scripts in [`01_packet_filter_and_metadata.lua`](./examples/tutorials/01_packet_filter_and_metadata.lua)–[`15_fail_closed_safety_interlock_and_budget.lua`](./examples/tutorials/15_fail_closed_safety_interlock_and_budget.lua))
+  - `ui/src/utils/checksums.ts` (including `crc16Xmodem`)
+  - `ui/src/services/luaSandboxFallback.ts` (`SCRIPT_TEMPLATES`: 5 starter templates `seu_bitflip`, `mitm_glitch`, `virtual_responder`, `telemetry_plot`, `watchdog_pins` plus `tutorial_01`–`tutorial_15`, `compileLuaScriptOffline`, `dryRunLuaScriptOffline`)
+  - `ui/src/services/luaSandboxFallback.test.ts` (starter + `luaSandboxFallback.tutorialSeries01to15` dry-run suite)
+  - `ui/src/services/engineApi.test.ts`
+  - `ui/src/components/ScriptLabView.tsx` (grouped `<optgroup>` template selector for Starter Templates and Tutorial Series `01–15`)
+- **Modified**:
+  - `ui/src/types.ts`, `ui/src/components/CommandForge.tsx`, `ui/src/services/engineApi.ts` (`scriptTestFrame` fallback forwards frame metadata), `ui/src/plot/engine.ts` (`isStarted`, `pushScriptMetric`), `ui/src/store/useWorkstationStore.ts`, `ui/src/App.tsx`, `ui/src/store/useWorkstationStore.test.ts`
+  - `ui/src/components/WorkstationDock.tsx` (`scriptLab` registered in `components`, `CANONICAL_DECK_ORDERS`, `PANEL_ORIGIN_HOMES`, `fallbacks`, `buildDefaultLayout`, `buildHilLayout`, `titles`), `ui/src/components/GlobalRibbon.tsx` (`PANEL_CATALOG`), `ui/src/components/FaultRigView.tsx` (`OPEN IN SCRIPT LAB →`), `ui/src/components/BridgePanel.tsx` (`OPEN IN SCRIPT LAB →`)
+  - `ui/scripts/ui-smoke.mjs` (`T15`)
+
+### Measured Verification & Gaps
+All checks below were executed cleanly and passed (`exit 0`); changes remain uncommitted in the local working tree (`HEAD` at `51ddcf0`).
+- **UI unit tests (after tutorial 01–15 integration)** (`Set-Location ui; pnpm test` via `vitest run`): **16 passed (16)** files, **187 passed (187)** tests (`pnpm exec tsc --noEmit` also passed). *Note:* the earlier Wave 1–3 build & smoke measurements below ran against the pre-tutorial `176`-test Wave 3 UI state.
+- **UI typecheck & production build** (`Set-Location ui; pnpm exec tsc --noEmit; pnpm run build`): passed (`2114 modules transformed`; `dist/index.html` `1.51 kB`, `dist/assets/index-DbwjnwII.css` `209.60 kB`, `dist/assets/index-DR6ay7zi.js` `1,205.44 kB`); synced `ui/dist` to `target/release/ui`.
+- **Headless browser smoke gate** (`node scripts/smoke-gate.mjs` via `chrome-headless-shell`): **41/41 checks passed** (including `T15`: Lua 5.4 Script Lab opens, compiles template, and renders dry-run verdict & diffs). *Timing note:* executed directly before `cargo fmt --all`, which formatted only Rust source files.
+- **Rust formatting, lint & workspace tests**:
+  - `cargo fmt --all --check`: passed.
+  - `cargo clippy --workspace --all-targets --locked -- -D warnings`: passed (`0` warnings).
+  - `cargo test --workspace --locked`: passed (`33` test summary lines: `targets=33 passed=398`, `0 failed`, `0 ignored`), covering `bforge_script` (`33` unit tests), `bforge_core` (`62` unit tests + `20` tests in `tests/serve.rs`), `bforge_dissect` (`76` unit tests), `bforge_cli` (`12 + 4 + 5`), and `bforge_storage` (`3 + 6 + 14`).
+- **Not verified live**: Launching `bforge-desktop.exe` (WebView2 desktop binary) connected to physical USB serial/CAN hardware executing live `/api/script` traffic.

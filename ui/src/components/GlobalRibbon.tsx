@@ -39,6 +39,7 @@ const PANEL_CATALOG = [
   { id: 'commandForge', name: 'Command Forge' },
   { id: 'pinSequencer', name: 'Pin Sequencer & Modem Lines' },
   { id: 'faultRig', name: 'HIL Fault Injection Rig' },
+  { id: 'scriptLab', name: 'Lua 5.4 Script Lab' },
   { id: 'fileTransfer', name: 'X/YMODEM File Transfer' },
   { id: 'bridge', name: 'MITM Bridge & Relay' },
   { id: 'activityLog', name: 'Activity Log' },

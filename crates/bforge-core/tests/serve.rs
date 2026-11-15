@@ -1125,3 +1125,386 @@ fn devices_and_quick_connect_and_export() {
         .expect("serve");
     client.join().expect("client");
 }
+
+#[test]
+fn script_http_lifecycle_compile_dry_run_arm_reset_disarm_and_snapshot() {
+    let dev = device();
+    let config = workspace(&dev);
+    let ports = session_ports_from_config(&config, &[]).expect("ports");
+    let mut session = Session::start(ports, None, None).expect("session");
+    session.enable_decode(&config.ports).expect("decode");
+
+    let server = Server::bind("127.0.0.1:0".parse().unwrap()).expect("bind");
+    let address = server.local_addr().unwrap().to_string();
+
+    let lua_script = r#"
+        bforge.on_rx_frame("sim", function(frame)
+            local acc = 0
+            for i = 1, 400 do acc = acc + i end
+            frame:set("v_batt_mv", 9123)
+            frame:recalc_crc("crc32c")
+            bforge.metric("batt_override", 9123)
+            bforge.assert(frame.port == "sim", "valid_imu")
+            bforge.plot("lua_v_batt", 9123)
+            bforge.log("rx rewritten")
+            return frame
+        end)
+    "#;
+    let sample_hex: String = imu_frame(3)
+        .iter()
+        .map(|b| format!("{b:02x}"))
+        .collect::<Vec<_>>()
+        .join(" ");
+
+    let client = std::thread::spawn(move || {
+        std::thread::sleep(Duration::from_millis(250));
+
+        // 1. Disarmed initially
+        let (status, body) = get(&address, "/api/script");
+        assert!(status.contains("200"), "{status} {body}");
+        let initial: serde_json::Value = serde_json::from_str(&body).unwrap();
+        assert_eq!(initial["ok"], true);
+        assert!(initial["source"].is_null(), "{body}");
+        assert!(initial["status"].is_null(), "{body}");
+
+        let (status, body) = get(&address, "/api/snapshot");
+        assert!(status.contains("200"), "{status}");
+        let snap: bforge_core::contract::UiSnapshot = serde_json::from_str(&body).unwrap();
+        assert!(snap.script.is_none());
+
+        // 2. Compile failure returns HTTP 400
+        let (status, body) = post(
+            &address,
+            "/api/script",
+            r#"{"action":"compile","source":"local = "}"#,
+        );
+        assert!(
+            status.contains("400"),
+            "compile fail status: {status} {body}"
+        );
+        let compile_err: serde_json::Value = serde_json::from_str(&body).unwrap();
+        assert_eq!(compile_err["ok"], false);
+        assert!(compile_err["error"].is_string());
+
+        // 3. Valid compile returns HTTP 200 and hook list
+        let compile_req = serde_json::json!({
+            "action": "compile",
+            "name": "rx_rewrite.lua",
+            "source": lua_script,
+        });
+        let (status, body) = post(&address, "/api/script", &compile_req.to_string());
+        assert!(status.contains("200"), "compile ok status: {status} {body}");
+        let compiled: serde_json::Value = serde_json::from_str(&body).unwrap();
+        assert_eq!(compiled["ok"], true);
+        assert!(
+            compiled["hooks"]
+                .as_array()
+                .unwrap()
+                .iter()
+                .any(|h| h == "on_rx_frame:sim"),
+            "{body}"
+        );
+
+        // 4. test_frame dry-run returns diff, metrics, assertions, plot/log actions
+        let test_req = serde_json::json!({
+            "action": "test_frame",
+            "name": "rx_rewrite.lua",
+            "port": "sim",
+            "direction": "rx",
+            "hex": sample_hex,
+            "source": lua_script,
+        });
+        let (status, body) = post(&address, "/api/script", &test_req.to_string());
+        assert!(status.contains("200"), "test_frame status: {status} {body}");
+        let dry: bforge_core::contract::ScriptDryRunView =
+            serde_json::from_str(&body).expect("dry run json");
+        assert!(dry.ok, "{body}");
+        assert_eq!(dry.verdict, "send");
+        assert!(dry.mutated);
+        assert_ne!(dry.input_hex, dry.output_hex);
+        assert!(dry.instructions > 0);
+        assert!(dry.memory_bytes > 0);
+        assert!(
+            dry.field_diffs
+                .iter()
+                .any(|d| d.name == "v_batt_mv" && d.after.as_deref() == Some("9123")),
+            "expected v_batt_mv field diff: {:?}",
+            dry.field_diffs
+        );
+        assert_eq!(
+            dry.metrics.get("batt_override").map(String::as_str),
+            Some("9123")
+        );
+        assert!(
+            dry.assertions
+                .iter()
+                .any(|a| a.name == "valid_imu" && a.passed == 1 && a.failed == 0),
+            "{:?}",
+            dry.assertions
+        );
+        assert!(dry.actions.iter().any(|a| matches!(
+            a,
+            bforge_core::contract::ScriptActionView::Plot { series, value, .. }
+                if series == "lua_v_batt" && (*value - 9123.0).abs() < 1e-6
+        )));
+        assert!(dry.actions.iter().any(|a| matches!(
+            a,
+            bforge_core::contract::ScriptActionView::Log { level, message }
+                if level == "info" && message == "rx rewritten"
+        )));
+
+        // 5. Arm invalid returns 400; arm valid returns 200
+        let (status, _) = post(
+            &address,
+            "/api/script",
+            r#"{"action":"arm","source":"function broken("}"#,
+        );
+        assert!(status.contains("400"), "arm invalid status: {status}");
+
+        let arm_req = serde_json::json!({
+            "action": "arm",
+            "name": "rx_rewrite.lua",
+            "policy": "fail_open",
+            "source": lua_script,
+        });
+        let (status, body) = post(&address, "/api/script", &arm_req.to_string());
+        assert!(status.contains("200"), "arm ok status: {status} {body}");
+        let armed: serde_json::Value = serde_json::from_str(&body).unwrap();
+        assert_eq!(armed["ok"], true);
+        assert_eq!(armed["status"]["armed"], true);
+        assert_eq!(armed["status"]["name"], "rx_rewrite.lua");
+
+        // Wait for live RX frames to invoke the armed hook
+        std::thread::sleep(Duration::from_millis(250));
+
+        let (status, body) = get(&address, "/api/script");
+        assert!(status.contains("200"), "{status}");
+        let live: serde_json::Value = serde_json::from_str(&body).unwrap();
+        assert_eq!(live["source"], lua_script);
+        assert!(
+            live["status"]["invocations"].as_u64().unwrap_or(0) > 0,
+            "{body}"
+        );
+        assert!(
+            live["status"]["changed"].as_u64().unwrap_or(0) > 0,
+            "{body}"
+        );
+        assert_eq!(live["status"]["metrics"]["batt_override"], "9123");
+
+        let (status, body) = get(&address, "/api/snapshot");
+        assert!(status.contains("200"), "{status}");
+        let snap: bforge_core::contract::UiSnapshot = serde_json::from_str(&body).unwrap();
+        let snap_script = snap.script.expect("snapshot.script populated when armed");
+        assert!(snap_script.armed);
+        assert!(snap_script.invocations > 0);
+
+        let (status, logs_body) = get(&address, "/api/logs?limit=200");
+        assert!(status.contains("200"), "{status}");
+        assert!(
+            logs_body.contains("rx rewritten"),
+            "script log missing: {logs_body}"
+        );
+
+        // 6. reset_stats clears invocations immediately
+        let (status, body) = post(&address, "/api/script", r#"{"action":"reset_stats"}"#);
+        assert!(status.contains("200"), "{status} {body}");
+        let reset_val: serde_json::Value = serde_json::from_str(&body).unwrap();
+        assert_eq!(reset_val["ok"], true);
+        assert_eq!(reset_val["status"]["invocations"], 0, "{body}");
+
+        // 7. disarm clears armed state and snapshot.script
+        let (status, body) = post(&address, "/api/script", r#"{"action":"disarm"}"#);
+        assert!(status.contains("200"), "{status} {body}");
+        let disarm_val: serde_json::Value = serde_json::from_str(&body).unwrap();
+        assert_eq!(disarm_val["ok"], true);
+        assert!(disarm_val["status"].is_null());
+
+        let (status, body) = get(&address, "/api/snapshot");
+        assert!(status.contains("200"), "{status}");
+        let snap: bforge_core::contract::UiSnapshot = serde_json::from_str(&body).unwrap();
+        assert!(snap.script.is_none());
+
+        let _ = post(&address, "/api/session/stop", "{}");
+    });
+
+    server
+        .run(session, Some(Duration::from_secs(4)))
+        .expect("serve");
+    client.join().expect("client");
+}
+
+#[test]
+fn framed_rx_hook_redecodes_and_emits_script_plot_series_over_sse() {
+    let dev = device();
+    let config = workspace(&dev);
+    let ports = session_ports_from_config(&config, &[]).expect("ports");
+    let mut session = Session::start(ports, None, None).expect("session");
+    session.enable_decode(&config.ports).expect("decode");
+    session
+        .arm_script_source(
+            r#"
+            bforge.on_rx_frame("sim", function(frame)
+                frame:set("v_batt_mv", 8888)
+                frame:recalc_crc("crc32c")
+                bforge.plot("custom_batt", 8888)
+                return frame
+            end)
+            "#,
+            "rx_plot.lua",
+            "fail_open",
+            None,
+            None,
+        )
+        .expect("arm script");
+
+    let server = Server::bind("127.0.0.1:0".parse().unwrap()).expect("bind");
+    let address = server.local_addr().unwrap().to_string();
+
+    let client = std::thread::spawn(move || {
+        std::thread::sleep(Duration::from_millis(150));
+        let mut stream = TcpStream::connect(&address).unwrap();
+        stream
+            .set_read_timeout(Some(Duration::from_secs(4)))
+            .unwrap();
+        let req = "GET /api/events HTTP/1.1\r\nHost: test\r\nAccept: text/event-stream\r\n\r\n";
+        stream.write_all(req.as_bytes()).unwrap();
+
+        let mut seen = String::new();
+        let mut buf = [0u8; 8192];
+        while !(seen.contains("8888") && seen.contains("script:custom_batt")) {
+            match stream.read(&mut buf) {
+                Ok(0) => break,
+                Ok(n) => seen.push_str(&String::from_utf8_lossy(&buf[..n])),
+                Err(_) => break,
+            }
+            if seen.len() > 256 * 1024 {
+                break;
+            }
+        }
+        assert!(
+            seen.contains("8888"),
+            "expected redecoded field 8888 in SSE: {seen}"
+        );
+        assert!(
+            seen.contains("\"port\":\"script\"")
+                && seen.contains("\"field\":\"script:custom_batt\""),
+            "expected script plot series in SSE: {seen}"
+        );
+        let _ = post(&address, "/api/session/stop", "{}");
+    });
+
+    server
+        .run(session, Some(Duration::from_secs(4)))
+        .expect("serve");
+    client.join().expect("client");
+}
+
+#[test]
+fn mitm_bridge_and_tx_delay_hooks_work_end_to_end() {
+    let listener_a = TcpListener::bind("127.0.0.1:0").unwrap();
+    let addr_a = listener_a.local_addr().unwrap().to_string();
+    std::thread::spawn(move || {
+        let (mut s, _) = listener_a.accept().unwrap();
+        let _ = s.write_all(b"ping\n");
+        std::thread::sleep(Duration::from_secs(2));
+    });
+
+    let listener_b = TcpListener::bind("127.0.0.1:0").unwrap();
+    let addr_b = listener_b.local_addr().unwrap().to_string();
+    let received_b = Arc::new(Mutex::new(Vec::<u8>::new()));
+    let sink_b = Arc::clone(&received_b);
+    std::thread::spawn(move || {
+        let (mut s, _) = listener_b.accept().unwrap();
+        let mut buf = [0u8; 128];
+        while let Ok(n) = s.read(&mut buf) {
+            if n == 0 {
+                break;
+            }
+            sink_b.lock().unwrap().extend_from_slice(&buf[..n]);
+        }
+    });
+
+    let workspace = format!(
+        r#"
+[workspace]
+name = "mitm-script"
+version = "1.0"
+
+[[ports]]
+id = "a"
+transport = "tcp-client"
+address = "{addr_a}"
+baud_rate = 115200
+framing = {{ mode = "delimiter", delimiter = 10 }}
+
+[[ports]]
+id = "b"
+transport = "tcp-client"
+address = "{addr_b}"
+baud_rate = 115200
+framing = {{ mode = "delimiter", delimiter = 10 }}
+
+[[bridges]]
+id = "link"
+a = "a"
+b = "b"
+forward = true
+"#
+    );
+    let config: bforge_core::ProjectConfig = toml::from_str(&workspace).expect("workspace");
+    let ports = session_ports_from_config(&config, &[]).expect("ports");
+    let mut session = Session::start(ports, None, None).expect("session");
+    session.enable_decode(&config.ports).expect("decode");
+    session.enable_bridges(&config.bridges).expect("bridges");
+    session
+        .arm_script_source(
+            r#"
+            bforge.on_mitm_frame("*", function(frame)
+                bforge.metric("mitm_dir", frame.direction)
+                frame:set_bytes("70 6f 6e 67 0a")
+                return frame:delay_ms(25)
+            end)
+            bforge.on_tx_frame("b", function(frame)
+                frame:set_bytes("74 78 6f 6b 0a")
+                return frame:delay_ms(15)
+            end)
+            "#,
+            "mitm_tx.lua",
+            "fail_open",
+            None,
+            None,
+        )
+        .expect("arm script");
+
+    // Trigger TX delay hook explicitly on port b
+    let outcome = session
+        .send("b", b"hello\n".to_vec(), Duration::from_secs(1))
+        .expect("send tx");
+    assert!(outcome.delay.is_some(), "expected tx delay outcome");
+
+    let deadline = Instant::now() + Duration::from_secs(2);
+    while Instant::now() < deadline {
+        session.pump_once().expect("pump");
+        let got = String::from_utf8_lossy(&received_b.lock().unwrap()).to_string();
+        if got.contains("pong\n") && got.contains("txok\n") {
+            break;
+        }
+        std::thread::sleep(Duration::from_millis(5));
+    }
+
+    let status = session.script_status().expect("script status");
+    session.seal().expect("seal");
+
+    let got = String::from_utf8_lossy(&received_b.lock().unwrap()).to_string();
+    assert!(got.contains("txok\n"), "missing tx rewrite: {got:?}");
+    assert!(got.contains("pong\n"), "missing mitm rewrite: {got:?}");
+    assert!(!got.contains("ping\n"), "original ping leaked: {got:?}");
+    assert!(
+        status.delayed >= 2,
+        "expected >=2 delayed verdicts: {status:?}"
+    );
+    assert_eq!(
+        status.metrics.get("mitm_dir").map(String::as_str),
+        Some("mitm_a_to_b")
+    );
+}

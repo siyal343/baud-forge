@@ -112,6 +112,9 @@ pub struct TailRow {
     pub decode_error: Option<String>,
     /// Addresses that resolved inside the firmware image (spec 0024).
     pub symbols: Vec<SymbolHit>,
+    /// Exact frame bytes before preview truncation, used for post-framer hooks.
+    #[serde(skip)]
+    pub raw: Vec<u8>,
 }
 
 /// One address from a frame that resolved to code.
@@ -186,6 +189,19 @@ impl Stream {
                 row
             })
             .collect()
+    }
+
+    /// Replace a row's payload bytes after a post-framer RX script edit and
+    /// re-run the port dissector so fields match the mutated frame.
+    pub fn redecode_row(&self, row: &mut TailRow, bytes: Vec<u8>) {
+        row.len = bytes.len();
+        row.hex = hex_preview(&bytes);
+        row.text = text_preview(&bytes);
+        row.protocol = None;
+        row.fields.clear();
+        row.decode_error = None;
+        row.raw = bytes;
+        apply_dissector(row, self.dissector.as_ref());
     }
 }
 
@@ -306,16 +322,21 @@ fn build_row(
         fields: Vec::new(),
         decode_error: None,
         symbols: Vec::new(),
+        raw: frame,
     };
 
+    apply_dissector(&mut row, dissector);
+    row
+}
+
+fn apply_dissector(row: &mut TailRow, dissector: Option<&Decoder>) {
     if let Some(decoder) = dissector {
         row.protocol = Some(decoder.tag().to_string());
-        match decoder.decode(&frame) {
+        match decoder.decode(&row.raw) {
             Ok(fields) => row.fields = flatten(&fields, ""),
             Err(error) => row.decode_error = Some(error.to_string()),
         }
     }
-    row
 }
 
 /// Why a vault could not be decoded.

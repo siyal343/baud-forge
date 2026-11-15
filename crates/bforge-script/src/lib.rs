@@ -9,7 +9,12 @@ pub mod frame;
 pub mod runtime;
 pub mod xymodem;
 
-pub use runtime::{FrameVerdict, ScriptError, ScriptRuntime};
+pub use frame::{CustomFieldEntry, FrameState, LuaFrame, crc16_modbus};
+pub use runtime::{
+    AssertionRecord, DEFAULT_MEMORY_LIMIT_BYTES, DryRunReport, FaultPolicy, FieldDiffRecord,
+    FrameMeta, FrameVerdict, HookKind, MAX_MEMORY_LIMIT_BYTES, ScriptAction, ScriptError,
+    ScriptMetricValue, ScriptRuntime, ScriptSnapshot, hex_of, parse_hex,
+};
 pub use xymodem::{
     ModemError, ModemMode, ReceiverState, SenderState, TransferStats, XmodemReceiver, XmodemSender,
     crc16_xmodem, receive_stream, send_stream,

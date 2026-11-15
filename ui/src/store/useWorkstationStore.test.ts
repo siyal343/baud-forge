@@ -5,6 +5,8 @@ import { describe, it, expect, beforeEach, vi, afterEach } from 'vitest';
 import { useWorkstationStore } from './useWorkstationStore';
 import { useSettingsStore } from './useSettingsStore';
 import { PacketRow } from '../types';
+import { plotEngine } from '../plot/engine';
+import { SCRIPT_TEMPLATES } from '../services/luaSandboxFallback';
 
 const makePacket = (overrides: Partial<PacketRow> = {}): PacketRow => ({
   seqId: 0,
@@ -26,6 +28,7 @@ const makePacket = (overrides: Partial<PacketRow> = {}): PacketRow => ({
 
 describe('workstation store', () => {
   beforeEach(() => {
+    useWorkstationStore.getState().clearScriptState();
     useWorkstationStore.setState({
       packets: [],
       scopeSamples: [],
@@ -38,6 +41,7 @@ describe('workstation store', () => {
   });
 
   afterEach(() => {
+    plotEngine.reset();
     vi.useRealTimers();
   });
 
@@ -381,6 +385,142 @@ describe('workstation store', () => {
         if (traceId) useWorkstationStore.getState().unbindScopeTrace(traceId);
         useSettingsStore.setState({ settings: prevSettings });
       }
+    });
+  });
+
+  describe('Lua 5.4 Script Lab state & Simulated Mode hooks', () => {
+    it('syncs snapshot.script in applySnapshot and opens requested templates', () => {
+      const s = useWorkstationStore.getState();
+      s.setOfflineArmedScript({
+        source: SCRIPT_TEMPLATES.seu_bitflip.source,
+        name: 'seu_bitflip.lua',
+        policy: 'fail_open',
+      });
+      expect(useWorkstationStore.getState().offlineArmedScript).not.toBeNull();
+
+      s.applySnapshot({
+        contract: 1,
+        session: {
+          mode: 'idle',
+          vault: '',
+          file_bytes: 0,
+          chunks: 0,
+          payload_bytes: 0,
+          elapsed_ms: 0,
+          started_epoch_ns: 0,
+          elf: null,
+        },
+        ports: [],
+        bridges: [],
+        script: {
+          armed: true,
+          name: 'engine_script.lua',
+          policy: 'fail_closed',
+          hooks: ['on_rx_frame'],
+          invocations: 12,
+          changed: 3,
+          dropped: 1,
+          delayed: 0,
+          injected_tx: 0,
+          failures: 0,
+          logs_suppressed: 0,
+          assertions_passed: 12,
+          assertions_failed: 0,
+          memory_bytes: 32000,
+          memory_limit_bytes: 4194304,
+          last_instructions: 180,
+          last_exec_us: 15,
+          max_exec_us: 22,
+          last_error: null,
+          metrics: { hits: '3' },
+          assertions: [{ name: 'ok', passed: 12, failed: 0, last_error: null }],
+        },
+      });
+
+      const synced = useWorkstationStore.getState();
+      expect(synced.scriptStatus?.name).toBe('engine_script.lua');
+      expect(synced.scriptStatus?.invocations).toBe(12);
+      expect(synced.offlineArmedScript).toBeNull();
+
+      synced.openScriptLabWithTemplate('mitm_glitch');
+      const afterOpen = useWorkstationStore.getState();
+      expect(afterOpen.requestedScriptTemplate).toBe('mitm_glitch');
+      expect(afterOpen.openPanelId).toBe('scriptLab');
+      expect(afterOpen.scriptName).toBe('mitm_glitch.lua');
+      expect(afterOpen.scriptSource).toBe(SCRIPT_TEMPLATES.mitm_glitch.source);
+    });
+
+    it('executes armed offline scripts in Simulated Mode and pushes bforge.plot metrics to PlotEngine', () => {
+      plotEngine.reset();
+      plotEngine.ensureChannel({
+        id: 'ch_script_vbatt',
+        label: 'script:vbatt_mv',
+        color: '#38bdf8',
+        visible: true,
+        axis: 'y1',
+        source: { kind: 'field', name: 'script:vbatt_mv' },
+      });
+
+      useWorkstationStore.setState({ isSimulated: true });
+      const s = useWorkstationStore.getState();
+      s.setOfflineArmedScript({
+        source: SCRIPT_TEMPLATES.telemetry_plot.source,
+        name: 'telemetry_plot.lua',
+        policy: 'fail_open',
+      });
+
+      const imuBytes = [
+        0xaa, 0x55, 0x01, 0x13, 0x40, 0xe2, 0x01, 0x00, 0x1f, 0xf4, 0x00, 0x00, 0x00, 0x00, 0x80,
+        0x90, 0xa0, 0xb0, 0x01, 0x5b,
+      ];
+      s.addPacket(
+        makePacket({
+          timestampUs: 50_000,
+          length: imuBytes.length,
+          rawBytes: imuBytes,
+          rawHex: imuBytes.map((b) => b.toString(16).padStart(2, '0').toUpperCase()).join(' '),
+          dissectedFields: [
+            {
+              name: 'v_batt_mv',
+              type: 'uint16_be',
+              offset: 8,
+              length: 2,
+              rawHex: '1F F4',
+              decodedValue: '8.18',
+              unit: 'V',
+            },
+            {
+              name: 'gyro_z',
+              type: 'float32_le',
+              offset: 10,
+              length: 4,
+              rawHex: '00 00 00 00',
+              decodedValue: 0,
+              unit: 'rad/s',
+            },
+          ],
+        })
+      );
+
+      const st = useWorkstationStore.getState();
+      expect(st.packets).toHaveLength(1);
+      expect(st.scriptStatus?.invocations).toBe(1);
+      expect(st.scriptStatus?.metrics.sampled_frames).toBe('1');
+      expect(st.scriptStatus?.assertions_passed).toBe(2);
+      expect(st.packets[0].dissectedFields.some((f) => f.name === 'script:vbatt_mv')).toBe(true);
+      expect(plotEngine.catalogEntry('script:vbatt_mv')?.lastValue).toBe(8180);
+      expect(plotEngine.lastValue('ch_script_vbatt')).toBe(8180);
+
+      // Verify frame drop verdict suppresses packet ingestion in Simulated Mode
+      st.setOfflineArmedScript({
+        source: `bforge.on_rx_frame(function(frame)\n return nil\nend)`,
+        name: 'dropper.lua',
+        policy: 'fail_open',
+      });
+      useWorkstationStore.setState({ packets: [] });
+      st.addPacket(makePacket({ timestampUs: 60_000 }));
+      expect(useWorkstationStore.getState().packets).toHaveLength(0);
+      expect(useWorkstationStore.getState().scriptStatus?.dropped).toBe(1);
     });
   });
 });

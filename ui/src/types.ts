@@ -1,11 +1,82 @@
 // BaudForge UI Data Contracts & Type Definitions
 // Corresponds to crates/bforge-core/src/contract.rs & docs/UI-UX-DESIGNER-HANDOVER.md
 
+export interface ScriptAssertionView {
+  name: string;
+  passed: number;
+  failed: number;
+  last_error: string | null;
+}
+
+export interface ScriptStatusView {
+  armed: boolean;
+  name: string;
+  policy: 'fail_open' | 'fail_closed';
+  hooks: string[];
+  invocations: number;
+  changed: number;
+  dropped: number;
+  delayed: number;
+  injected_tx: number;
+  failures: number;
+  logs_suppressed: number;
+  assertions_passed: number;
+  assertions_failed: number;
+  memory_bytes: number;
+  memory_limit_bytes: number;
+  last_instructions: number;
+  last_exec_us: number;
+  max_exec_us: number;
+  last_error: string | null;
+  metrics: Record<string, string>;
+  assertions: ScriptAssertionView[];
+}
+
+export interface ScriptFieldDiffView {
+  name: string;
+  before: string | null;
+  after: string | null;
+}
+
+export interface ScriptActionView {
+  kind: 'send' | 'set_pins' | 'pulse_pin' | 'plot' | 'log';
+  port?: string;
+  hex?: string;
+  delay_ms?: number;
+  dtr?: boolean;
+  rts?: boolean;
+  pin?: string;
+  series?: string;
+  value?: number;
+  timestamp_us?: number;
+  level?: string;
+  message?: string;
+}
+
+export interface ScriptDryRunView {
+  ok: boolean;
+  verdict: 'pass' | 'send' | 'delay' | 'drop' | 'burst' | 'error';
+  mutated: boolean;
+  input_hex: string;
+  output_hex: string;
+  delay_ms: number;
+  burst_frames: Array<{ hex: string; delay_ms: number }>;
+  field_diffs: ScriptFieldDiffView[];
+  instructions: number;
+  exec_us: number;
+  memory_bytes: number;
+  actions: ScriptActionView[];
+  metrics: Record<string, string>;
+  assertions: ScriptAssertionView[];
+  error: string | null;
+}
+
 export interface UiSnapshot {
   contract: number;
   session: SessionView;
   ports: PortView[];
   bridges: BridgeView[];
+  script?: ScriptStatusView | null;
 }
 
 export interface SessionView {

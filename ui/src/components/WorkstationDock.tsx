@@ -24,6 +24,7 @@ import { ElfSymbolView } from './ElfSymbolView';
 import { SchemaDialectView } from './SchemaDialectView';
 import { ActivityLogView } from './ActivityLogView';
 import { PlotForgeView } from './PlotForgeView';
+import { ScriptLabView } from './ScriptLabView';
 
 const StreamPanel = (_props: IDockviewPanelProps) => <PacketStreamView />;
 const DissectorPanel = (_props: IDockviewPanelProps) => <ProtocolDissector />;
@@ -39,6 +40,7 @@ const SchemaPanel = (_props: IDockviewPanelProps) => <SchemaDialectView />;
 const BridgeMitmPanel = (_props: IDockviewPanelProps) => <BridgePanel />;
 const ActivityPanel = (_props: IDockviewPanelProps) => <ActivityLogView />;
 const PlotPanel = (_props: IDockviewPanelProps) => <PlotForgeView />;
+const ScriptLabPanel = (_props: IDockviewPanelProps) => <ScriptLabView />;
 
 const components = {
   packetStream: StreamPanel,
@@ -50,6 +52,7 @@ const components = {
   sessionDiff: DiffPanel,
   pinSequencer: PinsPanel,
   faultRig: FaultPanel,
+  scriptLab: ScriptLabPanel,
   fileTransfer: TransferPanel,
   elfSymbols: ElfPanel,
   schemaDialects: SchemaPanel,
@@ -69,13 +72,14 @@ const detachedOrigins = new Map<string, DetachedOrigin>();
 
 const CANONICAL_DECK_ORDERS: Record<string, string[]> = {
   // Bottom Subdeck
-  oscilloscope: ['oscilloscope', 'plotForge', 'commandForge', 'pinSequencer', 'faultRig', 'fileTransfer', 'activityLog'],
-  plotForge: ['oscilloscope', 'plotForge', 'commandForge', 'pinSequencer', 'faultRig', 'fileTransfer', 'activityLog'],
-  commandForge: ['oscilloscope', 'plotForge', 'commandForge', 'pinSequencer', 'faultRig', 'fileTransfer', 'activityLog'],
-  pinSequencer: ['oscilloscope', 'plotForge', 'commandForge', 'pinSequencer', 'faultRig', 'fileTransfer', 'activityLog'],
-  faultRig: ['oscilloscope', 'plotForge', 'commandForge', 'pinSequencer', 'faultRig', 'fileTransfer', 'activityLog'],
-  fileTransfer: ['oscilloscope', 'plotForge', 'commandForge', 'pinSequencer', 'faultRig', 'fileTransfer', 'activityLog'],
-  activityLog: ['oscilloscope', 'plotForge', 'commandForge', 'pinSequencer', 'faultRig', 'fileTransfer', 'activityLog'],
+  oscilloscope: ['oscilloscope', 'plotForge', 'commandForge', 'pinSequencer', 'faultRig', 'scriptLab', 'fileTransfer', 'activityLog'],
+  plotForge: ['oscilloscope', 'plotForge', 'commandForge', 'pinSequencer', 'faultRig', 'scriptLab', 'fileTransfer', 'activityLog'],
+  commandForge: ['oscilloscope', 'plotForge', 'commandForge', 'pinSequencer', 'faultRig', 'scriptLab', 'fileTransfer', 'activityLog'],
+  pinSequencer: ['oscilloscope', 'plotForge', 'commandForge', 'pinSequencer', 'faultRig', 'scriptLab', 'fileTransfer', 'activityLog'],
+  faultRig: ['oscilloscope', 'plotForge', 'commandForge', 'pinSequencer', 'faultRig', 'scriptLab', 'fileTransfer', 'activityLog'],
+  scriptLab: ['oscilloscope', 'plotForge', 'commandForge', 'pinSequencer', 'faultRig', 'scriptLab', 'fileTransfer', 'activityLog'],
+  fileTransfer: ['oscilloscope', 'plotForge', 'commandForge', 'pinSequencer', 'faultRig', 'scriptLab', 'fileTransfer', 'activityLog'],
+  activityLog: ['oscilloscope', 'plotForge', 'commandForge', 'pinSequencer', 'faultRig', 'scriptLab', 'fileTransfer', 'activityLog'],
 
   // Top-Right Dissector Deck
   protocolDissector: ['protocolDissector', 'elfSymbols', 'schemaDialects'],
@@ -87,7 +91,7 @@ const CANONICAL_DECK_ORDERS: Record<string, string[]> = {
   sessionDiff: ['hexInspector', 'sessionDiff'],
 
   // MITM bridge tabs alongside the HIL deck
-  bridge: ['faultRig', 'pinSequencer', 'fileTransfer', 'bridge', 'oscilloscope', 'commandForge'],
+  bridge: ['faultRig', 'scriptLab', 'pinSequencer', 'fileTransfer', 'bridge', 'oscilloscope', 'commandForge'],
 };
 
 function calculateInsertionIndex(
@@ -143,6 +147,7 @@ const PANEL_ORIGIN_HOMES: Record<
   commandForge: { refPanel: 'oscilloscope', position: 'center' },
   pinSequencer: { refPanel: 'oscilloscope', position: 'center' },
   faultRig: { refPanel: 'oscilloscope', position: 'center' },
+  scriptLab: { refPanel: 'oscilloscope', position: 'center' },
   fileTransfer: { refPanel: 'oscilloscope', position: 'center' },
   activityLog: { refPanel: 'fileTransfer', position: 'center' },
 
@@ -191,6 +196,7 @@ function findPreferredTarget(
     plotForge: { refPanel: 'packetStream', position: 'bottom' },
     pinSequencer: { refPanel: 'packetStream', position: 'bottom' },
     faultRig: { refPanel: 'packetStream', position: 'bottom' },
+    scriptLab: { refPanel: 'packetStream', position: 'bottom' },
     fileTransfer: { refPanel: 'packetStream', position: 'bottom' },
     activityLog: { refPanel: 'packetStream', position: 'bottom' },
     elfSymbols: { refPanel: 'packetStream', position: 'right' },
@@ -489,6 +495,14 @@ export const WorkstationDock: React.FC = () => {
     });
 
     api.addPanel({
+      id: 'scriptLab',
+      component: 'scriptLab',
+      title: 'LUA SCRIPT LAB',
+      position: { referencePanel: scope, direction: 'within' },
+      inactive: true,
+    });
+
+    api.addPanel({
       id: 'fileTransfer',
       component: 'fileTransfer',
       title: 'X/YMODEM FILE TRANSFER',
@@ -622,6 +636,14 @@ export const WorkstationDock: React.FC = () => {
       title: 'HIL FAULT RIG',
       initialWidth: halfWidth,
       position: { referencePanel: stream, direction: 'right' },
+    });
+
+    api.addPanel({
+      id: 'scriptLab',
+      component: 'scriptLab',
+      title: 'LUA SCRIPT LAB',
+      position: { referencePanel: fault, direction: 'within' },
+      inactive: true,
     });
 
     api.addPanel({
@@ -799,6 +821,7 @@ export const WorkstationDock: React.FC = () => {
         commandForge: 'COMMAND FORGE',
         pinSequencer: 'PIN SEQUENCER',
         faultRig: 'HIL FAULT RIG',
+        scriptLab: 'LUA SCRIPT LAB',
         fileTransfer: 'X/YMODEM FILE TRANSFER',
         elfSymbols: 'ELF SYMBOLS & CRASH TRACE',
         schemaDialects: 'SCHEMA DIALECTS (PROTO/MAVLINK)',

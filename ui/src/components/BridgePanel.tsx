@@ -10,11 +10,12 @@ import { useToastStore } from '../store/useToastStore';
 import { engineApi } from '../services/engineApi';
 
 export const BridgePanel: React.FC = () => {
-  const { enginePorts, bridges, selectedPort } = useWorkstationStore(
+  const { enginePorts, bridges, selectedPort, openScriptLabWithTemplate } = useWorkstationStore(
     useShallow((s) => ({
       enginePorts: s.enginePorts,
       bridges: s.bridges,
       selectedPort: s.selectedPort,
+      openScriptLabWithTemplate: s.openScriptLabWithTemplate,
     }))
   );
   const pushToast = useToastStore((s) => s.pushToast);
@@ -80,6 +81,14 @@ export const BridgePanel: React.FC = () => {
             HARDWARE IN THE MIDDLE
           </span>
         </div>
+
+        <button
+          type="button"
+          onClick={() => openScriptLabWithTemplate('mitm_glitch')}
+          className="h-5 px-2 rounded border border-bf-cyan/40 bg-bf-cyan/10 hover:bg-bf-cyan/20 text-[10px] font-mono text-bf-cyan transition-colors"
+        >
+          OPEN IN SCRIPT LAB →
+        </button>
       </div>
 
       {/* Composer */}

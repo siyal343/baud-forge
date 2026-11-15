@@ -197,6 +197,10 @@ export class PlotEngine {
     return this.channels.size;
   }
 
+  get isStarted(): boolean {
+    return this.started;
+  }
+
   /** Bumped on every data or channel-registry mutation. */
   get dataVersion(): number {
     return this._dataVersion;
@@ -889,6 +893,31 @@ export class PlotEngine {
   lastValue(channelId: string): number {
     const rt = this.channels.get(channelId);
     return rt ? rt.lastValue : NaN;
+  }
+
+  /**
+   * Direct ingestion hook for Lua `bforge.plot(series, value)` metrics when
+   * packets are dropped by a script or when PlotEngine has not subscribed to the store.
+   */
+  pushScriptMetric(series: string, tUs: number, value: number, unit?: string): void {
+    if (!Number.isFinite(value) || !Number.isFinite(tUs)) return;
+    const key = series.startsWith('script:') ? series : `script:${series}`;
+    const prefixedKey = `field:${key}`;
+    this.recordCatalogValue(key, value, unit, tUs);
+    let updated = false;
+    for (const rt of this.channels.values()) {
+      const src = rt.def.source;
+      if (src.kind === 'field' && (src.name === key || src.name === prefixedKey)) {
+        const safeT = Number.isFinite(rt.lastTUs) && tUs <= rt.lastTUs ? rt.lastTUs + 1 : tUs;
+        rt.ring.push(safeT, value);
+        rt.lastValue = value;
+        rt.lastTUs = safeT;
+        updated = true;
+      }
+    }
+    if (updated) {
+      this._dataVersion++;
+    }
   }
 
   channelLabel(channelId: string): string {

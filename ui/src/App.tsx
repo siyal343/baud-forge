@@ -68,8 +68,7 @@ export const App: React.FC = () => {
     stepFrame,
     setDvrPaused,
     triggerFlashYield,
-    updateSnapshot,
-    updateSession,
+    applySnapshot,
     clearStream,
     setFilterText,
   } = useWorkstationStore(
@@ -84,8 +83,7 @@ export const App: React.FC = () => {
       stepFrame: s.stepFrame,
       setDvrPaused: s.setDvrPaused,
       triggerFlashYield: s.triggerFlashYield,
-      updateSnapshot: s.updateSnapshot,
-      updateSession: s.updateSession,
+      applySnapshot: s.applySnapshot,
       clearStream: s.clearStream,
       setFilterText: s.setFilterText,
     }))
@@ -211,15 +209,7 @@ export const App: React.FC = () => {
         useWorkstationStore.setState({ isSimulated: false, isConnected: true });
         unsubscribe = engineApi.subscribeEvents(
           (snapshot) => {
-            updateSnapshot(snapshot.ports, snapshot.bridges);
-            if (snapshot.session) {
-              updateSession({
-                mode: snapshot.session.mode,
-                vault: snapshot.session.vault,
-                file_bytes: snapshot.session.file_bytes,
-                chunks: snapshot.session.chunks,
-              });
-            }
+            applySnapshot(snapshot);
           },
           (uiEvent) => {
             console.log('UI Event:', uiEvent);
@@ -249,7 +239,7 @@ export const App: React.FC = () => {
       if (retryTimer !== null) clearTimeout(retryTimer);
       if (unsubscribe) unsubscribe();
     };
-  }, [updateSnapshot, updateSession, addPacketBatch]);
+  }, [applySnapshot, addPacketBatch]);
 
   // Continuous Telemetry Stream Generator (Simulation Mode). Runs whenever
   // the workstation is in simulated mode — even after an honest refused

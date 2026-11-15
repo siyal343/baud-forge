@@ -6,11 +6,12 @@ import { engineApi } from '../services/engineApi';
 import { ShieldAlert, ShieldCheck, Zap, AlertTriangle, RefreshCw } from 'lucide-react';
 
 export const FaultRigView: React.FC = () => {
-  const { selectedPort, isFaultArmed, toggleFaultArm } = useWorkstationStore(
+  const { selectedPort, isFaultArmed, toggleFaultArm, openScriptLabWithTemplate } = useWorkstationStore(
     useShallow((s) => ({
       selectedPort: s.selectedPort,
       isFaultArmed: s.isFaultArmed,
       toggleFaultArm: s.toggleFaultArm,
+      openScriptLabWithTemplate: s.openScriptLabWithTemplate,
     }))
   );
   const pushToast = useToastStore((s) => s.pushToast);
@@ -115,11 +116,20 @@ export const FaultRigView: React.FC = () => {
           </span>
         </div>
 
-        {statusMsg && (
-          <span className="text-[11px] font-mono text-bf-cyan animate-pulse">
-            {statusMsg}
-          </span>
-        )}
+        <div className="flex items-center gap-2">
+          {statusMsg && (
+            <span className="text-[11px] font-mono text-bf-cyan animate-pulse">
+              {statusMsg}
+            </span>
+          )}
+          <button
+            type="button"
+            onClick={() => openScriptLabWithTemplate('seu_bitflip')}
+            className="h-5 px-2 rounded border border-bf-cyan/40 bg-bf-cyan/10 hover:bg-bf-cyan/20 text-[10px] font-mono text-bf-cyan transition-colors"
+          >
+            OPEN IN SCRIPT LAB →
+          </button>
+        </div>
       </div>
 
       {/* Master Safety Arm Interlock Strip */}

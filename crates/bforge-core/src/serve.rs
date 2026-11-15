@@ -200,6 +200,49 @@ struct FaultJob {
     reply: std::sync::mpsc::SyncSender<Result<(), String>>,
 }
 
+#[derive(Debug)]
+enum ScriptAction {
+    Get,
+    TestFrame {
+        source: String,
+        name: String,
+        policy: String,
+        seed: Option<u64>,
+        port: String,
+        direction: String,
+        bridge: Option<String>,
+        bytes: Vec<u8>,
+        seq_id: Option<u64>,
+        timestamp_us: Option<u64>,
+    },
+    Arm {
+        source: String,
+        name: String,
+        policy: String,
+        memory_limit_bytes: Option<usize>,
+        seed: Option<u64>,
+    },
+    Disarm,
+    ResetStats,
+}
+
+#[derive(Debug)]
+enum ScriptReply {
+    Get {
+        source: Option<String>,
+        status: Option<crate::contract::ScriptStatusView>,
+    },
+    TestFrame(crate::contract::ScriptDryRunView),
+    Status(Option<crate::contract::ScriptStatusView>),
+}
+
+/// One `GET /api/script` or `POST /api/script` routed to the pump thread.
+#[derive(Debug)]
+struct ScriptJob {
+    action: ScriptAction,
+    reply: std::sync::mpsc::SyncSender<Result<ScriptReply, String>>,
+}
+
 /// The vault a scrubber reads, and the schemas that decode it.
 #[derive(Debug, Clone)]
 pub struct VaultSource {
@@ -230,6 +273,8 @@ struct Shared {
     elf_request: Mutex<Option<std::sync::mpsc::Sender<ElfJob>>>,
     /// Same for applying an uploaded schema to a port.
     schema_request: Mutex<Option<std::sync::mpsc::Sender<SchemaJob>>>,
+    /// Same for querying, arming, disarming, resetting, or dry-running Lua scripts.
+    script_request: Mutex<Option<std::sync::mpsc::Sender<ScriptJob>>>,
     /// Same for arming, cancelling or draining an X/YMODEM transfer.
     transfer_request: Mutex<Option<std::sync::mpsc::Sender<TransferJob>>>,
     /// Staged upload bytes for the next Send transfer (single slot: the UI
@@ -429,6 +474,8 @@ impl Server {
         *shared.elf_request.lock().unwrap() = Some(elf_tx);
         let (schema_tx, schema_rx) = std::sync::mpsc::channel::<SchemaJob>();
         *shared.schema_request.lock().unwrap() = Some(schema_tx);
+        let (script_tx, script_rx) = std::sync::mpsc::channel::<ScriptJob>();
+        *shared.script_request.lock().unwrap() = Some(script_tx);
         let (transfer_tx, transfer_rx) = std::sync::mpsc::channel::<TransferJob>();
         *shared.transfer_request.lock().unwrap() = Some(transfer_tx);
 
@@ -731,6 +778,92 @@ impl Server {
                 }
                 let _ = job.reply.send(result);
             }
+            while let Ok(job) = script_rx.try_recv() {
+                let mut snapshot_dirty = false;
+                let result = match job.action {
+                    ScriptAction::Get => Ok(ScriptReply::Get {
+                        source: session.script_source(),
+                        status: session.script_status(),
+                    }),
+                    ScriptAction::TestFrame {
+                        source,
+                        name,
+                        policy,
+                        seed,
+                        port,
+                        direction,
+                        bridge,
+                        bytes,
+                        seq_id,
+                        timestamp_us,
+                    } => session
+                        .dry_run_script(
+                            &source,
+                            &name,
+                            &policy,
+                            seed,
+                            &port,
+                            &direction,
+                            bridge.as_deref(),
+                            &bytes,
+                            seq_id,
+                            timestamp_us,
+                        )
+                        .map(ScriptReply::TestFrame)
+                        .map_err(|error| error.to_string()),
+                    ScriptAction::Arm {
+                        source,
+                        name,
+                        policy,
+                        memory_limit_bytes,
+                        seed,
+                    } => {
+                        let res = session
+                            .arm_script_source(&source, &name, &policy, memory_limit_bytes, seed)
+                            .map_err(|error| error.to_string());
+                        match &res {
+                            Ok(status) => {
+                                snapshot_dirty = true;
+                                shared.log(
+                                    crate::logs::LogLevel::Info,
+                                    "script_arm",
+                                    format!(
+                                        "{} ({}, hooks: {})",
+                                        status.name,
+                                        status.policy,
+                                        status.hooks.join(", ")
+                                    ),
+                                );
+                            }
+                            Err(error) => {
+                                shared.log(crate::logs::LogLevel::Error, "script_arm_failed", error)
+                            }
+                        }
+                        res.map(|s| ScriptReply::Status(Some(s)))
+                    }
+                    ScriptAction::Disarm => {
+                        session.disarm_script();
+                        snapshot_dirty = true;
+                        shared.log(crate::logs::LogLevel::Info, "script_disarm", "disarmed");
+                        Ok(ScriptReply::Status(None))
+                    }
+                    ScriptAction::ResetStats => {
+                        let status = session.reset_script_stats();
+                        snapshot_dirty = true;
+                        shared.log(
+                            crate::logs::LogLevel::Info,
+                            "script_reset_stats",
+                            "counters reset",
+                        );
+                        Ok(ScriptReply::Status(status))
+                    }
+                };
+                if snapshot_dirty {
+                    let json = serde_json::to_string(&session.snapshot()).unwrap_or_default();
+                    shared.set_snapshot(json);
+                }
+                let _ = job.reply.send(result);
+            }
             while let Ok(job) = transfer_rx.try_recv() {
                 let (event, detail) = match &job.action {
                     TransferAction::Arm {
@@ -798,6 +931,15 @@ impl Server {
                 );
                 pump_error = Some(error.into());
                 break;
+            }
+            for (level, message) in session.take_script_logs() {
+                let mapped = match level.to_ascii_lowercase().as_str() {
+                    "debug" => crate::logs::LogLevel::Debug,
+                    "warn" | "warning" => crate::logs::LogLevel::Warn,
+                    "error" => crate::logs::LogLevel::Error,
+                    _ => crate::logs::LogLevel::Info,
+                };
+                shared.log(mapped, "script", message);
             }
             let frames = if frames_sent.elapsed() >= FRAME_TICK {
                 frames_sent = Instant::now();
@@ -1116,6 +1258,17 @@ fn handle(mut stream: TcpStream, shared: Arc<Shared>, stop: Arc<AtomicBool>) {
             return;
         };
         schema(&mut stream, &shared, &body);
+        return;
+    }
+    if method == "GET" && path == "/api/script" {
+        script_get(&mut stream, &shared);
+        return;
+    }
+    if method == "POST" && path == "/api/script" {
+        let Some(body) = read_body(&mut stream, &mut reader, content_length) else {
+            return;
+        };
+        script_post(&mut stream, &shared, &body);
         return;
     }
     if method == "POST" && path == "/api/transfer" {
@@ -2550,6 +2703,251 @@ fn schema(stream: &mut TcpStream, shared: &Arc<Shared>, body: &[u8]) {
                 "400 Bad Request",
                 "application/json",
                 body.as_bytes(),
+            );
+        }
+    }
+}
+
+#[derive(serde::Deserialize)]
+struct ScriptBody {
+    action: String,
+    source: Option<String>,
+    name: Option<String>,
+    policy: Option<String>,
+    memory_limit_bytes: Option<usize>,
+    seed: Option<u64>,
+    port: Option<String>,
+    direction: Option<String>,
+    bridge: Option<String>,
+    hex: Option<String>,
+    seq_id: Option<u64>,
+    timestamp_us: Option<u64>,
+}
+
+fn respond_json_value(stream: &mut TcpStream, status: &str, value: serde_json::Value) {
+    let body = serde_json::to_string(&value).unwrap_or_else(|_| "{}".to_string());
+    respond(stream, status, "application/json", body.as_bytes());
+}
+
+fn respond_script_error(stream: &mut TcpStream, status: &str, error: impl std::fmt::Display) {
+    respond_json_value(
+        stream,
+        status,
+        serde_json::json!({
+            "ok": false,
+            "error": error.to_string(),
+        }),
+    );
+}
+
+fn dispatch_script_job(
+    stream: &mut TcpStream,
+    shared: &Arc<Shared>,
+    action: ScriptAction,
+) -> Option<ScriptReply> {
+    let sender = shared.script_request.lock().unwrap().clone();
+    let Some(sender) = sender else {
+        respond_script_error(stream, "503 Service Unavailable", "the pump is not running");
+        return None;
+    };
+    let (reply, answer) = std::sync::mpsc::sync_channel(1);
+    if sender.send(ScriptJob { action, reply }).is_err() {
+        respond_script_error(stream, "503 Service Unavailable", "the pump has stopped");
+        return None;
+    }
+    match answer.recv_timeout(Duration::from_secs(3)) {
+        Ok(Ok(value)) => Some(value),
+        Ok(Err(error)) => {
+            respond_script_error(stream, "400 Bad Request", error);
+            None
+        }
+        Err(_) => {
+            respond_script_error(stream, "504 Gateway Timeout", "no answer from the pump");
+            None
+        }
+    }
+}
+
+fn parse_script_hex(hex: &str) -> Option<Vec<u8>> {
+    let cleaned: String = hex
+        .split_whitespace()
+        .map(|token| token.trim_start_matches("0x").trim_start_matches("0X"))
+        .collect::<Vec<_>>()
+        .join("");
+    crate::validate::parse_hex(&cleaned)
+}
+
+fn script_get(stream: &mut TcpStream, shared: &Arc<Shared>) {
+    let has_pump = shared.script_request.lock().unwrap().is_some();
+    if !has_pump {
+        respond_json_value(
+            stream,
+            "200 OK",
+            serde_json::json!({
+                "ok": true,
+                "source": serde_json::Value::Null,
+                "status": serde_json::Value::Null,
+            }),
+        );
+        return;
+    }
+    if let Some(ScriptReply::Get { source, status }) =
+        dispatch_script_job(stream, shared, ScriptAction::Get)
+    {
+        respond_json_value(
+            stream,
+            "200 OK",
+            serde_json::json!({
+                "ok": true,
+                "source": source,
+                "status": status,
+            }),
+        );
+    }
+}
+
+fn script_post(stream: &mut TcpStream, shared: &Arc<Shared>, body: &[u8]) {
+    let request: ScriptBody = match serde_json::from_slice(body) {
+        Ok(request) => request,
+        Err(error) => {
+            respond_script_error(stream, "400 Bad Request", format!("bad request: {error}"));
+            return;
+        }
+    };
+    let name = request
+        .name
+        .as_deref()
+        .filter(|s| !s.trim().is_empty())
+        .unwrap_or("inline.lua")
+        .to_string();
+    let policy = request.policy.as_deref().unwrap_or("fail_open").to_string();
+
+    match request.action.as_str() {
+        "compile" => {
+            let source = request.source.unwrap_or_default();
+            let parsed_policy = match policy.trim() {
+                "" | "fail_open" => bforge_script::FaultPolicy::FailOpen,
+                "fail_closed" => bforge_script::FaultPolicy::FailClosed,
+                other => {
+                    respond_script_error(
+                        stream,
+                        "400 Bad Request",
+                        format!("unknown script fault policy `{other}`"),
+                    );
+                    return;
+                }
+            };
+            let limit = request
+                .memory_limit_bytes
+                .unwrap_or(bforge_script::DEFAULT_MEMORY_LIMIT_BYTES);
+            match bforge_script::ScriptRuntime::compile_with_options(
+                &source,
+                &name,
+                parsed_policy,
+                limit,
+                request.seed,
+            ) {
+                Ok(runtime) => {
+                    let snap = runtime.snapshot();
+                    respond_json_value(
+                        stream,
+                        "200 OK",
+                        serde_json::json!({
+                            "ok": true,
+                            "hooks": snap.hooks,
+                            "memory_bytes": snap.memory_bytes,
+                            "error": serde_json::Value::Null,
+                        }),
+                    );
+                }
+                Err(error) => respond_script_error(stream, "400 Bad Request", error.to_string()),
+            }
+        }
+        "test_frame" => {
+            let Some(hex_raw) = request.hex.as_deref() else {
+                respond_script_error(stream, "400 Bad Request", "test_frame requires hex bytes");
+                return;
+            };
+            let Some(bytes) = parse_script_hex(hex_raw) else {
+                respond_script_error(stream, "400 Bad Request", "invalid hex payload");
+                return;
+            };
+            let action = ScriptAction::TestFrame {
+                source: request.source.unwrap_or_default(),
+                name,
+                policy,
+                seed: request.seed,
+                port: request.port.unwrap_or_default(),
+                direction: request.direction.unwrap_or_else(|| "tx".to_string()),
+                bridge: request.bridge,
+                bytes,
+                seq_id: request.seq_id,
+                timestamp_us: request.timestamp_us,
+            };
+            if let Some(ScriptReply::TestFrame(report)) =
+                dispatch_script_job(stream, shared, action)
+            {
+                let json = serde_json::to_string(&report).unwrap_or_else(|_| "{}".to_string());
+                respond(stream, "200 OK", "application/json", json.as_bytes());
+            }
+        }
+        "arm" => {
+            let action = ScriptAction::Arm {
+                source: request.source.unwrap_or_default(),
+                name,
+                policy,
+                memory_limit_bytes: request.memory_limit_bytes,
+                seed: request.seed,
+            };
+            if let Some(ScriptReply::Status(status)) = dispatch_script_job(stream, shared, action) {
+                let hooks = status.as_ref().map(|s| &s.hooks);
+                respond_json_value(
+                    stream,
+                    "200 OK",
+                    serde_json::json!({
+                        "ok": true,
+                        "hooks": hooks,
+                        "status": status,
+                        "error": serde_json::Value::Null,
+                    }),
+                );
+            }
+        }
+        "disarm" => {
+            if let Some(ScriptReply::Status(status)) =
+                dispatch_script_job(stream, shared, ScriptAction::Disarm)
+            {
+                respond_json_value(
+                    stream,
+                    "200 OK",
+                    serde_json::json!({
+                        "ok": true,
+                        "status": status,
+                    }),
+                );
+            }
+        }
+        "reset_stats" => {
+            if let Some(ScriptReply::Status(status)) =
+                dispatch_script_job(stream, shared, ScriptAction::ResetStats)
+            {
+                respond_json_value(
+                    stream,
+                    "200 OK",
+                    serde_json::json!({
+                        "ok": true,
+                        "status": status,
+                    }),
+                );
+            }
+        }
+        other => {
+            respond_script_error(
+                stream,
+                "400 Bad Request",
+                format!(
+                    "unknown script action `{other}`; expected compile, test_frame, arm, disarm, or reset_stats"
+                ),
             );
         }
     }
