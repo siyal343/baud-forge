@@ -97,4 +97,10 @@ Scope: Workspace Loader (auto-reload devices, create workspace, standby recordin
   - `cargo clippy --workspace --all-targets --locked -- -D warnings`: passed (`0` warnings).
   - `cargo test --workspace --locked`: all `26` test targets passed (`371` tests total, `0` failed).
 - **Browser Smoke Gate (`node scripts/smoke-gate.mjs` via `chrome-headless-shell`)**: `40/40` checks passed (`0` failed), confirming `REC pill reads STANDBY`, `recordingEnabled: false` factory defaults, `Workflow B`, `HexInspector`, and `hex bytes/row`.
-- **Not run**: live hardware USB hotplug test (no physical serial adapter attached; verified via unit tests and `useSerialPortScanner` polling/focus listeners) and `cargo build -p bforge-desktop --release` native Tauri executable packaging.
+- **GitHub Actions CI & Windows Artifacts**:
+  - Committed all implementation changes in `c51a249` (`c51a249b6d0678ad0fec220be5f4e8608141f3ab`) and pushed to `origin/main`.
+  - CI run [`43662215003`](https://github.com/siyal343/baud-forge/actions/runs/43662215003) passed all `10/10` jobs (`build (windows desktop shell)`, `test (windows-x86_64)`, `test (windows-aarch64)`, `test (linux-x86_64)`, `test (linux-aarch64)`, `build (macos-x86_64)`, `test (macos-aarch64)`, `format and lints`, `ui unit, build and headless smoke`, `e2e bridge, REC and X/YMODEM`).
+  - Downloaded Windows CI artifacts from run `43662215003`:
+    - Desktop bundle (`bforge-desktop-windows-x86_64`): `F:\Datapack\Personal\Programa\baud-forge-ci\desktop-x86_64\bforge-desktop.exe` (`12,238,336` bytes) + `ui/` (`index-D0CY0GKl.js`, `index-DLZKu67-.css`), also synced to `target\release\bforge-desktop.exe` and `target\release\ui\`.
+    - CLI (`bforge-windows-x86_64`): `F:\Datapack\Personal\Programa\baud-forge-ci\cli-x86_64\bforge-windows-x86_64.exe` (`3,859,968` bytes), verified locally (`bforge 0.8.0`).
+- **Not run**: live hardware USB hotplug test (no physical serial adapter attached; verified via unit tests and `useSerialPortScanner` polling/focus listeners) and launching the GUI `bforge-desktop.exe` window directly.
