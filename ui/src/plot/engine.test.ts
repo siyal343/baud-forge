@@ -138,14 +138,18 @@ describe('backfill + rebuild', () => {
     expect(plotEngine.getTail('c1', 100).v.length).toBe(3);
   });
 
-  it('does not backfill expr channels (would need historical ref values)', () => {
-    const history = [mkPacket(0, [mkField('f', 1)]), mkPacket(1, [mkField('f', 2)])];
+  it('backfills expr channels from buffered packets with hold-last semantics', () => {
+    const history = [
+      mkPacket(0, [mkField('f', 1), mkField('g', 10)]),
+      mkPacket(1, [mkField('f', 2)]), // g held at 10
+    ];
     plotEngine.start({ getSourcePackets: () => history, subscribe: () => () => {} });
     plotEngine.ensureChannel(mkChannel('v', 'f', { kind: 'field', name: 'f' }));
-    plotEngine.ensureChannel(mkChannel('m', 'x2', { kind: 'expr', source: 'f * 2' }));
-    expect(plotEngine.getTail('m', 100).v.length).toBe(0);
+    plotEngine.ensureChannel(mkChannel('g', 'g', { kind: 'field', name: 'g' }));
+    plotEngine.ensureChannel(mkChannel('m', 'x2', { kind: 'expr', source: 'f * 2 + g' }));
+    expect([...plotEngine.getTail('m', 100).v]).toEqual([12, 14]);
     plotEngine.ingestPackets([mkPacket(2, [mkField('f', 3)])]);
-    expect(plotEngine.lastValue('m')).toBe(6);
+    expect(plotEngine.lastValue('m')).toBe(16);
   });
 
   it('rebuilds the ring when the source changes', () => {
@@ -298,5 +302,136 @@ describe('depth + queries', () => {
       plotEngine.ensureChannel(mkChannel(`c${i}`, `f${i}`, { kind: 'meta', metric: 'length' }));
     }
     expect(plotEngine.channelCount).toBe(MAX_ENGINE_CHANNELS);
+  });
+});
+
+describe('Step 2 performance + accuracy features', () => {
+  it('multiple meta:rate channels report identical accurate 1s byte rates without doubling', () => {
+    plotEngine.ensureChannel(mkChannel('r1', 'rate1', { kind: 'meta', metric: 'rate' }));
+    plotEngine.ensureChannel(mkChannel('r2', 'rate2', { kind: 'meta', metric: 'rate' }));
+    plotEngine.ensureChannel(mkChannel('r3', 'rate3', { kind: 'meta', metric: 'rate' }));
+    plotEngine.ingestPackets([
+      mkPacket(0, [], { length: 20 }),
+      mkPacket(400_000, [], { length: 30 }),
+      mkPacket(800_000, [], { length: 10 }),
+      mkPacket(1_500_000, [], { length: 5 }), // t=0 and t=400k age out -> 10 + 5 = 15
+    ]);
+    expect(plotEngine.lastValue('r1')).toBe(15);
+    expect(plotEngine.lastValue('r2')).toBe(15);
+    expect(plotEngine.lastValue('r3')).toBe(15);
+    expect([...plotEngine.getTail('r1', 10).v]).toEqual([20, 50, 60, 15]);
+    expect([...plotEngine.getTail('r2', 10).v]).toEqual([20, 50, 60, 15]);
+  });
+
+  it('extracts array elements (samples[0], etc.) and bitmask fields in a single pass', () => {
+    plotEngine.ensureChannel(mkChannel('s0', 's0', { kind: 'field', name: 'samples[0]' }));
+    plotEngine.ensureChannel(mkChannel('s2', 's2', { kind: 'field', name: 'samples[2]' }));
+    plotEngine.ensureChannel(mkChannel('csv1', 'csv1', { kind: 'field', name: 'vec[1]' }));
+    plotEngine.ensureChannel(mkChannel('bm', 'bm', { kind: 'field', name: 'status' }));
+
+    const bitmaskField = { ...mkField('status', 7), bitmask: 0x07 } as DissectedField & { bitmask: number };
+    const nativeArrayField = { ...mkField('vec', '0'), decodedValue: [100, 200, 300] as unknown as string };
+
+    plotEngine.ingestPackets([
+      mkPacket(10, [mkField('samples', '[12, 34, 56, 78]'), nativeArrayField, bitmaskField]),
+      mkPacket(20, [mkField('samples', '9, 8, 7'), nativeArrayField, bitmaskField]),
+    ]);
+
+    expect([...plotEngine.getTail('s0', 10).v]).toEqual([12, 9]);
+    expect([...plotEngine.getTail('s2', 10).v]).toEqual([56, 7]);
+    expect([...plotEngine.getTail('csv1', 10).v]).toEqual([200, 200]);
+    expect([...plotEngine.getTail('bm', 10).v]).toEqual([7, 7]);
+    expect(plotEngine.catalogEntry('samples[0]')?.lastValue).toBe(9);
+    expect(plotEngine.catalogEntry('samples[2]')?.lastValue).toBe(7);
+    expect(plotEngine.catalogEntry('status')?.lastValue).toBe(7);
+  });
+
+  it('getSeriesScratch reuses per-channel scratch buffers and computes exact bounds', () => {
+    plotEngine.ensureChannel(mkChannel('c1', 'a', { kind: 'field', name: 'a' }));
+    plotEngine.ensureChannel(mkChannel('c2', 'b', { kind: 'field', name: 'b' }));
+    plotEngine.ingestPackets(
+      Array.from({ length: 500 }, (_, i) =>
+        mkPacket(i * 10, [mkField('a', i === 250 ? 999 : i), mkField('b', -i)])
+      )
+    );
+
+    const s1a = plotEngine.getSeriesScratch('c1', 0, 5000, 20);
+    const s2 = plotEngine.getSeriesScratch('c2', 0, 5000, 20);
+    // Multi-channel queries must not clobber s1a's buffers before use.
+    expect(s1a.min).toBe(0);
+    expect(s1a.max).toBe(999);
+    expect(s2.min).toBe(-499);
+    expect(s2.max).toBe(0);
+
+    const expected = plotEngine.getSeries('c1', 0, 5000, 20);
+    expect(s1a.count).toBe(expected.length);
+    for (let i = 0; i < s1a.count; i++) {
+      expect(s1a.t[i]).toBe(expected[i].t);
+      expect(s1a.v[i]).toBe(expected[i].v);
+    }
+
+    const s1b = plotEngine.getSeriesScratch('c1', 0, 5000, 20);
+    expect(s1b.t).toBe(s1a.t);
+    expect(s1b.v).toBe(s1a.v);
+  });
+
+  it('getCachedSpectrum caches by (id, fftSize, window) and invalidates when data changes', () => {
+    plotEngine.ensureChannel(mkChannel('c1', 'sig', { kind: 'field', name: 'sig' }));
+    const fs = 1000; // 1000 Hz -> 1000 µs per sample
+    const pkts = Array.from({ length: 128 }, (_, i) =>
+      mkPacket(i * 1000, [mkField('sig', Math.sin((2 * Math.PI * 125 * i) / fs))])
+    );
+    plotEngine.ingestPackets(pkts);
+
+    const spec1 = plotEngine.getCachedSpectrum('c1', 128, 'hann');
+    const spec2 = plotEngine.getCachedSpectrum('c1', 128, 'hann');
+    expect(spec1).not.toBeNull();
+    expect(spec2).toBe(spec1); // cache hit returns identical object
+    expect(spec1!.sampleRateHz).toBeCloseTo(1000, 4);
+    expect(spec1!.peakHz).toBeCloseTo(125, 4);
+    expect(spec1!.peakDb).toBeCloseTo(0, 1);
+
+    const rectSpec = plotEngine.getCachedSpectrum('c1', 128, 'rect');
+    expect(rectSpec).not.toBe(spec1);
+    expect(rectSpec!.peakHz).toBeCloseTo(125, 4);
+
+    // Appending a new packet updates length/tMax and invalidates cache.
+    plotEngine.ingestPackets([mkPacket(128_000, [mkField('sig', 0)])]);
+    const spec3 = plotEngine.getCachedSpectrum('c1', 128, 'hann');
+    expect(spec3).not.toBe(spec1);
+  });
+
+  it('getAlignedXy aligns asynchronous channels by interpolated timestamp inside overlapping range', () => {
+    plotEngine.ensureChannel(mkChannel('x', 'x', { kind: 'field', name: 'x' }));
+    plotEngine.ensureChannel(mkChannel('y', 'y', { kind: 'field', name: 'y' }));
+
+    // X sampled at t = 0, 100, 200; Y sampled at t = 50, 100, 150, 250.
+    // Overlap is [50, 200]. Within [50, 200]: X has t=100,200 (count 2); Y has t=50,100,150 (count 3).
+    // Y drives: at t=50 -> X=5, Y=50; at t=100 -> X=10, Y=100; at t=150 -> X=15, Y=150.
+    plotEngine.ingestPackets([
+      mkPacket(0, [mkField('x', 0)]),
+      mkPacket(50, [mkField('y', 50)]),
+      mkPacket(100, [mkField('x', 10), mkField('y', 100)]),
+      mkPacket(150, [mkField('y', 150)]),
+      mkPacket(200, [mkField('x', 20)]),
+      mkPacket(250, [mkField('y', 250)]),
+    ]);
+
+    const aligned = plotEngine.getAlignedXy('x', 'y', 100);
+    expect(aligned.count).toBe(3);
+    expect([...aligned.xs.subarray(0, aligned.count)]).toEqual([5, 10, 15]);
+    expect([...aligned.ys.subarray(0, aligned.count)]).toEqual([50, 100, 150]);
+  });
+
+  it('exposes getDataVersion() and getChannelRing()', () => {
+    const v0 = plotEngine.getDataVersion();
+    plotEngine.ensureChannel(mkChannel('c1', 'f', { kind: 'field', name: 'f' }));
+    const v1 = plotEngine.getDataVersion();
+    expect(v1).toBeGreaterThan(v0);
+    expect(plotEngine.getChannelRing('c1')).toBeDefined();
+    expect(plotEngine.getChannelRing('missing')).toBeUndefined();
+    plotEngine.ingestPackets([mkPacket(0, [mkField('f', 42)])]);
+    expect(plotEngine.getDataVersion()).toBeGreaterThan(v1);
+    expect(plotEngine.getChannelRing('c1')?.lastV).toBe(42);
   });
 });

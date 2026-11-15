@@ -6,6 +6,14 @@
 
 export class ExprError extends Error {}
 
+const CONSTS: Record<string, number> = {
+  PI: Math.PI,
+  E: Math.E,
+  TAU: Math.PI * 2,
+};
+
+export const EXPR_CONSTS = Object.keys(CONSTS);
+
 const FUNCS: Record<string, (...args: number[]) => number> = {
   abs: Math.abs,
   min: (...a) => Math.min(...a),
@@ -17,6 +25,11 @@ const FUNCS: Record<string, (...args: number[]) => number> = {
   asin: Math.asin,
   acos: Math.acos,
   atan: Math.atan,
+  atan2: Math.atan2,
+  hypot: Math.hypot,
+  deg: (radVal: number) => (radVal * 180) / Math.PI,
+  rad: (degVal: number) => (degVal * Math.PI) / 180,
+  clamp: (x: number, lo: number, hi: number) => Math.min(hi, Math.max(lo, x)),
   ln: Math.log,
   log10: Math.log10,
   log2: Math.log2,
@@ -196,9 +209,33 @@ class Parser {
         }
         const close = this.eat();
         if (close.t !== 'rp') throw new ExprError(`expected ')' after ${name}(...)`);
-        const fn = FUNCS[name];
+        const fn = Object.prototype.hasOwnProperty.call(FUNCS, name) ? FUNCS[name] : undefined;
         if (!fn) throw new ExprError(`unknown function '${name}'`);
-        return (v) => fn(...args.map((a) => a(v)));
+        if (args.length === 0) return () => fn();
+        if (args.length === 1) {
+          const a0 = args[0];
+          return (v) => fn(a0(v));
+        }
+        if (args.length === 2) {
+          const a0 = args[0];
+          const a1 = args[1];
+          return (v) => fn(a0(v), a1(v));
+        }
+        if (args.length === 3) {
+          const a0 = args[0];
+          const a1 = args[1];
+          const a2 = args[2];
+          return (v) => fn(a0(v), a1(v), a2(v));
+        }
+        const scratch = new Array<number>(args.length);
+        return (v) => {
+          for (let i = 0; i < args.length; i++) scratch[i] = args[i](v);
+          return fn(...scratch);
+        };
+      }
+      if (Object.prototype.hasOwnProperty.call(CONSTS, name)) {
+        const c = CONSTS[name];
+        return () => c;
       }
       this.refs.add(name);
       return (v) => {

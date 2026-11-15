@@ -1,6 +1,6 @@
 // Safe expression evaluator verification: precedence, functions, refs, errors.
 import { describe, it, expect } from 'vitest';
-import { compileExpr, EXPR_FUNCS } from './expr';
+import { compileExpr, EXPR_FUNCS, EXPR_CONSTS } from './expr';
 
 const evalOk = (src: string, vars: Record<string, number> = {}): number => {
   const res = compileExpr(src);
@@ -73,5 +73,28 @@ describe('compileExpr', () => {
     const res = compileExpr('Math');
     expect(res.ok).toBe(true); // parses as a variable reference
     if (res.ok) expect(res.fn({})).toBeNaN(); // but resolves to NaN, not the object
+  });
+
+  it('supports built-in constants PI, E, TAU without adding them to refs', () => {
+    const res = compileExpr('sin(PI / 2) + ln(E) + TAU / PI + x');
+    expect(res.ok).toBe(true);
+    if (res.ok) {
+      expect(res.refs).toEqual(['x']);
+      expect(res.fn({ x: 1 })).toBeCloseTo(1 + 1 + 2 + 1, 12);
+    }
+    expect(EXPR_CONSTS).toEqual(['PI', 'E', 'TAU']);
+  });
+
+  it('supports atan2, hypot, deg, rad, and clamp', () => {
+    expect(evalOk('atan2(1, 1)')).toBeCloseTo(Math.PI / 4, 12);
+    expect(evalOk('hypot(3, 4)')).toBeCloseTo(5, 12);
+    expect(evalOk('deg(PI)')).toBeCloseTo(180, 12);
+    expect(evalOk('rad(180)')).toBeCloseTo(Math.PI, 12);
+    expect(evalOk('deg(rad(42))')).toBeCloseTo(42, 12);
+    expect(evalOk('clamp(-5, 0, 10)')).toBe(0);
+    expect(evalOk('clamp(5, 0, 10)')).toBe(5);
+    expect(evalOk('clamp(25, 0, 10)')).toBe(10);
+    expect(evalOk('min(4, 3, 2, 1)')).toBe(1);
+    expect(EXPR_FUNCS).toEqual(expect.arrayContaining(['atan2', 'hypot', 'deg', 'rad', 'clamp']));
   });
 });

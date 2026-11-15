@@ -3,6 +3,7 @@
 // payloads, and flash-yield interval replace-any semantics.
 import { describe, it, expect, beforeEach, vi, afterEach } from 'vitest';
 import { useWorkstationStore } from './useWorkstationStore';
+import { useSettingsStore } from './useSettingsStore';
 import { PacketRow } from '../types';
 
 const makePacket = (overrides: Partial<PacketRow> = {}): PacketRow => ({
@@ -294,6 +295,92 @@ describe('workstation store', () => {
       expect(afterStep.selectedPacket?.timestampUs).toBe(1000);
       expect(afterStep.hoveredByteOffset).toBeNull();
       expect(afterStep.selectedByteOffset).toBeNull();
+    });
+  });
+
+  describe('scope logic flags and bounded ring buffers', () => {
+    it('extracts digital logic flags from flag-like fields and packet direction/error fallback', () => {
+      const s = useWorkstationStore.getState();
+
+      // Numeric flags field: bit 0, bit 1, bit 2
+      s.addPacket(
+        makePacket({
+          timestampUs: 1000,
+          dissectedFields: [
+            { name: 'flags', type: 'uint8', offset: 0, length: 1, rawHex: '05', decodedValue: 5 },
+          ],
+        })
+      );
+      // Binary string flags field
+      s.addPacket(
+        makePacket({
+          timestampUs: 2000,
+          dissectedFields: [
+            { name: 'gpio_state', type: 'bitfield', offset: 0, length: 1, rawHex: '03', decodedValue: '0b011' },
+          ],
+        })
+      );
+      // String status/mode containing FAULT or ERR sets bit 2
+      s.addPacket(
+        makePacket({
+          timestampUs: 3000,
+          dissectedFields: [
+            { name: 'status', type: 'enum', offset: 0, length: 1, rawHex: '02', decodedValue: 'ERR_CRC' },
+          ],
+        })
+      );
+      // Fallback when no flags/status/state/mode/gpio field exists: RX normal, TX, and error/fault
+      s.addPacketBatch([
+        makePacket({ timestampUs: 4000, direction: 'RX', hasError: false, dissectedFields: [] }),
+        makePacket({ timestampUs: 5000, direction: 'TX', hasError: false, dissectedFields: [] }),
+        makePacket({ timestampUs: 6000, direction: 'RX', hasError: true, dissectedFields: [] }),
+        makePacket({ timestampUs: 7000, direction: 'RX', hasError: false, isFaultInjected: true, dissectedFields: [] }),
+      ]);
+
+      const { scopeSamples } = useWorkstationStore.getState();
+      expect(scopeSamples).toHaveLength(7);
+      expect(scopeSamples[0].flags).toEqual([1, 0, 1]);
+      expect(scopeSamples[1].flags).toEqual([1, 1, 0]);
+      expect(scopeSamples[2].flags).toEqual([0, 0, 1]);
+      expect(scopeSamples[3].flags).toEqual([1, 0, 0]);
+      expect(scopeSamples[4].flags).toEqual([1, 1, 0]);
+      expect(scopeSamples[5].flags).toEqual([1, 0, 1]);
+      expect(scopeSamples[6].flags).toEqual([1, 0, 1]);
+    });
+
+    it('keeps packets, scopeSamples, and traceSeries bounded across single and batch inserts', () => {
+      const prevSettings = useSettingsStore.getState().settings;
+      useSettingsStore.setState({
+        settings: { ...prevSettings, maxPackets: 3, maxScopeSamples: 3 },
+      });
+      let traceId = '';
+      try {
+        const s = useWorkstationStore.getState();
+        traceId = s.bindScopeTrace({ name: 'v_batt_mv', unit: 'mV' });
+        const mk = (t: number, v: number) =>
+          makePacket({
+            timestampUs: t,
+            dissectedFields: [
+              { name: 'v_batt_mv', type: 'uint16', offset: 0, length: 2, rawHex: '', decodedValue: v },
+            ],
+          });
+
+        s.addPacket(mk(100, 7000));
+        s.addPacket(mk(200, 7100));
+        s.addPacket(mk(300, 7200));
+        s.addPacket(mk(400, 7300));
+        expect(useWorkstationStore.getState().packets.map((p) => p.timestampUs)).toEqual([200, 300, 400]);
+        expect(useWorkstationStore.getState().scopeSamples.map((p) => p.timestampUs)).toEqual([200, 300, 400]);
+        expect(useWorkstationStore.getState().traceSeries[traceId].map((p) => p.value)).toEqual([7100, 7200, 7300]);
+
+        s.addPacketBatch([mk(500, 7400), mk(600, 7500)]);
+        expect(useWorkstationStore.getState().packets.map((p) => p.timestampUs)).toEqual([400, 500, 600]);
+        expect(useWorkstationStore.getState().scopeSamples.map((p) => p.timestampUs)).toEqual([400, 500, 600]);
+        expect(useWorkstationStore.getState().traceSeries[traceId].map((p) => p.value)).toEqual([7300, 7400, 7500]);
+      } finally {
+        if (traceId) useWorkstationStore.getState().unbindScopeTrace(traceId);
+        useSettingsStore.setState({ settings: prevSettings });
+      }
     });
   });
 });

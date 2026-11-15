@@ -293,6 +293,164 @@ describe('mergePlotConfig', () => {
     expect(cfg.charts[0].spanUs).toBe(42_000);
     expect(cfg.activeChartId).toBe('chart-r');
     expect(cfg.plotDepth).toBe(120_000);
+    expect(cfg.layoutMode).toBe('single');
+    expect(cfg.gpuAccel).toBe(true);
+    expect(cfg.charts[0].histSampleMode).toBe('window');
+    expect(cfg.charts[0].trigger?.position).toBe(0.5);
+  });
+
+  it('sanitizes studio preferences, triggers, y-cursors, and histSampleMode', () => {
+    const cfg = mergePlotConfig({
+      version: 1,
+      layoutMode: 'grid',
+      gpuAccel: false,
+      charts: [
+        {
+          id: 'c1',
+          trigger: { enabled: true, sourceId: 'ch1', mode: 'SINGLE', slope: 'EITHER', level: 3.3, position: 2 },
+          y1Cursor: -1.5,
+          y2Cursor: 'bad',
+          histSampleMode: 'tail',
+        },
+      ],
+    });
+    expect(cfg.layoutMode).toBe('grid');
+    expect(cfg.gpuAccel).toBe(false);
+    expect(cfg.charts[0].trigger).toEqual({
+      enabled: true,
+      sourceId: 'ch1',
+      mode: 'SINGLE',
+      slope: 'EITHER',
+      level: 3.3,
+      position: 1,
+    });
+    expect(cfg.charts[0].y1Cursor).toBe(-1.5);
+    expect(cfg.charts[0].y2Cursor).toBeNull();
+    expect(cfg.charts[0].histSampleMode).toBe('tail');
+  });
+});
+
+describe('studio preferences, triggers, y-cursors, and fast viewport', () => {
+  afterEach(() => {
+    vi.useRealTimers();
+  });
+
+  it('updates and persists layoutMode and gpuAccel', () => {
+    expect(usePlotStore.getState().layoutMode).toBe('single');
+    expect(usePlotStore.getState().gpuAccel).toBe(true);
+
+    usePlotStore.getState().setLayoutMode('stacked');
+    usePlotStore.getState().setGpuAccel(false);
+
+    const s = usePlotStore.getState();
+    expect(s.layoutMode).toBe('stacked');
+    expect(s.gpuAccel).toBe(false);
+
+    const blob = JSON.parse(localStorage.getItem(KEY)!);
+    expect(blob.layoutMode).toBe('stacked');
+    expect(blob.gpuAccel).toBe(false);
+  });
+
+  it('updates chart trigger settings, clamps position, and clears on source channel removal', () => {
+    const s = usePlotStore.getState();
+    const chartId = s.charts[0].id;
+    const chId = s.addChannel(chartId, { kind: 'field', name: 'v_batt_mv' })!;
+
+    s.setChartTrigger(chartId, {
+      enabled: true,
+      sourceId: chId,
+      mode: 'NORM',
+      slope: 'FALLING',
+      level: 7400,
+      position: 0.25,
+    });
+    expect(usePlotStore.getState().charts[0].trigger).toEqual({
+      enabled: true,
+      sourceId: chId,
+      mode: 'NORM',
+      slope: 'FALLING',
+      level: 7400,
+      position: 0.25,
+    });
+
+    // Clamps position to [0, 1] while keeping other fields
+    usePlotStore.getState().setChartTrigger(chartId, { position: -0.5 });
+    expect(usePlotStore.getState().charts[0].trigger?.position).toBe(0);
+
+    // Removing the trigger source channel resets sourceId and disables trigger
+    usePlotStore.getState().removeChannel(chartId, chId);
+    expect(usePlotStore.getState().charts[0].trigger?.sourceId).toBe('');
+    expect(usePlotStore.getState().charts[0].trigger?.enabled).toBe(false);
+  });
+
+  it('sets y1Cursor, y2Cursor, and histSampleMode and persists immediately', () => {
+    const chartId = usePlotStore.getState().charts[0].id;
+    usePlotStore.getState().setYCursors(chartId, 1.25, -2.5);
+    usePlotStore.getState().setHistSampleMode(chartId, 'tail');
+
+    const chart = usePlotStore.getState().charts[0];
+    expect(chart.y1Cursor).toBe(1.25);
+    expect(chart.y2Cursor).toBe(-2.5);
+    expect(chart.histSampleMode).toBe('tail');
+
+    const blob = JSON.parse(localStorage.getItem(KEY)!);
+    expect(blob.charts[0].y1Cursor).toBe(1.25);
+    expect(blob.charts[0].y2Cursor).toBe(-2.5);
+    expect(blob.charts[0].histSampleMode).toBe('tail');
+  });
+
+  it('setChartViewportFast updates state immediately and debounces persistence by 150ms', () => {
+    vi.useFakeTimers();
+    const chartId = usePlotStore.getState().charts[0].id;
+    const beforeSpan = JSON.parse(localStorage.getItem(KEY)!).charts[0].spanUs;
+    expect(beforeSpan).toBe(DEFAULT_SPAN_US);
+
+    usePlotStore.getState().setChartViewportFast(chartId, {
+      spanSec: 2,
+      y1Range: [-10, 10],
+      y2Range: [0, 100],
+      frozenWindow: [1_000, 5_000],
+    });
+
+    // Zustand state updates immediately
+    const c = usePlotStore.getState().charts[0];
+    expect(c.spanUs).toBe(2_000_000);
+    expect(c.y1Min).toBe(-10);
+    expect(c.y1Max).toBe(10);
+    expect(c.y2Min).toBe(0);
+    expect(c.y2Max).toBe(100);
+    expect(c.live).toBe(false);
+    expect(c.frozen).toEqual({ tMinUs: 1_000, tMaxUs: 5_000 });
+
+    // localStorage is not yet written before 150ms
+    expect(JSON.parse(localStorage.getItem(KEY)!).charts[0].spanUs).toBe(DEFAULT_SPAN_US);
+
+    vi.advanceTimersByTime(149);
+    expect(JSON.parse(localStorage.getItem(KEY)!).charts[0].spanUs).toBe(DEFAULT_SPAN_US);
+
+    vi.advanceTimersByTime(1);
+    const persisted = JSON.parse(localStorage.getItem(KEY)!).charts[0];
+    expect(persisted.spanUs).toBe(2_000_000);
+    expect(persisted.y1Min).toBe(-10);
+    expect(persisted.frozen).toEqual({ tMinUs: 1_000, tMaxUs: 5_000 });
+
+    // Auto Y and live resume via null frozenWindow, cancelled by immediate setSpan
+    usePlotStore.getState().setChartViewportFast(chartId, {
+      spanSec: 4,
+      y1Range: 'auto',
+      y2Range: 'auto',
+      frozenWindow: null,
+    });
+    const autoChart = usePlotStore.getState().charts[0];
+    expect(autoChart.y1Min).toBeNull();
+    expect(autoChart.y2Max).toBeNull();
+    expect(autoChart.live).toBe(true);
+    expect(autoChart.frozen).toBeNull();
+
+    // Immediate save clears pending debounce timer so stale value never overwrites
+    usePlotStore.getState().setSpan(chartId, 50_000);
+    vi.advanceTimersByTime(200);
+    expect(JSON.parse(localStorage.getItem(KEY)!).charts[0].spanUs).toBe(50_000);
   });
 });
 

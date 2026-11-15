@@ -3,16 +3,42 @@
 // windows comfortably inside a frame budget. Pure functions, unit-tested
 // against direct DFT and known sinusoids.
 
-/** Periodic Hann window (w[0] = 0, w[n-1] = w[1] ≠ 0, symmetric about n/2). */
+const HANN_CACHE = new Map<number, Float64Array>();
+const TWIDDLE_CACHE = new Map<number, { cosTable: Float64Array; sinTable: Float64Array }>();
+
+/**
+ * Periodic Hann window (w[0] = 0, w[n-1] = w[1] ≠ 0, symmetric about n/2).
+ * Returns a memoized read-only Float64Array — callers must not mutate it.
+ */
 export function hannWindow(n: number): Float64Array {
+  const cached = HANN_CACHE.get(n);
+  if (cached) return cached;
   const w = new Float64Array(n);
   for (let i = 0; i < n; i++) w[i] = 0.5 * (1 - Math.cos((2 * Math.PI * i) / n));
+  if (n >= 0 && n <= 65536) HANN_CACHE.set(n, w);
   return w;
+}
+
+function getStageTwiddles(len: number): { cosTable: Float64Array; sinTable: Float64Array } {
+  const cached = TWIDDLE_CACHE.get(len);
+  if (cached) return cached;
+  const half = len >>> 1;
+  const cosTable = new Float64Array(half);
+  const sinTable = new Float64Array(half);
+  const baseAng = (-2 * Math.PI) / len;
+  for (let k = 0; k < half; k++) {
+    const ang = baseAng * k;
+    cosTable[k] = Math.cos(ang);
+    sinTable[k] = Math.sin(ang);
+  }
+  const entry = { cosTable, sinTable };
+  if (len <= 65536) TWIDDLE_CACHE.set(len, entry);
+  return entry;
 }
 
 /**
  * In-place complex FFT. Length must be a power of two. Bit-reversal
- * permutation followed by the standard butterfly stages.
+ * permutation followed by the standard butterfly stages with cached twiddle tables.
  */
 export function fftRadix2(re: Float64Array, im: Float64Array): void {
   const n = re.length;
@@ -35,26 +61,26 @@ export function fftRadix2(re: Float64Array, im: Float64Array): void {
     }
   }
 
-  // Butterfly stages.
+  // Butterfly stages using memoized cos/sin twiddle tables.
   for (let len = 2; len <= n; len <<= 1) {
-    const ang = (-2 * Math.PI) / len;
-    const wRe = Math.cos(ang);
-    const wIm = Math.sin(ang);
+    const half = len >>> 1;
+    const { cosTable, sinTable } = getStageTwiddles(len);
     for (let i = 0; i < n; i += len) {
-      let curRe = 1;
-      let curIm = 0;
-      for (let k = 0; k < len / 2; k++) {
-        const uRe = re[i + k];
-        const uIm = im[i + k];
-        const vRe = re[i + k + len / 2] * curRe - im[i + k + len / 2] * curIm;
-        const vIm = re[i + k + len / 2] * curIm + im[i + k + len / 2] * curRe;
-        re[i + k] = uRe + vRe;
-        im[i + k] = uIm + vIm;
-        re[i + k + len / 2] = uRe - vRe;
-        im[i + k + len / 2] = uIm - vIm;
-        const nextRe = curRe * wRe - curIm * wIm;
-        curIm = curRe * wIm + curIm * wRe;
-        curRe = nextRe;
+      for (let k = 0; k < half; k++) {
+        const curRe = cosTable[k];
+        const curIm = sinTable[k];
+        const idx1 = i + k;
+        const idx2 = idx1 + half;
+        const uRe = re[idx1];
+        const uIm = im[idx1];
+        const tRe = re[idx2];
+        const tIm = im[idx2];
+        const vRe = tRe * curRe - tIm * curIm;
+        const vIm = tRe * curIm + tIm * curRe;
+        re[idx1] = uRe + vRe;
+        im[idx1] = uIm + vIm;
+        re[idx2] = uRe - vRe;
+        im[idx2] = uIm - vIm;
       }
     }
   }
@@ -83,7 +109,7 @@ export interface Spectrum {
 export function magnitudeSpectrum(
   samples: ArrayLike<number>,
   sampleRateHz: number,
-  opts?: { detrend?: boolean }
+  opts?: { detrend?: boolean; window?: 'hann' | 'rect' }
 ): Spectrum {
   let n = 1;
   while (n * 2 <= samples.length) n *= 2;
@@ -92,8 +118,6 @@ export function magnitudeSpectrum(
     return { freqHz: empty, mag: empty, db: empty, peakHz: 0, peakMag: 0 };
   }
 
-  const w = hannWindow(n);
-  // Coherent-gain compensation for the Hann window (Σw/n = 0.5).
   const re = new Float64Array(n);
   const im = new Float64Array(n);
   let mean = 0;
@@ -101,7 +125,13 @@ export function magnitudeSpectrum(
     for (let i = 0; i < n; i++) mean += samples[i];
     mean /= n;
   }
-  for (let i = 0; i < n; i++) re[i] = (samples[i] - mean) * w[i] * 2;
+  if (opts?.window === 'rect') {
+    for (let i = 0; i < n; i++) re[i] = samples[i] - mean;
+  } else {
+    // Coherent-gain compensation for the Hann window (Σw/n = 0.5).
+    const w = hannWindow(n);
+    for (let i = 0; i < n; i++) re[i] = (samples[i] - mean) * w[i] * 2;
+  }
 
   fftRadix2(re, im);
 

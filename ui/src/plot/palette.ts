@@ -37,10 +37,26 @@ const FALLBACK: PlotPalette = {
   cursor: '#FBBF24',
 };
 
+let cachedKey: string | null = null;
+let cachedPalette: PlotPalette | null = null;
+
+/** Clear cached theme palette (useful when CSS variables change without attribute swap). */
+export const invalidatePlotPalette = (): void => {
+  cachedKey = null;
+  cachedPalette = null;
+};
+
 export const plotPalette = (): PlotPalette => {
-  const cs = getComputedStyle(document.documentElement);
+  if (typeof document === 'undefined' || !document.documentElement) return FALLBACK;
+  const el = document.documentElement;
+  const theme = el.getAttribute('data-bf-theme') ?? '';
+  const mode = el.getAttribute('data-bf-mode') ?? '';
+  const key = `${theme}|${mode}`;
+  if (cachedPalette && cachedKey === key) return cachedPalette;
+
+  const cs = getComputedStyle(el);
   const v = (name: string, fb: string) => cs.getPropertyValue(name).trim() || fb;
-  return {
+  const pal: PlotPalette = {
     canvas: v('--color-bf-canvas', FALLBACK.canvas),
     gridMinor: v('--color-bf-line-soft', FALLBACK.gridMinor),
     grid: v('--color-bf-line', FALLBACK.grid),
@@ -56,6 +72,9 @@ export const plotPalette = (): PlotPalette => {
     math: v('--color-bf-math', FALLBACK.math),
     cursor: v('--color-bf-amber', FALLBACK.cursor),
   };
+  cachedKey = key;
+  cachedPalette = pal;
+  return pal;
 };
 
 /**

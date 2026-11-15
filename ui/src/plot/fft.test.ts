@@ -60,6 +60,23 @@ describe('fftRadix2', () => {
     expect(() => fftRadix2(re, im)).not.toThrow();
     expect(re[0]).toBe(5);
   });
+
+  it('matches direct DFT on 1024-point input across repeated memoized calls', () => {
+    const n = 1024;
+    const inRe = Array.from({ length: n }, (_, i) => Math.cos((2 * Math.PI * 19 * i) / n) + 0.3 * Math.sin((2 * Math.PI * 113 * i) / n));
+    const inIm = Array.from({ length: n }, (_, i) => 0.25 * Math.sin((2 * Math.PI * 7 * i) / n));
+    const { outRe, outIm } = dft(inRe, inIm);
+
+    for (let pass = 0; pass < 2; pass++) {
+      const re = Float64Array.from(inRe);
+      const im = Float64Array.from(inIm);
+      fftRadix2(re, im);
+      for (let k = 0; k < n; k++) {
+        expect(Math.abs(re[k] - outRe[k])).toBeLessThan(1e-8);
+        expect(Math.abs(im[k] - outIm[k])).toBeLessThan(1e-8);
+      }
+    }
+  });
 });
 
 describe('hannWindow', () => {
@@ -71,6 +88,8 @@ describe('hannWindow', () => {
     expect(w[4]).toBeCloseTo(w[12], 12);
     const sum = [...w].reduce((a, b) => a + b, 0);
     expect(sum).toBeCloseTo(8, 6); // Σ Hann = n/2
+    // Memoized read-only instance returned on repeat calls.
+    expect(hannWindow(16)).toBe(w);
   });
 });
 
@@ -130,5 +149,15 @@ describe('magnitudeSpectrum', () => {
     const spec = magnitudeSpectrum([1], 1000);
     expect(spec.freqHz.length).toBe(0);
     expect(spec.peakHz).toBe(0);
+  });
+
+  it('supports rectangular window with exact on-bin unit amplitude', () => {
+    const fs = 1000;
+    const n = 256;
+    const samples = Array.from({ length: n }, (_, i) => Math.sin((2 * Math.PI * 125 * i) / fs));
+    const spec = magnitudeSpectrum(samples, fs, { detrend: true, window: 'rect' });
+    expect(spec.peakHz).toBeCloseTo(125, 6);
+    expect(spec.peakMag).toBeCloseTo(1.0, 6);
+    expect(spec.db[32]).toBeCloseTo(0, 4);
   });
 });

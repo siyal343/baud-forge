@@ -21,6 +21,7 @@ pub mod session;
 pub mod slab;
 pub mod symbolize;
 pub mod tail;
+pub mod telemetry;
 pub mod xmodem;
 pub use contract as ui;
 pub mod validate;

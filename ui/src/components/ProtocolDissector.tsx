@@ -1,6 +1,7 @@
 import React from 'react';
 import { useShallow } from 'zustand/react/shallow';
 import { useWorkstationStore } from '../store/useWorkstationStore';
+import { usePlotStore } from '../store/usePlotStore';
 import { toast } from '../store/useToastStore';
 import { DissectedField } from '../types';
 import { CheckCircle2, AlertTriangle, Layers, LineChart } from 'lucide-react';
@@ -157,6 +158,22 @@ export const ProtocolDissector: React.FC = () => {
                         // Spec 5.4: bind the field to a scope trace lane; the
                         // store feeds it from every frame that carries the field.
                         bindScopeTrace({ name: f.name, unit: f.unit });
+                        const plotState = usePlotStore.getState();
+                        const activeChart =
+                          plotState.charts.find((c) => c.id === plotState.activeChartId) ??
+                          plotState.charts[0];
+                        if (
+                          activeChart &&
+                          !activeChart.channels.some(
+                            (ch) => ch.source.kind === 'field' && ch.source.name === f.name
+                          )
+                        ) {
+                          plotState.addChannel(
+                            activeChart.id,
+                            { kind: 'field', name: f.name },
+                            { label: f.name, unit: f.unit }
+                          );
+                        }
                         toast.success(
                           'Field bound to scope',
                           `${f.name} now plots as a trace lane (open the Telemetry Oscilloscope).`

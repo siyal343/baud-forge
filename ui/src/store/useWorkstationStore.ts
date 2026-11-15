@@ -166,11 +166,70 @@ const withUniqueSeqId = (pkt: PacketRow): PacketRow => ({ ...pkt, seqId: nextSeq
 
 /** First numeric value of a named dissected field, or null when absent. */
 const FIELD_NUMBER = /-?\d+(?:\.\d+)?/;
+const FLAG_FIELD_RE = /^(flags|status|state|mode|gpio)/i;
+const FAULT_TEXT_RE = /FAULT|ERR/i;
+
 const findFieldValue = (pkt: PacketRow, name: string): number | null => {
   const field = (pkt.dissectedFields ?? []).find((f) => f.name === name);
   if (!field) return null;
   const match = FIELD_NUMBER.exec(String(field.decodedValue));
   return match ? parseFloat(match[0]) : null;
+};
+
+const parseFlagBits = (val: unknown): number | null => {
+  if (typeof val === 'number') return Number.isFinite(val) ? Math.trunc(val) : null;
+  if (typeof val === 'string') {
+    const bin = /\b0b([01]+)\b/i.exec(val);
+    if (bin) return parseInt(bin[1], 2);
+    const hex = /\b0x([0-9a-f]+)\b/i.exec(val);
+    if (hex) return parseInt(hex[1], 16);
+    const dec = /-?\d+/.exec(val);
+    if (dec) return parseInt(dec[0], 10);
+  }
+  return null;
+};
+
+const extractLogicFlags = (pkt: PacketRow): [number, number, number] => {
+  for (const f of pkt.dissectedFields ?? []) {
+    if (!FLAG_FIELD_RE.test(f.name)) continue;
+    const raw = f.decodedValue;
+    const isFaultStr = typeof raw === 'string' && FAULT_TEXT_RE.test(raw);
+    const v = parseFlagBits(raw);
+    if (v !== null || isFaultStr) {
+      const bits = v ?? 0;
+      return [
+        bits & 1 ? 1 : 0,
+        bits & 2 ? 1 : 0,
+        (bits & 4) || isFaultStr ? 1 : 0,
+      ];
+    }
+  }
+  return [
+    1,
+    pkt.direction === 'TX' ? 1 : 0,
+    pkt.hasError || pkt.isFaultInjected ? 1 : 0,
+  ];
+};
+
+/** Single-allocation bounded append for rolling ring arrays. */
+const appendBounded = <T>(arr: readonly T[], item: T, max: number): T[] => {
+  if (max <= 0) return [];
+  const len = arr.length;
+  const next = len >= max ? arr.slice(len - max + 1) : arr.slice();
+  next.push(item);
+  return next;
+};
+
+/** Single-allocation bounded batch append for rolling ring arrays. */
+const concatBounded = <T>(arr: readonly T[], items: readonly T[], max: number): T[] => {
+  if (max <= 0) return [];
+  if (items.length >= max) return items.slice(items.length - max);
+  const keep = Math.min(arr.length, max - items.length);
+  const start = arr.length - keep;
+  const next = new Array<T>(keep + items.length);
+  for (let i = 0; i < keep; i++) next[i] = arr[start + i];
+  for (let i = 0; i < items.length; i++) next[keep + i] = items[i];
+  return next;
 };
 
 /**
@@ -199,7 +258,7 @@ const scopeSampleFromPacket = (
     timestampUs: pkt.timestampUs,
     vBattMv: vBatt ?? prev?.vBattMv ?? 0,
     gyroZ: gyroZ ?? prev?.gyroZ ?? 0,
-    flags: [0, 0, 0],
+    flags: extractLogicFlags(pkt),
     mode: prev?.mode ?? 0,
   };
 };
@@ -719,32 +778,33 @@ export const useWorkstationStore = create<WorkstationState>((set, get) => ({
     rateTimestamps.push(Date.now());
     if (rateTimestamps.length > 400) rateTimestamps.splice(0, rateTimestamps.length - 400);
     set((state) => {
+      const maxPkts = maxPackets();
+      const maxScope = maxScopeSamples();
       // Per-field trace lanes (spec 5.4): feed every bound series whose field
       // this frame carries.
       let traceSeries = state.traceSeries;
       if (state.traceBindings.length) {
-        const next: Record<string, Array<{ tUs: number; value: number }>> = { ...traceSeries };
+        let next: Record<string, Array<{ tUs: number; value: number }>> | null = null;
         for (const binding of state.traceBindings) {
           const value = findFieldValue(pkt, binding.name);
           if (value === null) continue;
-          const series = [...(next[binding.id] ?? []), { tUs: pkt.timestampUs, value }];
-          next[binding.id] =
-            series.length > maxScopeSamples() ? series.slice(series.length - maxScopeSamples()) : series;
+          if (!next) next = { ...traceSeries };
+          next[binding.id] = appendBounded(
+            next[binding.id] ?? [],
+            { tUs: pkt.timestampUs, value },
+            maxScope
+          );
         }
-        traceSeries = next;
+        if (next) traceSeries = next;
       }
-      const newPackets = state.packets.length >= maxPackets()
-        ? [...state.packets.slice(state.packets.length - maxPackets() + 1), pkt]
-        : [...state.packets, pkt];
+      const newPackets = appendBounded(state.packets, pkt, maxPkts);
 
       // Scope data source: synthetic generator in simulation mode, decoded
       // payload fields when frames come from the real engine.
       const scopePt = state.isSimulated
         ? generateScopeSample(pkt.timestampUs)
         : scopeSampleFromPacket(pkt, state.scopeSamples[state.scopeSamples.length - 1] ?? null);
-      const newScope = state.scopeSamples.length >= maxScopeSamples()
-        ? [...state.scopeSamples.slice(state.scopeSamples.length - maxScopeSamples() + 1), scopePt]
-        : [...state.scopeSamples, scopePt];
+      const newScope = appendBounded(state.scopeSamples, scopePt, maxScope);
 
       return {
         packets: newPackets,
@@ -766,10 +826,9 @@ export const useWorkstationStore = create<WorkstationState>((set, get) => ({
     for (let i = 0; i < batch.length; i++) rateTimestamps.push(now);
     if (rateTimestamps.length > 400) rateTimestamps.splice(0, rateTimestamps.length - 400);
     set((state) => {
-      let combined = state.packets.concat(batch);
-      if (combined.length > maxPackets()) {
-        combined = combined.slice(combined.length - maxPackets());
-      }
+      const maxPkts = maxPackets();
+      const maxScope = maxScopeSamples();
+      const combined = concatBounded(state.packets, batch, maxPkts);
 
       // Sample scope points from the batch's frames (decoded payloads in HW
       // mode). Every frame feeds the lanes and the scope: the old slice(-10)
@@ -789,24 +848,23 @@ export const useWorkstationStore = create<WorkstationState>((set, get) => ({
       // Per-field trace lanes from engine batches.
       let traceSeries = state.traceSeries;
       if (state.traceBindings.length) {
-        const next: Record<string, Array<{ tUs: number; value: number }>> = { ...traceSeries };
+        let next: Record<string, Array<{ tUs: number; value: number }>> | null = null;
         for (const binding of state.traceBindings) {
-          const points = batchFrames
-            .map((p) => ({ tUs: p.timestampUs, value: findFieldValue(p, binding.name) }))
-            .filter((pt): pt is { tUs: number; value: number } => pt.value !== null);
+          const points: Array<{ tUs: number; value: number }> = [];
+          for (const p of batchFrames) {
+            const value = findFieldValue(p, binding.name);
+            if (value !== null) points.push({ tUs: p.timestampUs, value });
+          }
           if (!points.length) continue;
-          const series = [...(next[binding.id] ?? []), ...points];
-          next[binding.id] =
-            series.length > maxScopeSamples() ? series.slice(series.length - maxScopeSamples()) : series;
+          if (!next) next = { ...traceSeries };
+          next[binding.id] = concatBounded(next[binding.id] ?? [], points, maxScope);
         }
-        traceSeries = next;
+        if (next) traceSeries = next;
       }
-      let combinedScope = state.scopeSamples.concat(newScopeSamples);
-      if (combinedScope.length > maxScopeSamples()) {
-        combinedScope = combinedScope.slice(combinedScope.length - maxScopeSamples());
-      }
+      const combinedScope = concatBounded(state.scopeSamples, newScopeSamples, maxScope);
 
-      const addedBytes = batch.reduce((sum, p) => sum + p.length, 0);
+      let addedBytes = 0;
+      for (const p of batch) addedBytes += p.length;
       const lastPkt = batch[batch.length - 1];
 
       return {
