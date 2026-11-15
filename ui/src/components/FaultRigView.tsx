@@ -107,16 +107,16 @@ export const FaultRigView: React.FC = () => {
       <div className="h-[24px] bg-bf-subpanel border-b border-bf-line px-2.5 flex items-center justify-between shrink-0">
         <div className="flex items-center gap-1.5">
           <ShieldAlert className="w-3 h-3 text-bf-fault" />
-          <span className="font-mono font-semibold text-bf-body tracking-wide text-[10.5px]">
+          <span className="font-mono font-semibold text-bf-body tracking-wide text-[11px]">
             HIL FAULT INJECTION RIG
           </span>
-          <span className="text-[9.5px] px-1 py-0.2 rounded bg-bf-hover text-bf-mute font-mono border border-bf-line">
+          <span className="text-[10px] px-1 py-0.2 rounded bg-bf-hover text-bf-mute font-mono border border-bf-line">
             HARDWARE IN THE LOOP
           </span>
         </div>
 
         {statusMsg && (
-          <span className="text-[10px] font-mono text-bf-cyan animate-pulse">
+          <span className="text-[11px] font-mono text-bf-cyan animate-pulse">
             {statusMsg}
           </span>
         )}
@@ -137,12 +137,12 @@ export const FaultRigView: React.FC = () => {
             <ShieldCheck className="w-4 h-4 text-bf-ok" />
           )}
           <div className="flex flex-col">
-            <span className="font-mono font-bold text-[11px]">
+            <span className="font-mono font-bold text-[12px]">
               {isFaultArmed
                 ? '⚠ MASTER FAULT INTERLOCK: ARMED (TRANSMITTING ERRORS)'
                 : 'MASTER FAULT INTERLOCK: DISARMED (SAFE LINK)'}
             </span>
-            <span className="text-[9.5px] text-bf-faint">
+            <span className="text-[11px] text-bf-faint">
               {isFaultArmed
                 ? 'Target hardware will receive deliberate frame mutations, dropped packets and CRC errors.'
                 : 'Serial packets pass unaltered without mutation.'}
@@ -158,7 +158,7 @@ export const FaultRigView: React.FC = () => {
                 ? 'Disarm fault injection interlock and restore clean serial wire'
                 : 'Arm hardware fault injection rig to mutate outgoing wire bytes'
             }
-            className={`flex items-center gap-1.5 px-3 py-1 rounded font-mono text-[10.5px] font-bold transition-all ${
+            className={`flex items-center gap-1.5 px-3 py-1 rounded font-mono text-[11px] font-bold transition-all ${
               isFaultArmed
                 ? 'bg-bf-fault hover:bg-bf-fault-hi text-white shadow-[0_0_8px_rgb(var(--bf-fault-rgb)/0.5)]'
                 : 'bg-bf-subpanel border border-bf-line text-bf-mute hover:text-white hover:border-bf-ok'
@@ -183,7 +183,7 @@ export const FaultRigView: React.FC = () => {
       <div className="flex-1 overflow-auto p-2 font-mono flex flex-col gap-3">
         {/* Fault Primitive Selector */}
         <div className="flex flex-col gap-1.5">
-          <span className="text-bf-faint text-[10px] uppercase tracking-wider">
+          <span className="text-bf-faint text-[11px] uppercase tracking-wider">
             Select Active Fault Primitive:
           </span>
           <div className="grid grid-cols-5 gap-1.5 bg-bf-subpanel border border-bf-line p-1 rounded">
@@ -197,7 +197,7 @@ export const FaultRigView: React.FC = () => {
               <button
                 key={kind.id}
                 onClick={() => setFaultKind(kind.id as any)}
-                className={`py-1 rounded text-center text-[10px] font-bold transition-colors ${
+                className={`py-1 rounded text-center text-[11px] font-bold transition-colors ${
                   faultKind === kind.id
                     ? 'bg-bf-active text-bf-cyan border border-bf-cyan/50'
                     : 'text-bf-faint hover:text-bf-body'
@@ -227,7 +227,7 @@ export const FaultRigView: React.FC = () => {
                 onChange={(e) => setFlipRateExp(parseInt(e.target.value, 10))}
                 className="w-full accent-bf-cyan cursor-pointer"
               />
-              <span className="text-bf-faint text-[10px]">
+              <span className="text-bf-faint text-[11px]">
                 Injects random single-bit flips across frame bytes before wire transmission.
               </span>
             </div>
@@ -249,7 +249,7 @@ export const FaultRigView: React.FC = () => {
                 onChange={(e) => setDropEvery(parseInt(e.target.value, 10))}
                 className="w-full accent-bf-cyan cursor-pointer"
               />
-              <span className="text-bf-faint text-[10px]">
+              <span className="text-bf-faint text-[11px]">
                 Simulates wireless link fading and UART buffer exhaustion by silently dropping frames.
               </span>
             </div>
@@ -269,9 +269,9 @@ export const FaultRigView: React.FC = () => {
                 max="4"
                 value={corruptCrcBytes}
                 onChange={(e) => setCorruptCrcBytes(parseInt(e.target.value, 10) || 1)}
-                className="w-24 bg-bf-panel border border-bf-line rounded px-2 py-0.5 text-bf-body"
+                className="w-24 bg-bf-panel border border-bf-line rounded px-2 py-0.5 text-[12px] text-bf-body"
               />
-              <span className="text-bf-faint text-[10px]">
+              <span className="text-bf-faint text-[11px]">
                 Inverts the trailing CRC-32C/CRC-16 bytes to test whether receiver rejects invalid checksums.
               </span>
             </div>
@@ -291,9 +291,9 @@ export const FaultRigView: React.FC = () => {
                 max="32"
                 value={truncateBytes}
                 onChange={(e) => setTruncateBytes(parseInt(e.target.value, 10) || 1)}
-                className="w-24 bg-bf-panel border border-bf-line rounded px-2 py-0.5 text-bf-body"
+                className="w-24 bg-bf-panel border border-bf-line rounded px-2 py-0.5 text-[12px] text-bf-body"
               />
-              <span className="text-bf-faint text-[10px]">
+              <span className="text-bf-faint text-[11px]">
                 Tests parser timeout resilience when packets are truncated mid-transfer.
               </span>
             </div>
@@ -343,20 +343,20 @@ export const FaultRigView: React.FC = () => {
 
         {/* Quick One-Shot Hardware Triggers */}
         <div className="flex flex-col gap-1.5">
-          <span className="text-bf-faint text-[10px] uppercase tracking-wider">
+          <span className="text-bf-faint text-[11px] uppercase tracking-wider">
             Quick One-Shot Target Triggers (ESP32-C3 Firmware):
           </span>
           <div className="grid grid-cols-2 gap-2">
             <button
               onClick={triggerOneShotCorruptCrc}
-              className="flex items-center justify-center gap-1.5 p-2 bg-bf-subpanel hover:bg-bf-active text-bf-fault border border-bf-fault/40 rounded font-bold text-[10px] transition-colors"
+              className="flex items-center justify-center gap-1.5 p-2 bg-bf-subpanel hover:bg-bf-active text-bf-fault border border-bf-fault/40 rounded font-bold text-[11px] transition-colors"
             >
               <Zap className="w-3 h-3" />
               <span>BURST 3 BAD CRC FRAMES</span>
             </button>
             <button
               onClick={triggerOneShotDrop}
-              className="flex items-center justify-center gap-1.5 p-2 bg-bf-subpanel hover:bg-bf-active text-bf-warn border border-bf-warn/40 rounded font-bold text-[10px] transition-colors"
+              className="flex items-center justify-center gap-1.5 p-2 bg-bf-subpanel hover:bg-bf-active text-bf-warn border border-bf-warn/40 rounded font-bold text-[11px] transition-colors"
             >
               <RefreshCw className="w-3 h-3" />
               <span>DROP NEXT 2 FRAMES</span>

@@ -188,7 +188,7 @@ export const SchemaDialectView: React.FC = () => {
           <span className="font-bold tracking-wider uppercase text-bf-bright">
             Protocol & Schema Dialect Loader
           </span>
-          <span className="text-[9px] px-1.5 py-0.2 rounded bg-bf-hover text-bf-cyan border border-bf-cyan/30">
+          <span className="text-[10px] px-1.5 py-0.2 rounded bg-bf-hover text-bf-cyan border border-bf-cyan/30">
             RUNTIME SCHEMAS
           </span>
         </div>
@@ -197,7 +197,7 @@ export const SchemaDialectView: React.FC = () => {
         <div className="flex items-center gap-1 bg-bf-subpanel p-0.5 rounded border border-bf-line">
           <button
             onClick={() => handleKindChange('protobuf')}
-            className={`px-2 py-0.5 rounded text-[10px] transition-colors ${
+            className={`px-2 py-0.5 rounded text-[11px] transition-colors ${
               kind === 'protobuf' ? 'bg-bf-cyan/20 text-bf-cyan font-bold' : 'text-bf-mute hover:text-bf-body'
             }`}
           >
@@ -205,7 +205,7 @@ export const SchemaDialectView: React.FC = () => {
           </button>
           <button
             onClick={() => handleKindChange('mavlink')}
-            className={`px-2 py-0.5 rounded text-[10px] transition-colors ${
+            className={`px-2 py-0.5 rounded text-[11px] transition-colors ${
               kind === 'mavlink' ? 'bg-bf-cyan/20 text-bf-cyan font-bold' : 'text-bf-mute hover:text-bf-body'
             }`}
           >
@@ -213,7 +213,7 @@ export const SchemaDialectView: React.FC = () => {
           </button>
           <button
             onClick={() => handleKindChange('c_header')}
-            className={`px-2 py-0.5 rounded text-[10px] transition-colors ${
+            className={`px-2 py-0.5 rounded text-[11px] transition-colors ${
               kind === 'c_header' ? 'bg-bf-cyan/20 text-bf-cyan font-bold' : 'text-bf-mute hover:text-bf-body'
             }`}
           >
@@ -227,14 +227,14 @@ export const SchemaDialectView: React.FC = () => {
         {/* Left Column: Schema Code */}
         <div className="bg-bf-head border border-bf-line rounded p-3 flex flex-col space-y-2">
           <div className="flex items-center justify-between">
-            <span className="text-[10px] font-bold uppercase tracking-wider text-bf-mute flex items-center gap-1.5">
+            <span className="text-[11px] font-bold uppercase tracking-wider text-bf-mute flex items-center gap-1.5">
               <FileCode className="w-3.5 h-3.5 text-bf-cyan" />
               <span>{kind.toUpperCase()} Schema Definition</span>
             </span>
             <div className="flex items-center gap-2">
               <label
                 data-tooltip="Load a schema file from disk (.h / .proto / .xml)"
-                className="flex items-center gap-1 px-2 py-0.5 bg-bf-subpanel hover:bg-bf-hover text-bf-mute hover:text-bf-cyan border border-bf-line rounded text-[10px] cursor-pointer transition-colors"
+                className="flex items-center gap-1 px-2 py-0.5 bg-bf-subpanel hover:bg-bf-hover text-bf-mute hover:text-bf-cyan border border-bf-line rounded text-[11px] cursor-pointer transition-colors"
               >
                 <Upload className="w-3 h-3" />
                 <span>LOAD FILE</span>
@@ -245,12 +245,12 @@ export const SchemaDialectView: React.FC = () => {
                   onChange={(e) => handleFilePick(e.target.files?.[0])}
                 />
               </label>
-              <span className="text-[10px] text-bf-faint">Root:</span>
+              <span className="text-[11px] text-bf-faint">Root:</span>
               <input
                 type="text"
                 value={rootMessage}
                 onChange={(e) => setRootMessage(e.target.value)}
-                className="w-28 px-1.5 py-0.5 bg-bf-onfill border border-bf-line rounded text-[10px] text-bf-cyan focus:border-bf-cyan focus:outline-none"
+                className="w-28 px-1.5 py-0.5 bg-bf-onfill border border-bf-line rounded text-[12px] text-bf-cyan focus:border-bf-cyan focus:outline-none"
               />
             </div>
           </div>
@@ -259,7 +259,7 @@ export const SchemaDialectView: React.FC = () => {
             value={schemaText}
             onChange={(e) => setSchemaText(e.target.value)}
             spellCheck={false}
-            className="flex-1 w-full bg-bf-onfill border border-bf-line rounded p-2 text-[10px] text-bf-body font-mono focus:border-bf-cyan focus:outline-none resize-none min-h-[220px]"
+            className="flex-1 w-full bg-bf-onfill border border-bf-line rounded p-2 text-[12px] text-bf-body font-mono focus:border-bf-cyan focus:outline-none resize-none min-h-[220px]"
           />
 
           <div className="flex items-center justify-between pt-1">
@@ -267,7 +267,7 @@ export const SchemaDialectView: React.FC = () => {
               onClick={handleParse}
               disabled={busy}
               data-tooltip="Compile the schema and show its field layout (dry run)"
-              className="flex items-center gap-1 px-2 py-1 bg-bf-subpanel hover:bg-bf-hover text-bf-cyan border border-bf-line rounded text-[10px] font-bold disabled:opacity-50"
+              className="flex items-center gap-1 px-2 py-1 bg-bf-subpanel hover:bg-bf-hover text-bf-cyan border border-bf-line rounded text-[11px] font-bold disabled:opacity-50"
             >
               <CheckCircle2 className="w-3 h-3" />
               <span>{busy ? '…' : 'PARSE'}</span>
@@ -276,7 +276,7 @@ export const SchemaDialectView: React.FC = () => {
               onClick={handleApply}
               disabled={busy}
               data-tooltip={`Apply this dialect to ${selectedPort}'s live decoder on the engine`}
-              className="flex items-center gap-1 px-3 py-1 bg-bf-cyan hover:bg-bf-cyan-hi text-bf-onfill font-bold rounded text-[10px] transition-colors disabled:opacity-50"
+              className="flex items-center gap-1 px-3 py-1 bg-bf-cyan hover:bg-bf-cyan-hi text-bf-onfill font-bold rounded text-[11px] transition-colors disabled:opacity-50"
             >
               <Sparkles className="w-3 h-3" />
               <span>APPLY TO WORKSPACE</span>
@@ -284,18 +284,18 @@ export const SchemaDialectView: React.FC = () => {
           </div>
 
           {parseError && (
-            <div className="p-1.5 rounded bg-bf-fault/15 border border-bf-fault/30 text-bf-fault text-[10px] flex items-start gap-1">
+            <div className="p-1.5 rounded bg-bf-fault/15 border border-bf-fault/30 text-bf-fault text-[11px] flex items-start gap-1">
               <AlertTriangle className="w-3 h-3 mt-0.5 shrink-0" />
               <span className="break-words">{parseError}</span>
             </div>
           )}
           {layoutRows && !parseError && (
-            <div className="p-1.5 rounded bg-bf-ok/15 border border-bf-ok/30 text-bf-ok text-[10px]">
+            <div className="p-1.5 rounded bg-bf-ok/15 border border-bf-ok/30 text-bf-ok text-[11px]">
               Parsed: {layoutRows.length} field{layoutRows.length === 1 ? '' : 's'} — {layoutRows.map((r) => r.name).join(', ')}
             </div>
           )}
           {appliedStatus && (
-            <div className="p-1.5 rounded bg-bf-ok/15 border border-bf-ok/30 text-bf-ok text-[10px]">
+            <div className="p-1.5 rounded bg-bf-ok/15 border border-bf-ok/30 text-bf-ok text-[11px]">
               {appliedStatus}
             </div>
           )}
@@ -304,13 +304,13 @@ export const SchemaDialectView: React.FC = () => {
         {/* Right Column: Wire Frame Dissection Sandbox */}
         <div className="bg-bf-head border border-bf-line rounded p-3 flex flex-col space-y-2">
           <div className="flex items-center justify-between">
-            <span className="text-[10px] font-bold uppercase tracking-wider text-bf-mute">
+            <span className="text-[11px] font-bold uppercase tracking-wider text-bf-mute">
               Schema Wire Dissector Sandbox
             </span>
             <button
               onClick={handleDissect}
               disabled={busy}
-              className="px-2.5 py-0.5 bg-bf-subpanel hover:bg-bf-hover text-bf-cyan border border-bf-line rounded text-[10px] font-bold flex items-center gap-1 transition-colors disabled:opacity-50"
+              className="px-2.5 py-0.5 bg-bf-subpanel hover:bg-bf-hover text-bf-cyan border border-bf-line rounded text-[11px] font-bold flex items-center gap-1 transition-colors disabled:opacity-50"
             >
               <Play className="w-2.5 h-2.5 fill-current" />
               <span>DECODE WIRE HEX</span>
@@ -318,32 +318,32 @@ export const SchemaDialectView: React.FC = () => {
           </div>
 
           <div>
-            <label className="block text-[9px] uppercase tracking-wider text-bf-faint mb-1">
+            <label className="block text-[11px] uppercase tracking-wider text-bf-faint mb-1">
               Input Wire Hex Bytes
             </label>
             <input
               type="text"
               value={testHex}
               onChange={(e) => setTestHex(e.target.value)}
-              className="w-full px-2 py-1 bg-bf-onfill border border-bf-line rounded text-[10px] text-bf-bright focus:border-bf-cyan focus:outline-none"
+              className="w-full px-2 py-1 bg-bf-onfill border border-bf-line rounded text-[12px] text-bf-bright focus:border-bf-cyan focus:outline-none"
             />
           </div>
 
           {/* Dissected Fields Table */}
           <div className="flex-1 bg-bf-onfill border border-bf-line rounded overflow-hidden flex flex-col">
-            <div className="bg-bf-subpanel px-2 py-1 border-b border-bf-line text-[9px] text-bf-mute font-bold uppercase tracking-wider grid grid-cols-3">
+            <div className="bg-bf-subpanel px-2 py-1 border-b border-bf-line text-[11px] text-bf-mute font-bold uppercase tracking-wider grid grid-cols-3">
               <span>Field Name</span>
               <span>Offset / Size</span>
               <span>Decoded Value</span>
             </div>
             <div className="flex-1 overflow-y-auto divide-y divide-bf-subpanel">
               {dissectionResult.length === 0 ? (
-                <div className="px-2 py-3 text-[10px] text-bf-faint">
+                <div className="px-2 py-3 text-[12px] text-bf-faint">
                   Press DECODE WIRE HEX to run these bytes through the engine's dissector.
                 </div>
               ) : (
                 dissectionResult.map((res, i) => (
-                  <div key={i} className="px-2 py-1 text-[10px] grid grid-cols-3 hover:bg-bf-head transition-colors">
+                  <div key={i} className="px-2 py-1 text-[12px] grid grid-cols-3 hover:bg-bf-head transition-colors">
                     <span className="text-bf-cyan font-bold truncate">{res.field}</span>
                     <span className="text-bf-faint">{res.type}</span>
                     <span className="text-bf-bright font-semibold truncate">{res.value}</span>

@@ -603,16 +603,50 @@ impl Server {
             while let Ok(job) = record_rx.try_recv() {
                 let starting = matches!(job.action, RecordAction::Start(_));
                 let result = match job.action {
-                    RecordAction::Start(path) => session
-                        .start_recording(&path)
-                        .map(|()| path.display().to_string()),
-                    RecordAction::Stop => session.stop_recording(),
-                }
-                .map_err(|error| error.to_string());
+                    RecordAction::Start(path) => {
+                        if let Some(parent) = path.parent()
+                            && !parent.as_os_str().is_empty()
+                            && let Err(error) = std::fs::create_dir_all(parent)
+                        {
+                            Err(error.to_string())
+                        } else {
+                            session
+                                .start_recording(&path)
+                                .map(|()| path.display().to_string())
+                                .map_err(|error| error.to_string())
+                        }
+                    }
+                    RecordAction::Stop => {
+                        session.stop_recording().map_err(|error| error.to_string())
+                    }
+                };
                 match &result {
                     Ok(vault) => {
                         if starting {
-                            let path = std::path::PathBuf::from(&vault);
+                            let path = std::path::PathBuf::from(vault);
+                            let config_snapshot = shared.config.lock().unwrap().clone();
+                            let ports = config_snapshot
+                                .as_ref()
+                                .map(|cfg| cfg.ports.clone())
+                                .or_else(|| {
+                                    shared
+                                        .vault
+                                        .lock()
+                                        .unwrap()
+                                        .as_ref()
+                                        .map(|source| source.ports.clone())
+                                })
+                                .unwrap_or_default();
+                            *shared.vault.lock().unwrap() = Some(VaultSource {
+                                path: path.clone(),
+                                ports,
+                            });
+                            if let Some(cfg) = config_snapshot
+                                && let Ok(toml_text) = toml::to_string_pretty(&cfg)
+                            {
+                                let sidecar = path.with_extension("bforge.toml");
+                                let _ = std::fs::write(&sidecar, toml_text);
+                            }
                             crate::crash::set_activity_path(Some(path.clone()));
                             *shared.activity_path.lock().unwrap() = Some(path);
                             shared.log(crate::logs::LogLevel::Info, "rec_start", vault);
@@ -1659,6 +1693,7 @@ fn vault_info(stream: &mut TcpStream, shared: &Arc<Shared>, target: &str) {
         .map(|s| s.path.clone());
     let path = query_map
         .get("path")
+        .filter(|p| !p.trim().is_empty())
         .map(std::path::PathBuf::from)
         .or(default_path);
     let Some(path) = path else {
@@ -1704,6 +1739,7 @@ fn vault_export(stream: &mut TcpStream, shared: &Arc<Shared>, target: &str) {
         .map(|s| s.path.clone());
     let path = query
         .get("path")
+        .filter(|p| !p.trim().is_empty())
         .map(std::path::PathBuf::from)
         .or(default_path);
     let Some(path) = path else {
@@ -1762,9 +1798,15 @@ fn vault_frames(stream: &mut TcpStream, shared: &Arc<Shared>, target: &str) {
     let registered = shared.vault.lock().unwrap().clone();
     let source = query
         .get("path")
-        .map(|path| crate::serve::VaultSource {
-            path: std::path::PathBuf::from(path),
-            ports: Vec::new(),
+        .filter(|p| !p.trim().is_empty())
+        .map(|path| {
+            let path = std::path::PathBuf::from(path);
+            let ports = registered
+                .as_ref()
+                .filter(|r| r.path == path)
+                .map(|r| r.ports.clone())
+                .unwrap_or_default();
+            crate::serve::VaultSource { path, ports }
         })
         .or(registered);
     let Some(source) = source else {
@@ -1971,8 +2013,15 @@ fn vault_diff(stream: &mut TcpStream, shared: &Arc<Shared>, target: &str) {
         .unwrap()
         .as_ref()
         .map(|source| source.path.clone());
-    let path_a = params.get("a").map(std::path::PathBuf::from).or(default_a);
-    let path_b = params.get("b").map(std::path::PathBuf::from);
+    let path_a = params
+        .get("a")
+        .filter(|p| !p.trim().is_empty())
+        .map(std::path::PathBuf::from)
+        .or(default_a);
+    let path_b = params
+        .get("b")
+        .filter(|p| !p.trim().is_empty())
+        .map(std::path::PathBuf::from);
     let (Some(a), Some(b)) = (path_a, path_b) else {
         return respond(
             stream,
@@ -3325,6 +3374,118 @@ mod tests {
         );
         let text = std::fs::read_to_string(&path).unwrap();
         assert!(text.contains("\"event\":\"flush_probe\""));
+        std::fs::remove_dir_all(&dir).ok();
+    }
+
+    /// Starting recording mid-session on a server initialized without a startup
+    /// vault creates parent directories, registers `shared.vault` with the
+    /// workspace's port schemas, writes a sidecar `.bforge.toml`, and enables
+    /// `/api/vault`, `/api/vault/frames`, `/api/vault/export`, and `/api/diff`.
+    #[test]
+    fn mid_session_recording_registers_vault_and_endpoints() {
+        let dir = std::env::temp_dir().join(format!(
+            "bforge-serve-midrec-{}-{}",
+            std::process::id(),
+            std::time::SystemTime::now()
+                .duration_since(std::time::UNIX_EPOCH)
+                .unwrap()
+                .as_millis()
+        ));
+        let vault = dir.join("nested").join("live.bflog");
+        let config = crate::ProjectConfig {
+            workspace: crate::WorkspaceMeta {
+                name: "midrec-test".to_string(),
+                version: "0.1".to_string(),
+                elf_path: None,
+                watch_elf: false,
+                script_path: None,
+                rx_script_path: None,
+            },
+            ports: vec![crate::PortConfig {
+                id: "main".to_string(),
+                match_vid_pid: None,
+                match_serial: None,
+                device_path: None,
+                transport: Some("tcp-server".to_string()),
+                address: Some("127.0.0.1:0".to_string()),
+                baud_rate: 115_200,
+                framing: crate::FramingConfig {
+                    mode: "cobs".to_string(),
+                    delimiter: None,
+                    sync: None,
+                    length_offset: None,
+                    length_width: None,
+                    length_adjust: None,
+                    idle_gap_us: None,
+                    max_frame: None,
+                    crc: None,
+                },
+                dissector: None,
+                yield_on_sigusr1: false,
+            }],
+            bridges: vec![],
+            commands: vec![],
+            alerts: vec![],
+            ui: None,
+        };
+
+        let server = Server::bind("127.0.0.1:0".parse().unwrap())
+            .unwrap()
+            .with_config(config);
+        let addr = server.local_addr().unwrap();
+        let stop = server.stop_handle();
+        let moved_vault = vault.clone();
+
+        let client = std::thread::spawn(move || {
+            let http = |method: &str, path: &str, body: Option<&str>| {
+                let mut stream = std::net::TcpStream::connect(addr).unwrap();
+                let req = match body {
+                    Some(b) => format!(
+                        "{method} {path} HTTP/1.1\r\nHost: test\r\nContent-Length: {}\r\nConnection: close\r\n\r\n{b}",
+                        b.len()
+                    ),
+                    None => format!(
+                        "{method} {path} HTTP/1.1\r\nHost: test\r\nConnection: close\r\n\r\n"
+                    ),
+                };
+                stream.write_all(req.as_bytes()).unwrap();
+                let mut reply = String::new();
+                let _ = std::io::BufReader::new(stream).read_to_string(&mut reply);
+                reply
+            };
+
+            std::thread::sleep(Duration::from_millis(150));
+            // Before recording starts, `/api/vault` answers 404.
+            assert!(http("GET", "/api/vault", None).contains("404 Not Found"));
+
+            let start = http(
+                "POST",
+                "/api/record",
+                Some(&format!(
+                    "{{\"action\":\"start\",\"path\":\"{}\"}}",
+                    moved_vault.display().to_string().replace('\\', "\\\\")
+                )),
+            );
+            assert!(start.contains("200 OK"), "start failed: {start}");
+
+            assert!(http("GET", "/api/vault", None).contains("200 OK"));
+            assert!(http("GET", "/api/vault/frames?at=0&count=10", None).contains("200 OK"));
+            assert!(http("GET", "/api/vault/export?format=csv", None).contains("200 OK"));
+            let encoded_b = moved_vault.display().to_string().replace('\\', "/");
+            assert!(http("GET", &format!("/api/diff?b={encoded_b}"), None).contains("200 OK"));
+            stop.store(true, Ordering::Relaxed);
+        });
+
+        server
+            .run(Session::review(), Some(Duration::from_secs(3)))
+            .expect("server exits cleanly");
+        client.join().unwrap();
+
+        assert!(vault.exists(), "vault file must exist");
+        assert!(
+            vault.with_extension("bforge.toml").exists(),
+            "sidecar config must be written beside the mid-session vault"
+        );
         std::fs::remove_dir_all(&dir).ok();
     }
 }

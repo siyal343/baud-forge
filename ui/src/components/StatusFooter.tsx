@@ -55,7 +55,7 @@ export const StatusFooter: React.FC = () => {
         </div>
 
         {isSimulated && (
-          <span className="px-1 py-0.2 bg-bf-active text-bf-cyan rounded text-[9px] border border-bf-cyan/40">
+          <span className="px-1 py-0.2 bg-bf-active text-bf-cyan rounded text-[10px] border border-bf-cyan/40">
             SIMULATED
           </span>
         )}
@@ -68,10 +68,10 @@ export const StatusFooter: React.FC = () => {
         <PinLed label="DCD" active={pins.dcd} />
         <PinLed label="RI" active={pins.ri} color="bg-bf-warn" />
         <div className="w-[1px] h-2.5 bg-bf-line" />
-        <span className={`text-[9.5px] ${pins.dtr ? 'text-bf-cyan' : 'text-bf-faint'}`}>
+        <span className={`text-[10px] ${pins.dtr ? 'text-bf-cyan' : 'text-bf-faint'}`}>
           DTR:{pins.dtr ? '1' : '0'}
         </span>
-        <span className={`text-[9.5px] ${pins.rts ? 'text-bf-cyan' : 'text-bf-faint'}`}>
+        <span className={`text-[10px] ${pins.rts ? 'text-bf-cyan' : 'text-bf-faint'}`}>
           RTS:{pins.rts ? '1' : '0'}
         </span>
       </div>

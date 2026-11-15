@@ -91,7 +91,7 @@ interface AxisRange {
   max: number;
 }
 
-const M = { l: 46, r: 46, t: 8, b: 18 };
+const M = { l: 50, r: 50, t: 10, b: 20 };
 const margins = (hasY2: boolean) => ({ ...M, r: hasY2 ? M.r : 12 });
 
 const resolveWindow = (chart: ChartDef): ViewWindow | null => {
@@ -142,7 +142,7 @@ interface PaintCtx {
   chart: ChartDef;
 }
 
-const MONO = '9px "JetBrains Mono", monospace';
+const MONO = '10px "JetBrains Mono", monospace';
 
 const drawGrid = (p: PaintCtx): void => {
   const { ctx, pal, mg, plotW, plotH } = p;
@@ -543,7 +543,7 @@ export const PlotForgeView: React.FC = () => {
     ctx.strokeRect(mg.l + 0.5, mg.t + 0.5, plotW - 1, plotH - 1);
 
     // X tick labels.
-    ctx.font = '9px "JetBrains Mono", monospace';
+    ctx.font = '10px "JetBrains Mono", monospace';
     ctx.fillStyle = pal.textFaint;
     ctx.textAlign = 'center';
     ctx.textBaseline = 'top';
@@ -651,7 +651,7 @@ export const PlotForgeView: React.FC = () => {
     }
     const cursorXs: Array<{ x: number; label: string }> = [];
     if (cursorsOn) {
-      ctx.font = 'bold 9px "JetBrains Mono", monospace';
+      ctx.font = 'bold 10px "JetBrains Mono", monospace';
       for (const [which, tUs] of [
         ['X1', e1],
         ['X2', e2],
@@ -684,16 +684,16 @@ export const PlotForgeView: React.FC = () => {
         const dtUs = Math.abs(e2 - e1);
         ctx.fillStyle = 'rgba(10, 13, 19, 0.85)';
         const label = `Δt ${fmtTimeUs(dtUs)}  ·  ${dtUs > 0 ? fmtValue(1e6 / dtUs) : '—'} Hz`;
-        ctx.font = 'bold 9px "JetBrains Mono", monospace';
+        ctx.font = 'bold 10px "JetBrains Mono", monospace';
         const tw = ctx.measureText(label).width + 10;
-        ctx.fillRect(mg.l + plotW - tw - 4, mg.t + 2, tw, 14);
+        ctx.fillRect(mg.l + plotW - tw - 4, mg.t + 2, tw, 16);
         ctx.strokeStyle = pal.cursor;
         ctx.lineWidth = 1;
-        ctx.strokeRect(mg.l + plotW - tw - 3.5, mg.t + 2.5, tw - 1, 13);
+        ctx.strokeRect(mg.l + plotW - tw - 3.5, mg.t + 2.5, tw - 1, 15);
         ctx.fillStyle = pal.cursor;
         ctx.textAlign = 'right';
         ctx.textBaseline = 'middle';
-        ctx.fillText(label, mg.l + plotW - 9, mg.t + 9.5);
+        ctx.fillText(label, mg.l + plotW - 9, mg.t + 10.5);
       }
     }
 
@@ -721,8 +721,9 @@ export const PlotForgeView: React.FC = () => {
         if (!s) continue;
         rows.push({ label: ch.label, value: `${fmtValue(s.value)}${ch.unit ? ` ${ch.unit}` : ''}`, color: ch.color });
       }
+      ctx.font = '10px "JetBrains Mono", monospace';
       const rowW = Math.max(...rows.map((r) => ctx.measureText(`${r.label}  ${r.value}`).width), 96) + 12;
-      const rowH = 13;
+      const rowH = 15;
       const boxW = rowW;
       const boxH = rows.length * rowH + 6;
       let bx = hover.x + 12;
@@ -733,16 +734,15 @@ export const PlotForgeView: React.FC = () => {
       ctx.fillRect(bx, by, boxW, boxH);
       ctx.strokeStyle = pal.grid;
       ctx.strokeRect(bx + 0.5, by + 0.5, boxW - 1, boxH - 1);
-      ctx.font = '9px "JetBrains Mono", monospace';
       ctx.textAlign = 'left';
       ctx.textBaseline = 'middle';
       rows.forEach((r, i) => {
         const ry = by + 4 + i * rowH;
         ctx.fillStyle = r.color;
-        ctx.fillText(r.label, bx + 6, ry + rowH / 2 - 2);
+        ctx.fillText(r.label, bx + 6, ry + rowH / 2 - 1);
         ctx.fillStyle = pal.text;
         ctx.textAlign = 'right';
-        ctx.fillText(r.value, bx + boxW - 6, ry + rowH / 2 - 2);
+        ctx.fillText(r.value, bx + boxW - 6, ry + rowH / 2 - 1);
         ctx.textAlign = 'left';
       });
     }
@@ -1127,7 +1127,7 @@ export const PlotForgeView: React.FC = () => {
         {charts.map((c) => (
           <span
             key={c.id}
-            className={`group flex items-center gap-1 px-2 py-0.5 rounded-sm border text-[9.5px] tracking-wider whitespace-nowrap cursor-pointer ${
+            className={`group flex items-center gap-1 px-2 py-0.5 rounded-sm border text-[11px] tracking-wider whitespace-nowrap cursor-pointer ${
               c.id === chart.id
                 ? 'bg-bf-btn-hi text-bf-bright border-bf-cyan'
                 : 'bg-bf-panel text-bf-dim border-bf-line hover:bg-bf-btn'
@@ -1149,7 +1149,7 @@ export const PlotForgeView: React.FC = () => {
                   if (e.key === 'Enter') commitRename();
                   if (e.key === 'Escape') setRenamingId(null);
                 }}
-                className="w-24 bg-bf-canvas border border-bf-cyan rounded-sm px-1 text-[9.5px] text-bf-bright outline-none"
+                className="w-24 bg-bf-canvas border border-bf-cyan rounded-sm px-1 text-[11px] text-bf-bright outline-none"
               />
             ) : (
               <span>{c.name.toUpperCase()}</span>
@@ -1208,7 +1208,7 @@ export const PlotForgeView: React.FC = () => {
           <button className="px-1 text-bf-dim hover:text-bf-bright" onClick={() => usePlotStore.getState().setSpan(chart.id, stepSpan(chart.spanUs, -1))}>
             <Minus size={10} />
           </button>
-          <span className="px-1 text-[9.5px] text-bf-body font-mono w-[52px] text-center">{fmtSpan(chart.spanUs)}</span>
+          <span className="px-1 text-[11px] text-bf-body font-mono w-[60px] text-center">{fmtSpan(chart.spanUs)}</span>
           <button className="px-1 text-bf-dim hover:text-bf-bright" onClick={() => usePlotStore.getState().setSpan(chart.id, stepSpan(chart.spanUs, 1))}>
             <Plus size={10} />
           </button>
@@ -1221,7 +1221,7 @@ export const PlotForgeView: React.FC = () => {
             <button
               key={m}
               onClick={() => usePlotStore.getState().setChartMode(chart.id, m)}
-              className={`px-1.5 py-0.5 text-[9px] tracking-wider ${chart.mode === m ? 'bg-bf-btn-hi text-bf-bright' : 'bg-bf-panel text-bf-dim hover:bg-bf-btn'}`}
+              className={`px-1.5 py-0.5 text-[11px] tracking-wider ${chart.mode === m ? 'bg-bf-btn-hi text-bf-bright' : 'bg-bf-panel text-bf-dim hover:bg-bf-btn'}`}
             >
               {m.toUpperCase()}
             </button>
@@ -1232,7 +1232,7 @@ export const PlotForgeView: React.FC = () => {
             <select
               value={chart.fftSize}
               onChange={(e) => usePlotStore.getState().setFftConfig(chart.id, { fftSize: Number(e.target.value) })}
-              className="bg-bf-panel border border-bf-line rounded px-0.5 py-[1px] text-[9.5px] text-bf-body"
+              className="bg-bf-panel border border-bf-line rounded px-0.5 py-[1px] text-[11px] text-bf-body"
               data-tooltip="FFT window length (newest samples)"
             >
               {FFT_SIZES.map((n) => (
@@ -1250,7 +1250,7 @@ export const PlotForgeView: React.FC = () => {
           <select
             value={chart.xyXChannelId ?? ''}
             onChange={(e) => usePlotStore.getState().setXyXChannel(chart.id, e.target.value || null)}
-            className="bg-bf-panel border border-bf-line rounded px-0.5 py-[1px] text-[9.5px] text-bf-body"
+            className="bg-bf-panel border border-bf-line rounded px-0.5 py-[1px] text-[11px] text-bf-body"
             data-tooltip="Channel driving the X axis"
           >
             <option value="">X channel…</option>
@@ -1266,7 +1266,7 @@ export const PlotForgeView: React.FC = () => {
             <select
               value={chart.histChannelId ?? ''}
               onChange={(e) => usePlotStore.getState().setHistConfig(chart.id, { channelId: e.target.value || null })}
-              className="bg-bf-panel border border-bf-line rounded px-0.5 py-[1px] text-[9.5px] text-bf-body"
+              className="bg-bf-panel border border-bf-line rounded px-0.5 py-[1px] text-[11px] text-bf-body"
               data-tooltip="Histogram source channel"
             >
               <option value="">Source…</option>
@@ -1283,7 +1283,7 @@ export const PlotForgeView: React.FC = () => {
               >
                 <Minus size={10} />
               </button>
-              <span className="px-1 text-[9.5px] font-mono w-6 text-center">{chart.histBins}</span>
+              <span className="px-1 text-[11px] font-mono w-6 text-center">{chart.histBins}</span>
               <button
                 className="px-1 text-bf-dim hover:text-bf-bright"
                 onClick={() => usePlotStore.getState().setHistConfig(chart.id, { bins: Math.min(HIST_BINS_MAX, chart.histBins * 2) })}
@@ -1293,7 +1293,7 @@ export const PlotForgeView: React.FC = () => {
             </div>
           </>
         )}
-        <span className="text-bf-faint text-[9px] hidden xl:inline">
+        <span className="text-bf-faint text-[10px] hidden xl:inline">
           {chart.live && chart.mode === 'time' ? 'FOLLOWING HEAD' : chart.frozen && chart.mode === 'time' ? `WINDOW ${fmtTimeUs(chart.frozen.tMinUs)} … ${fmtTimeUs(chart.frozen.tMaxUs)}` : ''}
           {' · wheel zoom · drag pan · ⇧drag box · dbl-click autoscale'}
         </span>
@@ -1303,12 +1303,12 @@ export const PlotForgeView: React.FC = () => {
         <button onClick={exportPng} className={`${ribbonBtn} shrink-0`} data-tooltip="Save the chart canvas as a PNG image">
           PNG
         </button>
-        <div className="ml-auto flex items-center gap-1.5 text-bf-faint text-[9px]" data-tooltip="Ring depth per channel — older samples drop off">
+        <div className="ml-auto flex items-center gap-1.5 text-bf-faint text-[11px]" data-tooltip="Ring depth per channel — older samples drop off">
           DEPTH
           <select
             value={plotDepth}
             onChange={(e) => usePlotStore.getState().setPlotDepth(Number(e.target.value))}
-            className="bg-bf-panel border border-bf-line rounded px-0.5 py-[1px] text-[9.5px] text-bf-body"
+            className="bg-bf-panel border border-bf-line rounded px-0.5 py-[1px] text-[11px] text-bf-body"
           >
             {[...new Set([10000, 30000, 60000, 120000, PLOT_DEPTH_MAX, plotDepth, PLOT_DEPTH_MIN])]
               .sort((a, b) => a - b)
@@ -1326,7 +1326,7 @@ export const PlotForgeView: React.FC = () => {
         {chart.channels.map((ch: ChannelDef) => (
           <span
             key={ch.id}
-            className="flex items-center gap-1 pl-1 pr-0.5 py-px rounded border border-bf-line bg-bf-subpanel text-[9.5px]"
+            className="flex items-center gap-1 pl-1 pr-0.5 py-px rounded border border-bf-line bg-bf-subpanel text-[11px]"
           >
             <span className="w-2 h-2 rounded-sm shrink-0" style={{ background: ch.color, boxShadow: `0 0 4px ${ch.color}` }} />
             <button
@@ -1339,7 +1339,7 @@ export const PlotForgeView: React.FC = () => {
             </button>
             <button
               onClick={() => usePlotStore.getState().updateChannel(chart.id, ch.id, { axis: ch.axis === 'y1' ? 'y2' : 'y1' })}
-              className={`px-0.5 rounded-sm text-[8.5px] border ${
+              className={`px-0.5 rounded-sm text-[10px] border ${
                 ch.axis === 'y2' ? 'border-bf-math text-bf-math' : 'border-bf-line text-bf-faint'
               }`}
               data-tooltip="Toggle left (Y1) / right (Y2) axis"
@@ -1365,7 +1365,7 @@ export const PlotForgeView: React.FC = () => {
         <div className="relative">
           <button
             onClick={() => setAddMenuOpen((v) => !v)}
-            className={`flex items-center gap-1 px-1.5 py-px rounded border text-[9.5px] ${
+            className={`flex items-center gap-1 px-1.5 py-px rounded border text-[11px] ${
               addMenuOpen ? 'bg-bf-btn-hi text-bf-bright border-bf-cyan' : 'border-bf-line bg-bf-panel text-bf-cyan hover:bg-bf-btn'
             }`}
             data-tooltip="Plot a decoded field, packet metric or expression"
@@ -1373,8 +1373,8 @@ export const PlotForgeView: React.FC = () => {
             <Plus size={10} /> ADD CHANNEL
           </button>
           {addMenuOpen && (
-            <div className="absolute z-[500] top-[22px] left-0 w-64 max-h-72 overflow-y-auto bg-bf-surface border border-bf-line-strong rounded shadow-xl text-[10px]">
-              <div className="px-2 py-1 text-[9px] tracking-wider text-bf-faint border-b border-bf-line">PACKET METRICS</div>
+            <div className="absolute z-[500] top-[22px] left-0 w-64 max-h-72 overflow-y-auto bg-bf-surface border border-bf-line-strong rounded shadow-xl text-[11px]">
+              <div className="px-2 py-1 text-[11px] tracking-wider text-bf-faint border-b border-bf-line">PACKET METRICS</div>
               {metaEntries.map((m) => (
                 <button
                   key={m.metric}
@@ -1385,7 +1385,7 @@ export const PlotForgeView: React.FC = () => {
                   <span className="text-bf-faint">{m.unit}</span>
                 </button>
               ))}
-              <div className="px-2 py-1 text-[9px] tracking-wider text-bf-faint border-b border-bf-line">
+              <div className="px-2 py-1 text-[11px] tracking-wider text-bf-faint border-b border-bf-line">
                 DECODED FIELDS {catalog.length === 0 ? '(none seen yet)' : `(${catalog.length})`}
               </div>
               {catalog.map((e) => (
@@ -1404,7 +1404,7 @@ export const PlotForgeView: React.FC = () => {
               {catalog.length === 0 && (
                 <div className="px-2 py-1.5 text-bf-faint">No numeric fields decoded yet — load a capture or connect a stream.</div>
               )}
-              <div className="px-2 py-1 text-[9px] tracking-wider text-bf-faint border-t border-bf-line">EXPRESSION</div>
+              <div className="px-2 py-1 text-[11px] tracking-wider text-bf-faint border-t border-bf-line">EXPRESSION</div>
               {!exprOpen ? (
                 <button onClick={() => setExprOpen(true)} className="w-full text-left px-2 py-1 hover:bg-bf-btn text-bf-cyan">
                   + New expression…
@@ -1420,19 +1420,19 @@ export const PlotForgeView: React.FC = () => {
                       if (e.key === 'Escape') setExprOpen(false);
                     }}
                     placeholder="e.g. v_batt_mv * gyro_z"
-                    className="w-full bg-bf-canvas border border-bf-line rounded-sm px-1 py-0.5 text-[10px] font-mono text-bf-bright outline-none focus:border-bf-cyan"
+                    className="w-full bg-bf-canvas border border-bf-line rounded-sm px-1 py-0.5 text-[12px] font-mono text-bf-bright outline-none focus:border-bf-cyan"
                   />
                   {exprValue.trim() === '' ? (
-                    <div className="text-[9px] text-bf-faint">Refs resolve to channel labels (e.g. v_batt_mv, rate).</div>
+                    <div className="text-[11px] text-bf-faint">Refs resolve to channel labels (e.g. v_batt_mv, rate).</div>
                   ) : exprOk ? (
-                    <div className="text-[9px] text-bf-ok">OK · refs: {exprOk.refs.length ? exprOk.refs.join(', ') : 'none'}</div>
+                    <div className="text-[11px] text-bf-ok">OK · refs: {exprOk.refs.length ? exprOk.refs.join(', ') : 'none'}</div>
                   ) : (
-                    <div className="text-[9px] text-bf-fault">{exprErr}</div>
+                    <div className="text-[11px] text-bf-fault">{exprErr}</div>
                   )}
                   <button
                     onClick={addExprChannel}
                     disabled={!exprOk}
-                    className="w-full py-0.5 rounded-sm bg-bf-btn-hi border border-bf-cyan text-bf-bright text-[9.5px] disabled:opacity-40 disabled:cursor-not-allowed"
+                    className="w-full py-0.5 rounded-sm bg-bf-btn-hi border border-bf-cyan text-bf-bright text-[11px] disabled:opacity-40 disabled:cursor-not-allowed"
                   >
                     ADD EXPRESSION CHANNEL
                   </button>
@@ -1442,7 +1442,7 @@ export const PlotForgeView: React.FC = () => {
           )}
         </div>
         {chart.channels.length === 0 && (
-          <span className="text-bf-faint text-[9.5px]">Plot any decoded field, frame metric or derived expression.</span>
+          <span className="text-bf-faint text-[11px]">Plot any decoded field, frame metric or derived expression.</span>
         )}
       </div>
 
@@ -1452,7 +1452,7 @@ export const PlotForgeView: React.FC = () => {
       </div>
 
       {/* Footer: per-channel window stats (time) or mode summary */}
-      <div className="min-h-[20px] flex items-center gap-3 px-2 py-0.5 bg-bf-subpanel border-t border-bf-line text-[9px] shrink-0 overflow-x-auto whitespace-nowrap">
+      <div className="min-h-[20px] flex items-center gap-3 px-2 py-0.5 bg-bf-subpanel border-t border-bf-line text-[11px] shrink-0 overflow-x-auto whitespace-nowrap">
         {chart.mode === 'time' ? (
           <>
             {statsRows.length === 0 && <span className="text-bf-faint">NO ACTIVE CHANNELS</span>}

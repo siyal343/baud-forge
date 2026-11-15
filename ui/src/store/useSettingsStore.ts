@@ -37,6 +37,10 @@ export interface BfSettings {
   /** Oscilloscope / trace ring depth (was the hardcoded MAX_SCOPE_SAMPLES). */
   maxScopeSamples: number;
   // Data & export
+  /** Record incoming/outgoing traffic to a `.bflog` vault immediately on session start. */
+  recordingEnabled: boolean;
+  /** Custom folder for new `.bflog` recordings; empty uses the default `vaults/` directory. */
+  recordingDir: string;
   /** Format preselected when the vault export dialog opens. */
   defaultExportFormat: ExportFormat;
   /** REC file name template; `<stamp>` expands to an ISO timestamp. */
@@ -57,6 +61,8 @@ export const DEFAULT_SETTINGS: BfSettings = {
   hexShowAscii: true,
   maxPackets: 10000,
   maxScopeSamples: 600,
+  recordingEnabled: false,
+  recordingDir: '',
   defaultExportFormat: 'pcapng',
   vaultNamePattern: 'rec-<stamp>',
   yieldSeconds: 30,
@@ -103,6 +109,8 @@ export const mergeSettings = (saved: unknown): BfSettings => {
       MAX_SCOPE_SAMPLES_MAX,
       merged.maxScopeSamples
     );
+    if (typeof s.recordingEnabled === 'boolean') merged.recordingEnabled = s.recordingEnabled;
+    if (typeof s.recordingDir === 'string') merged.recordingDir = s.recordingDir.trim();
     if (EXPORT_FORMATS.includes(s.defaultExportFormat as ExportFormat))
       merged.defaultExportFormat = s.defaultExportFormat as ExportFormat;
     if (typeof s.vaultNamePattern === 'string' && s.vaultNamePattern.trim())
@@ -151,13 +159,22 @@ export const useSettingsStore = create<SettingsState>((set, get) => ({
 
 /**
  * Expand the REC name template into an engine vault path. `<stamp>` becomes
- * the same ISO stamp the ribbon always used; `.bflog` and the `vaults/`
- * directory are guaranteed so a hand-edited pattern can't stray.
+ * the same ISO stamp the ribbon always used; `.bflog` and the target directory
+ * (custom `recordingDir` or default `vaults/`) are always guaranteed.
  */
-export const buildVaultPath = (pattern: string): string => {
+export const buildVaultPath = (pattern: string, dir?: string): string => {
   const stamp = new Date().toISOString().replace(/[:.]/g, '-').slice(0, 19);
   const trimmed = (pattern || '').trim() || DEFAULT_SETTINGS.vaultNamePattern;
   let name = trimmed.includes('<stamp>') ? trimmed.replace('<stamp>', stamp) : trimmed;
   if (!name.endsWith('.bflog')) name += '.bflog';
-  return name.startsWith('vaults/') ? name : `vaults/${name}`;
+  const cleanName = name.replace(/^vaults[\\/]+/i, '');
+  const safeName =
+    cleanName && cleanName !== '.bflog'
+      ? cleanName
+      : `${DEFAULT_SETTINGS.vaultNamePattern.replace('<stamp>', stamp)}.bflog`;
+  const targetDir = (dir ?? useSettingsStore.getState().settings.recordingDir ?? '').trim();
+  if (targetDir) {
+    return `${targetDir.replace(/[\\/]+$/, '')}/${safeName}`;
+  }
+  return `vaults/${safeName}`;
 };

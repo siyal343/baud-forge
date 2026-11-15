@@ -736,18 +736,18 @@ typedef struct {
       <div className="h-[28px] bg-bf-subpanel border-b border-bf-line px-2.5 flex items-center justify-between shrink-0">
         <div className="flex items-center gap-1.5">
           <Terminal className="w-3.5 h-3.5 text-bf-cyan" />
-          <span className="font-mono font-semibold text-bf-body tracking-wide text-[10.5px]">
+          <span className="font-mono font-semibold text-bf-body tracking-wide text-[11px]">
             COMMAND FORGE
           </span>
-          <span className="text-[9px] px-1.5 py-0.2 rounded bg-bf-cyan/10 text-bf-cyan border border-bf-cyan/30 font-mono">
+          <span className="text-[10px] px-1.5 py-0.2 rounded bg-bf-cyan/10 text-bf-cyan border border-bf-cyan/30 font-mono">
             DISPATCH & MACROS
           </span>
         </div>
 
         {/* Global Format Selector */}
         <div className="flex items-center gap-1">
-          <span className="text-[9.5px] text-bf-faint font-mono mr-1">FORMAT:</span>
-          <div className="flex items-center gap-0.5 bg-bf-panel border border-bf-line rounded px-1 py-0.5 font-mono text-[9.5px]">
+          <span className="text-[11px] text-bf-faint font-mono mr-1">FORMAT:</span>
+          <div className="flex items-center gap-0.5 bg-bf-panel border border-bf-line rounded px-1 py-0.5 font-mono text-[11px]">
             <button
               onClick={() => setMode('hex')}
               data-tooltip="Set format to hexadecimal bytes"
@@ -795,15 +795,15 @@ typedef struct {
           <div className="flex items-center justify-between pb-2 border-b border-bf-line shrink-0 mb-2">
             <div className="flex items-center gap-1.5">
               <Sliders className="w-3.5 h-3.5 text-bf-cyan" />
-              <span className="text-[10px] font-bold tracking-wider text-bf-body uppercase">
+              <span className="text-[11px] font-bold tracking-wider text-bf-body uppercase">
                 USER COMMANDS
               </span>
-              <span className="text-[9px] text-bf-faint">({userCommands.length})</span>
+              <span className="text-[10px] text-bf-faint">({userCommands.length})</span>
             </div>
             <button
               onClick={() => setIsModalOpen(true)}
               data-tooltip="Create new custom macro button"
-              className="flex items-center gap-1 px-2 py-0.5 bg-bf-cyan/10 hover:bg-bf-cyan/20 text-bf-cyan border border-bf-cyan/40 rounded text-[9.5px] font-bold transition-all shadow-[0_0_8px_rgb(var(--bf-cyan-rgb)/0.15)]"
+              className="flex items-center gap-1 px-2 py-0.5 bg-bf-cyan/10 hover:bg-bf-cyan/20 text-bf-cyan border border-bf-cyan/40 rounded text-[11px] font-bold transition-all shadow-[0_0_8px_rgb(var(--bf-cyan-rgb)/0.15)]"
             >
               <Plus className="w-3 h-3" />
               ADD COMMAND
@@ -815,8 +815,8 @@ typedef struct {
             {userCommands.length === 0 ? (
               <div className="h-full flex flex-col items-center justify-center text-center p-4 text-bf-faint">
                 <Terminal className="w-6 h-6 mb-2 opacity-40 text-bf-cyan" />
-                <p className="text-[10px]">No user commands defined.</p>
-                <p className="text-[9px] text-bf-ghost mt-1">
+                <p className="text-[12px]">No user commands defined.</p>
+                <p className="text-[11px] text-bf-ghost mt-1">
                   Click "+ ADD COMMAND" to define buttons.
                 </p>
               </div>
@@ -861,11 +861,11 @@ typedef struct {
 
                       <div className="flex flex-col min-w-0">
                         <div className="flex items-center gap-1.5">
-                          <span className="font-semibold text-bf-body truncate text-[10.5px]">
+                          <span className="font-semibold text-bf-body truncate text-[12px]">
                             {cmd.name}
                           </span>
                         </div>
-                        <div className="flex items-center gap-1 text-[8.5px] text-bf-faint">
+                        <div className="flex items-center gap-1 text-[10px] text-bf-faint">
                           {cmd.isPeriodic ? (
                             <span
                               className={`px-1 py-0.2 rounded font-bold ${
@@ -916,11 +916,11 @@ typedef struct {
           {/* Label Bar & View Switcher */}
           <div className="flex items-center justify-between pb-1 border-b border-bf-line shrink-0">
             <div className="flex items-center gap-2">
-              <span className="text-[10px] font-bold text-bf-faint uppercase tracking-wider">
+              <span className="text-[11px] font-bold text-bf-faint uppercase tracking-wider">
                 TRANSMISSION PAYLOAD ({mode.toUpperCase()})
               </span>
               {mode === 'hex' && (
-                <div className="flex items-center gap-0.5 bg-bf-subpanel border border-bf-line rounded p-0.5 text-[9px]">
+                <div className="flex items-center gap-0.5 bg-bf-subpanel border border-bf-line rounded p-0.5 text-[11px]">
                   <button
                     onClick={() => setPayloadViewMode('boxes')}
                     data-tooltip="Byte box cells editor"
@@ -948,7 +948,7 @@ typedef struct {
                 </div>
               )}
             </div>
-            <span className="text-[9.5px] text-bf-cyan font-mono">
+            <span className="text-[11px] text-bf-cyan font-mono">
               DESTINATION: {selectedPort || 'DISCONNECTED'}
             </span>
           </div>
@@ -962,13 +962,13 @@ typedef struct {
                   value={headerSrc}
                   onChange={(e) => setHeaderSrc(e.target.value)}
                   spellCheck={false}
-                  className="w-full h-[110px] bg-bf-panel border border-bf-line rounded p-2 text-[10px] text-bf-mute font-mono focus:border-bf-cyan focus:outline-none resize-none shrink-0"
+                  className="w-full h-[110px] bg-bf-panel border border-bf-line rounded p-2 text-[12px] text-bf-mute font-mono focus:border-bf-cyan focus:outline-none resize-none shrink-0"
                 />
                 <div className="flex items-center gap-2 shrink-0">
                   <button
                     onClick={handleParseHeader}
                     data-tooltip="Parse the header above into typed composer fields"
-                    className="px-2 py-0.5 bg-bf-cyan/10 hover:bg-bf-cyan/20 text-bf-cyan border border-bf-cyan/40 rounded text-[9.5px] font-bold"
+                    className="px-2 py-0.5 bg-bf-cyan/10 hover:bg-bf-cyan/20 text-bf-cyan border border-bf-cyan/40 rounded text-[11px] font-bold"
                   >
                     PARSE STRUCT
                   </button>
@@ -976,7 +976,7 @@ typedef struct {
                     <select
                       value={selectedStructIdx}
                       onChange={(e) => setSelectedStructIdx(Number(e.target.value))}
-                      className="bg-bf-panel border border-bf-line rounded px-1 py-0.5 text-[9.5px] text-bf-body focus:outline-none"
+                      className="bg-bf-panel border border-bf-line rounded px-1 py-0.5 text-[11px] text-bf-body focus:outline-none"
                     >
                       {parsedStructs.map((s, i) => (
                         <option key={s.name} value={i}>
@@ -986,13 +986,13 @@ typedef struct {
                     </select>
                   )}
                   {activeStruct && (
-                    <span className="text-[9px] text-bf-faint font-mono">
+                    <span className="text-[10px] text-bf-faint font-mono">
                       {activeStruct.name} · {activeStruct.fields.length} fields · {activeStruct.size} B packed LE
                     </span>
                   )}
                 </div>
                 {parseErrors.length > 0 && (
-                  <div className="text-[9px] font-mono text-bf-amber bg-bf-amber/10 border border-bf-amber/40 rounded p-1.5 shrink-0">
+                  <div className="text-[11px] font-mono text-bf-amber bg-bf-amber/10 border border-bf-amber/40 rounded p-1.5 shrink-0">
                     {parseErrors.map((err, i) => (
                       <div key={i}>⚠ {err}</div>
                     ))}
@@ -1003,12 +1003,12 @@ typedef struct {
                     {activeStruct.fields.map((field) => (
                       <React.Fragment key={field.name}>
                         <div className="flex items-center gap-1 min-w-0">
-                          <span className="text-[10px] text-bf-body font-mono truncate">{field.name}</span>
+                          <span className="text-[11px] text-bf-body font-mono truncate">{field.name}</span>
                           {field.count > 1 && (
-                            <span className="text-[8.5px] text-bf-faint">[{field.count}]</span>
+                            <span className="text-[10px] text-bf-faint">[{field.count}]</span>
                           )}
                         </div>
-                        <span className="text-[9px] text-bf-faint font-mono text-right">{field.type}</span>
+                        <span className="text-[10px] text-bf-faint font-mono text-right">{field.type}</span>
                         <input
                           type="text"
                           value={structValues[field.name] ?? ''}
@@ -1024,21 +1024,21 @@ typedef struct {
                               ? 'e.g. 0.5'
                               : 'integer'
                           }
-                          className="w-full h-[20px] bg-bf-head border border-bf-line rounded px-1.5 text-[10px] text-bf-cyan font-mono focus:border-bf-cyan focus:outline-none"
+                          className="w-full h-[24px] bg-bf-head border border-bf-line rounded px-1.5 text-[12px] text-bf-cyan font-mono focus:border-bf-cyan focus:outline-none"
                         />
                       </React.Fragment>
                     ))}
                   </div>
                 )}
                 {structWire && structWire.errors.length > 0 && (
-                  <div className="text-[9px] font-mono text-bf-fault shrink-0">
+                  <div className="text-[11px] font-mono text-bf-fault shrink-0">
                     {structWire.errors.map((err, i) => (
                       <div key={i}>✗ {err}</div>
                     ))}
                   </div>
                 )}
                 {structWire && structWire.errors.length === 0 && (
-                  <div className="text-[9px] font-mono text-bf-ok shrink-0">
+                  <div className="text-[11px] font-mono text-bf-ok shrink-0">
                     WIRE: {structWire.bytes.map((b) => b.toString(16).padStart(2, '0').toUpperCase()).join(' ')}
                   </div>
                 )}
@@ -1056,7 +1056,7 @@ typedef struct {
                       className="group/byte flex flex-col items-center bg-bf-head border border-bf-line hover:border-bf-cyan/60 focus-within:border-bf-cyan focus-within:ring-1 focus-within:ring-bf-cyan focus-within:shadow-[0_0_12px_rgb(var(--bf-cyan-rgb)/0.3)] rounded p-1 transition-all"
                     >
                       {/* Byte Index */}
-                      <div className="flex items-center justify-between w-full text-[8px] text-bf-faint font-mono px-0.5">
+                      <div className="flex items-center justify-between w-full text-[10px] text-bf-faint font-mono px-0.5">
                         <span>+{idx}</span>
                         <button
                           tabIndex={-1}
@@ -1079,11 +1079,11 @@ typedef struct {
                         onPaste={(e) => handlePasteIntoByteGrid(e, idx)}
                         onChange={(e) => handleByteChange(idx, e.target.value)}
                         onKeyDown={(e) => handleByteKeyDown(idx, e)}
-                        className="w-11 h-11 bg-bf-onfill border border-bf-line-soft rounded text-center text-sm font-mono font-bold text-bf-cyan focus:outline-none uppercase my-0.5 selection:bg-bf-cyan/30"
+                        className="w-[42px] h-[38px] bg-bf-onfill border border-bf-line-soft rounded text-center text-[13px] font-mono font-bold text-bf-cyan focus:outline-none uppercase my-0.5 selection:bg-bf-cyan/30"
                       />
 
                       {/* Decoded ASCII Character Footnote */}
-                      <span className="text-[8.5px] font-mono text-bf-faint">{asciiChar}</span>
+                      <span className="text-[11px] font-mono text-bf-faint">{asciiChar}</span>
                     </div>
                   );
                 })}
@@ -1092,10 +1092,10 @@ typedef struct {
                 <button
                   onClick={handleAddByte}
                   data-tooltip="Append new byte to payload"
-                  className="w-11 h-[68px] border border-dashed border-bf-line hover:border-bf-cyan hover:bg-bf-cyan/10 text-bf-faint hover:text-bf-cyan rounded flex flex-col items-center justify-center transition-colors"
+                  className="w-[42px] h-[64px] border border-dashed border-bf-line hover:border-bf-cyan hover:bg-bf-cyan/10 text-bf-faint hover:text-bf-cyan rounded flex flex-col items-center justify-center transition-colors"
                 >
                   <Plus className="w-4 h-4 mb-0.5" />
-                  <span className="text-[8px] font-bold">BYTE</span>
+                  <span className="text-[10px] font-bold">BYTE</span>
                 </button>
               </div>
             ) : (
@@ -1107,11 +1107,11 @@ typedef struct {
                     ? 'Enter hex bytes (e.g. AA 55 04 00 2C)'
                     : 'Enter ASCII text string to send...'
                 }
-                className="flex-1 w-full bg-bf-onfill border border-bf-line rounded p-2 text-xs text-bf-body placeholder-bf-ghost font-mono focus:border-bf-cyan focus:outline-none resize-none"
+                className="flex-1 w-full bg-bf-onfill border border-bf-line rounded p-2 text-[13px] leading-relaxed text-bf-body placeholder-bf-ghost font-mono focus:border-bf-cyan focus:outline-none resize-none"
               />
             )}
 
-            <div className="flex items-center justify-between text-[10px] text-bf-faint px-1 shrink-0 pt-0.5">
+            <div className="flex items-center justify-between text-[11px] text-bf-faint px-1 shrink-0 pt-0.5">
               <span className="text-bf-cyan">
                 {mode === 'struct'
                   ? structWire && structWire.errors.length === 0
@@ -1135,7 +1135,7 @@ typedef struct {
           {/* Configuration Settings Bar */}
           <div className="grid grid-cols-2 gap-3 bg-bf-subpanel p-2 rounded border border-bf-line text-[11px] shrink-0">
             <div>
-              <label className="text-[9.5px] text-bf-faint block mb-1 font-bold">
+              <label className="text-[11px] text-bf-faint block mb-1 font-bold">
                 AUTO CHECKSUM
               </label>
               <select
@@ -1152,7 +1152,7 @@ typedef struct {
             </div>
 
             <div>
-              <label className="text-[9.5px] text-bf-faint block mb-1 font-bold">
+              <label className="text-[11px] text-bf-faint block mb-1 font-bold">
                 LINE TERMINATION
               </label>
               <select
@@ -1200,7 +1200,7 @@ typedef struct {
             <div className="flex items-center justify-between pb-2 border-b border-bf-line">
               <div className="flex items-center gap-2">
                 <Terminal className="w-4 h-4 text-bf-cyan" />
-                <span className="font-bold text-bf-body text-xs uppercase tracking-wide">
+                <span className="font-bold text-bf-body text-[13px] uppercase tracking-wide">
                   DEFINE USER COMMAND
                 </span>
               </div>
@@ -1216,7 +1216,7 @@ typedef struct {
             <form onSubmit={handleCreateCommand} className="flex flex-col gap-3">
               {/* Command Name */}
               <div className="flex flex-col gap-1">
-                <label className="text-[10px] text-bf-faint uppercase">Command Name</label>
+                <label className="text-[11px] text-bf-faint uppercase">Command Name</label>
                 <input
                   type="text"
                   required
@@ -1229,7 +1229,7 @@ typedef struct {
 
               {/* Payload Content (Hex or ASCII - Forge Format Mode controls hover display) */}
               <div className="flex flex-col gap-1">
-                <label className="text-[10px] text-bf-faint uppercase">Command Payload</label>
+                <label className="text-[11px] text-bf-faint uppercase">Command Payload</label>
                 <input
                   type="text"
                   required
@@ -1238,14 +1238,14 @@ typedef struct {
                   onChange={(e) => setNewCmdPayload(e.target.value)}
                   className="bg-bf-onfill border border-bf-line rounded px-2.5 py-1.5 text-xs text-bf-body font-mono focus:border-bf-cyan focus:outline-none"
                 />
-                <span className="text-[8.5px] text-bf-faint">
+                <span className="text-[10px] text-bf-faint">
                   Hover display converts dynamically based on Command Forge's active HEX/ASCII toggle.
                 </span>
               </div>
 
               {/* Color Selector */}
               <div className="flex flex-col gap-1">
-                <label className="text-[10px] text-bf-faint uppercase">Badge Accent Color</label>
+                <label className="text-[11px] text-bf-faint uppercase">Badge Accent Color</label>
                 <div className="flex items-center gap-2">
                   {COLOR_PALETTE.map((c) => (
                     <button
@@ -1268,7 +1268,7 @@ typedef struct {
 
               {/* Icon Selector */}
               <div className="flex flex-col gap-1">
-                <label className="text-[10px] text-bf-faint uppercase">Engineering Icon</label>
+                <label className="text-[11px] text-bf-faint uppercase">Engineering Icon</label>
                 <div className="grid grid-cols-5 gap-1.5">
                   {Object.entries(ICON_MAP).map(([name, Icon]) => (
                     <button
@@ -1282,7 +1282,7 @@ typedef struct {
                       }`}
                     >
                       <Icon className="w-4 h-4 mb-0.5" />
-                      <span className="text-[8px] truncate">{name}</span>
+                      <span className="text-[10px] truncate">{name}</span>
                     </button>
                   ))}
                 </div>
@@ -1290,7 +1290,7 @@ typedef struct {
 
               {/* Execution Mode: Single or Periodic */}
               <div className="flex flex-col gap-1 pt-1 border-t border-bf-line">
-                <label className="text-[10px] text-bf-faint uppercase">Execution Mode</label>
+                <label className="text-[11px] text-bf-faint uppercase">Execution Mode</label>
                 <div className="grid grid-cols-2 gap-2">
                   <button
                     type="button"
@@ -1301,8 +1301,8 @@ typedef struct {
                         : 'bg-bf-subpanel border-bf-line text-bf-faint'
                     }`}
                   >
-                    <div className="font-bold text-[10px]">SINGLE SHOT</div>
-                    <div className="text-[8.5px] opacity-75">Transmit once on click</div>
+                    <div className="font-bold text-[11px]">SINGLE SHOT</div>
+                    <div className="text-[10px] opacity-75">Transmit once on click</div>
                   </button>
 
                   <button
@@ -1314,8 +1314,8 @@ typedef struct {
                         : 'bg-bf-subpanel border-bf-line text-bf-faint'
                     }`}
                   >
-                    <div className="font-bold text-[10px]">PERIODIC LOOP</div>
-                    <div className="text-[8.5px] opacity-75">Toggleable repeat interval</div>
+                    <div className="font-bold text-[11px]">PERIODIC LOOP</div>
+                    <div className="text-[10px] opacity-75">Toggleable repeat interval</div>
                   </button>
                 </div>
               </div>
@@ -1325,7 +1325,7 @@ typedef struct {
                 <div className="flex items-center justify-between bg-bf-subpanel p-2 rounded border border-bf-line">
                   <div className="flex items-center gap-1.5 text-bf-body">
                     <Clock className="w-3.5 h-3.5 text-bf-ok" />
-                    <span className="text-[10px] font-bold">Repeat Interval:</span>
+                    <span className="text-[11px] font-bold">Repeat Interval:</span>
                   </div>
                   <div className="flex items-center gap-1.5">
                     <input
@@ -1337,7 +1337,7 @@ typedef struct {
                       onChange={(e) => setNewCmdIntervalMs(Number(e.target.value))}
                       className="w-20 bg-bf-onfill border border-bf-line rounded px-2 py-1 text-xs text-bf-cyan font-bold text-right focus:outline-none focus:border-bf-cyan"
                     />
-                    <span className="text-bf-faint text-[10px]">ms</span>
+                    <span className="text-bf-faint text-[11px]">ms</span>
                   </div>
                 </div>
               )}

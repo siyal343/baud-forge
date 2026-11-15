@@ -30,6 +30,8 @@ interface WorkstationState {
   selectedPacket: PacketRow | null;
   selectedField: DissectedField | null;
   hoveredField: DissectedField | null;
+  hoveredByteOffset: number | null;
+  selectedByteOffset: number | null;
   autoScroll: boolean;
   filterText: string;
   directionFilter: 'all' | 'rx' | 'tx' | 'fault';
@@ -108,6 +110,8 @@ interface WorkstationState {
   selectPacket: (packet: PacketRow | null) => void;
   selectField: (field: DissectedField | null) => void;
   setHoveredField: (field: DissectedField | null) => void;
+  setHoveredByteOffset: (offset: number | null) => void;
+  setSelectedByteOffset: (offset: number | null) => void;
   setAutoScroll: (val: boolean) => void;
   setFilterText: (text: string) => void;
   setCursorT1: (tUs: number | null) => void;
@@ -246,6 +250,8 @@ export const useWorkstationStore = create<WorkstationState>((set, get) => ({
   selectedPacket: null,
   selectedField: null,
   hoveredField: null,
+  hoveredByteOffset: null,
+  selectedByteOffset: null,
   autoScroll: true,
   filterText: '',
   directionFilter: 'all',
@@ -410,6 +416,8 @@ export const useWorkstationStore = create<WorkstationState>((set, get) => ({
       selectedPacket: packet,
       // Default to first field when selecting packet
       selectedField: packet?.dissectedFields?.[0] || null,
+      hoveredByteOffset: null,
+      selectedByteOffset: null,
     });
   },
 
@@ -420,6 +428,11 @@ export const useWorkstationStore = create<WorkstationState>((set, get) => ({
     if (get().hoveredField === field) return;
     set({ hoveredField: field });
   },
+  setHoveredByteOffset: (offset) => {
+    if (get().hoveredByteOffset === offset) return;
+    set({ hoveredByteOffset: offset });
+  },
+  setSelectedByteOffset: (offset) => set({ selectedByteOffset: offset }),
   setAutoScroll: (autoScroll) => set({ autoScroll }),
   setFilterText: (filterText) => set({ filterText }),
 
@@ -541,6 +554,8 @@ export const useWorkstationStore = create<WorkstationState>((set, get) => ({
       autoScroll: false,
       selectedPacket: closest,
       selectedField: closest?.dissectedFields?.[0] ?? null,
+      hoveredByteOffset: null,
+      selectedByteOffset: null,
       pausedTimestampUs: tUs,
     });
     // Workflow B: a scope click is an investigation act — record which frame
@@ -572,13 +587,16 @@ export const useWorkstationStore = create<WorkstationState>((set, get) => ({
 
     const nextPacket = packets[nextIndex];
     if (nextPacket) {
+      const changed = nextPacket.seqId !== selectedPacket?.seqId;
       set({
         selectedPacket: nextPacket,
-        selectedField: nextPacket.dissectedFields?.[0] ?? null,
+        selectedField: changed ? (nextPacket.dissectedFields?.[0] ?? null) : get().selectedField,
+        ...(changed ? { hoveredByteOffset: null, selectedByteOffset: null } : {}),
         cursorT1Us: nextPacket.timestampUs,
         isLive: false,
         isPaused: true,
         isReplaying: false,
+        autoScroll: false,
         pausedTimestampUs: nextPacket.timestampUs,
       });
     }
@@ -661,7 +679,15 @@ export const useWorkstationStore = create<WorkstationState>((set, get) => ({
     // line across the time gap the clear created, straight onto the first
     // post-clear frame (F-5) — plotEngine.clearData() drops its ring for the
     // same reason.
-    set({ packets: [], scopeSamples: [], traceSeries: {}, selectedPacket: null, selectedField: null });
+    set({
+      packets: [],
+      scopeSamples: [],
+      traceSeries: {},
+      selectedPacket: null,
+      selectedField: null,
+      hoveredByteOffset: null,
+      selectedByteOffset: null,
+    });
   },
 
   loadSampleCapture: () => {
@@ -680,6 +706,8 @@ export const useWorkstationStore = create<WorkstationState>((set, get) => ({
       scopeSamples: scopePts,
       selectedPacket: samples[samples.length - 1],
       selectedField: samples[samples.length - 1]?.dissectedFields[5] || null,
+      hoveredByteOffset: null,
+      selectedByteOffset: null,
       cursorT1Us: t,
     });
   },
@@ -869,6 +897,8 @@ function restartReplayTimer() {
         isReplaying: false,
         selectedPacket: last,
         selectedField: last.dissectedFields?.[0] ?? null,
+        hoveredByteOffset: null,
+        selectedByteOffset: null,
         pausedTimestampUs: last.timestampUs,
       });
       return;
@@ -877,6 +907,8 @@ function restartReplayTimer() {
     useWorkstationStore.setState({
       selectedPacket: pkt,
       selectedField: pkt.dissectedFields?.[0] ?? null,
+      hoveredByteOffset: null,
+      selectedByteOffset: null,
       pausedTimestampUs: pkt.timestampUs,
     });
   }, intervalMs);

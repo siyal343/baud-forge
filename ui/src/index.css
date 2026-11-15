@@ -53,6 +53,15 @@
   --color-bf-fault-soft: #fca5a5;
   /* Text painted on saturated fills (accent/ok/fault/amber buttons). */
   --color-bf-onfill: #0a0d13;
+  /* Pixel-locked font scale so rem-based html { font-size: 11px } preserves spacing */
+  --text-xs: 12px;
+  --text-xs--line-height: 1.45;
+  --text-sm: 13px;
+  --text-sm--line-height: 1.45;
+  --text-base: 14px;
+  --text-base--line-height: 1.5;
+  --text-lg: 16px;
+  --text-lg--line-height: 1.5;
 }
 
 :root {
@@ -408,7 +417,7 @@ body {
 .dockview-theme-baudforge .dockview-tab,
 .dockview-theme-dark .dockview-tab {
   font-family: 'JetBrains Mono', monospace;
-  font-size: 10px;
+  font-size: 11px;
   font-weight: 600;
   letter-spacing: 0.05em;
   text-transform: uppercase;
@@ -461,7 +470,7 @@ body {
   border-radius: 4px;
   padding: 3px 6px;
   font-family: 'JetBrains Mono', monospace;
-  font-size: 9.5px;
+  font-size: 11px;
   line-height: 1.25;
   white-space: nowrap;
   pointer-events: none;

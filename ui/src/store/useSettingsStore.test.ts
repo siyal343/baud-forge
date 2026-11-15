@@ -1,5 +1,10 @@
 import { describe, it, expect, beforeEach } from 'vitest';
-import { useSettingsStore, mergeSettings, DEFAULT_SETTINGS } from './useSettingsStore';
+import {
+  useSettingsStore,
+  mergeSettings,
+  DEFAULT_SETTINGS,
+  buildVaultPath,
+} from './useSettingsStore';
 
 beforeEach(() => {
   localStorage.clear();
@@ -75,5 +80,48 @@ describe('useSettingsStore — persistence', () => {
     expect(merged.theme).toBe('materials');
     expect(merged.themeMode).toBe('light');
     expect(merged.maxPackets).toBe(4200);
+  });
+});
+
+describe('recording settings & buildVaultPath', () => {
+  it('defaults recordingEnabled to false and recordingDir to empty', () => {
+    expect(DEFAULT_SETTINGS.recordingEnabled).toBe(false);
+    expect(DEFAULT_SETTINGS.recordingDir).toBe('');
+    const s = mergeSettings({});
+    expect(s.recordingEnabled).toBe(false);
+    expect(s.recordingDir).toBe('');
+  });
+
+  it('validates recordingEnabled and recordingDir in mergeSettings', () => {
+    const valid = mergeSettings({
+      recordingEnabled: true,
+      recordingDir: '  D:/captures/uart  ',
+    });
+    expect(valid.recordingEnabled).toBe(true);
+    expect(valid.recordingDir).toBe('D:/captures/uart');
+
+    const invalid = mergeSettings({
+      recordingEnabled: 'yes',
+      recordingDir: 42,
+    });
+    expect(invalid.recordingEnabled).toBe(false);
+    expect(invalid.recordingDir).toBe('');
+  });
+
+  it('buildVaultPath uses vaults/ by default and custom recordingDir when set', () => {
+    useSettingsStore.getState().updateSettings({ recordingDir: '' });
+    expect(buildVaultPath('rec-<stamp>')).toMatch(
+      /^vaults\/rec-\d{4}-\d{2}-\d{2}T\d{2}-\d{2}-\d{2}\.bflog$/
+    );
+    expect(buildVaultPath('vaults/custom-run')).toBe('vaults/custom-run.bflog');
+    expect(buildVaultPath('vaults\\custom-run.bflog')).toBe('vaults/custom-run.bflog');
+
+    expect(buildVaultPath('vaults/run-<stamp>', 'D:\\Captures\\')).toMatch(
+      /^D:\\Captures\/run-\d{4}-\d{2}-\d{2}T\d{2}-\d{2}-\d{2}\.bflog$/
+    );
+    expect(buildVaultPath('session', '/tmp/bforge///')).toBe('/tmp/bforge/session.bflog');
+
+    useSettingsStore.getState().updateSettings({ recordingDir: '/var/log/bforge/' });
+    expect(buildVaultPath('auto')).toBe('/var/log/bforge/auto.bflog');
   });
 });

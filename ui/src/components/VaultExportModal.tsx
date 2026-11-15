@@ -105,11 +105,11 @@ export const VaultExportModal: React.FC = () => {
 
   useEffect(() => {
     if (isExportModalOpen && sourceMode === 'vault') {
-      engineApi.getVaultInfo(customVaultPath.trim() || undefined).then((info) => {
+      engineApi.getVaultInfo(customVaultPath.trim() || vaultPath || undefined).then((info) => {
         setVaultInfo(info);
       });
     }
-  }, [isExportModalOpen, sourceMode, customVaultPath]);
+  }, [isExportModalOpen, sourceMode, customVaultPath, vaultPath]);
 
   // The Settings dialog's "Default Export Format" preselects each open.
   useEffect(() => {
@@ -127,7 +127,7 @@ export const VaultExportModal: React.FC = () => {
 
     try {
       if (sourceMode === 'vault') {
-        const path = customVaultPath.trim() || undefined;
+        const path = customVaultPath.trim() || vaultPath || undefined;
         if (isDesktopShell()) {
           // The webview has no download shelf, and an anchor pointing at the
           // engine is a cross-origin navigation the ACL swallows — the click
@@ -195,7 +195,7 @@ export const VaultExportModal: React.FC = () => {
         <div className="p-4 space-y-4 text-[11px]">
           {/* Source Selector */}
           <div>
-            <label className="block text-[10px] font-mono uppercase text-bf-mute mb-1.5">
+            <label className="block text-[11px] font-mono uppercase text-bf-mute mb-1.5">
               1. Select Export Source
             </label>
             <div className="grid grid-cols-2 gap-2">
@@ -245,13 +245,13 @@ export const VaultExportModal: React.FC = () => {
           {sourceMode === 'vault' && (
             <div className="bg-bf-subpanel border border-bf-line rounded p-2.5 space-y-2">
               <div className="flex items-center justify-between">
-                <span className="text-[10px] font-mono text-bf-mute">Vault Path:</span>
+                <span className="text-[11px] font-mono text-bf-mute">Vault Path:</span>
                 <input
                   type="text"
                   value={customVaultPath}
                   onChange={(e) => setCustomVaultPath(e.target.value)}
-                  className="w-2/3 px-2 py-0.5 bg-bf-surface border border-bf-line rounded text-[10px] font-mono text-bf-body focus:border-bf-cyan focus:outline-none"
-                  placeholder="Active session vault"
+                  className="w-2/3 px-2 py-0.5 bg-bf-surface border border-bf-line rounded text-[11px] font-mono text-bf-body focus:border-bf-cyan focus:outline-none"
+                  placeholder={vaultPath || 'Active session vault'}
                 />
               </div>
               <div className="flex items-center justify-between text-[10px] font-mono text-bf-faint pt-1 border-t border-bf-line">
@@ -263,7 +263,7 @@ export const VaultExportModal: React.FC = () => {
 
           {/* Target Format Grid */}
           <div>
-            <label className="block text-[10px] font-mono uppercase text-bf-mute mb-1.5">
+            <label className="block text-[11px] font-mono uppercase text-bf-mute mb-1.5">
               2. Select Target Export Format
             </label>
             <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
@@ -290,7 +290,7 @@ export const VaultExportModal: React.FC = () => {
                         <span className="font-semibold font-mono text-[11px] text-bf-bright">
                           {opt.name}
                         </span>
-                        <span className={`text-[9px] font-mono px-1 py-0.2 rounded border ${opt.badgeColor}`}>
+                        <span className={`text-[10px] font-mono px-1 py-0.2 rounded border ${opt.badgeColor}`}>
                           {opt.badge}
                         </span>
                       </div>

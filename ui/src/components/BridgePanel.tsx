@@ -73,10 +73,10 @@ export const BridgePanel: React.FC = () => {
       <div className="h-[24px] bg-bf-subpanel border-b border-bf-line px-2.5 flex items-center justify-between shrink-0">
         <div className="flex items-center gap-1.5">
           <Shuffle className="w-3 h-3 text-bf-purple" />
-          <span className="font-mono font-semibold text-bf-body tracking-wide text-[10.5px]">
+          <span className="font-mono font-semibold text-bf-body tracking-wide text-[11px]">
             MITM BRIDGE &amp; RELAY
           </span>
-          <span className="text-[9.5px] px-1 py-0.2 rounded bg-bf-hover text-bf-purple font-mono border border-bf-purple/30">
+          <span className="text-[10px] px-1 py-0.2 rounded bg-bf-hover text-bf-purple font-mono border border-bf-purple/30">
             HARDWARE IN THE MIDDLE
           </span>
         </div>
@@ -86,7 +86,7 @@ export const BridgePanel: React.FC = () => {
       <div className="p-2 border-b border-bf-line flex flex-col gap-2 shrink-0 bg-bf-head">
         <div className="grid grid-cols-[1fr_auto_1fr] gap-2 items-end">
           <div>
-            <label className="text-[9.5px] text-bf-faint block mb-1 font-bold">PORT A (TAP)</label>
+            <label className="text-[11px] text-bf-faint block mb-1 font-bold">PORT A (TAP)</label>
             <select
               value={portA}
               onChange={(e) => setPortA(e.target.value)}
@@ -102,7 +102,7 @@ export const BridgePanel: React.FC = () => {
           </div>
           <ArrowRightLeft className="w-3.5 h-3.5 text-bf-purple mb-1.5" />
           <div>
-            <label className="text-[9.5px] text-bf-faint block mb-1 font-bold">PORT B (INJECT)</label>
+            <label className="text-[11px] text-bf-faint block mb-1 font-bold">PORT B (INJECT)</label>
             <select
               value={portB}
               onChange={(e) => setPortB(e.target.value)}
@@ -118,7 +118,7 @@ export const BridgePanel: React.FC = () => {
           </div>
         </div>
 
-        <label className="flex items-center gap-1.5 text-[10px] font-mono text-bf-mute cursor-pointer">
+        <label className="flex items-center gap-1.5 text-[11px] font-mono text-bf-mute cursor-pointer">
           <input
             type="checkbox"
             checked={forward}
@@ -131,13 +131,13 @@ export const BridgePanel: React.FC = () => {
         <button
           onClick={handleAdd}
           disabled={applying}
-          className="flex items-center justify-center gap-1.5 px-2 py-1.5 bg-bf-purple/15 hover:bg-bf-purple/25 text-bf-purple border border-bf-purple/50 rounded text-[10px] font-bold font-mono transition-colors disabled:opacity-50"
+          className="flex items-center justify-center gap-1.5 px-2 py-1.5 bg-bf-purple/15 hover:bg-bf-purple/25 text-bf-purple border border-bf-purple/50 rounded text-[11px] font-bold font-mono transition-colors disabled:opacity-50"
         >
           <Plus className="w-3 h-3" />
           {applying ? 'APPLYING…' : 'ARM BRIDGE'}
         </button>
         {portOptions.length === 0 && (
-          <p className="text-[9px] text-bf-faint font-mono">
+          <p className="text-[11px] text-bf-faint font-mono">
             No engine session ports yet — bridges join REAL session ports. Start the engine with two
             ports (or use quick-connect) to arm one.
           </p>
@@ -149,8 +149,8 @@ export const BridgePanel: React.FC = () => {
         {bridges.length === 0 ? (
           <div className="h-full flex flex-col items-center justify-center text-center text-bf-faint">
             <Shuffle className="w-6 h-6 mb-2 opacity-40 text-bf-purple" />
-            <p className="text-[10px]">No bridges armed.</p>
-            <p className="text-[9px] mt-1 max-w-[260px]">
+            <p className="text-[13px]">No bridges armed.</p>
+            <p className="text-[11px] mt-1 max-w-[260px]">
               A forwarding bridge writes what PORT A receives into PORT B — intercept, log, and
               mutate traffic between two hardware links.
             </p>
@@ -163,10 +163,10 @@ export const BridgePanel: React.FC = () => {
                 className="bg-bf-head border border-bf-line rounded p-2 flex items-center justify-between gap-2"
               >
                 <div className="min-w-0">
-                  <div className="font-mono text-[10px] text-bf-body truncate">
+                  <div className="font-mono text-[12px] text-bf-body truncate">
                     {b.a} <ArrowRightLeft className="w-2.5 h-2.5 inline text-bf-purple" /> {b.b}
                     <span
-                      className={`ml-1.5 text-[8.5px] px-1 py-0.2 rounded border ${
+                      className={`ml-1.5 text-[10px] px-1 py-0.2 rounded border ${
                         b.forward
                           ? 'bg-bf-purple/20 text-bf-purple border-bf-purple/40'
                           : 'bg-bf-hover text-bf-faint border-bf-line'
@@ -175,7 +175,7 @@ export const BridgePanel: React.FC = () => {
                       {b.forward ? 'FORWARDING' : 'PASSIVE'}
                     </span>
                   </div>
-                  <div className="text-[9px] font-mono text-bf-faint mt-0.5">
+                  <div className="text-[11px] font-mono text-bf-faint mt-0.5">
                     forwarded {b.forwarded.toLocaleString()} B · dropped {b.dropped.toLocaleString()} B
                   </div>
                 </div>

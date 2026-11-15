@@ -10,10 +10,10 @@
 // Configured sessions are stored as profiles (<name>.bforge.toml) so the next
 // session of the same kind is one click. Recents can be pruned (× per entry)
 // or wiped (CLEAR ALL) without touching the workspace files themselves.
-import React, { useEffect, useState } from 'react';
-import { Settings } from 'lucide-react';
+import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import { RefreshCw, Settings } from 'lucide-react';
 import { logAction } from '../services/activityLog';
-import { useSettingsStore } from '../store/useSettingsStore';
+import { buildVaultPath, useSettingsStore } from '../store/useSettingsStore';
 import { SettingsModal } from './SettingsModal';
 
 type TauriCore = {
@@ -118,9 +118,9 @@ const DEFAULT_CONFIG: ConfigState = {
 
 const inputCls =
   'w-full bg-bf-onfill border border-bf-line rounded px-2 py-1.5 text-[11px] text-bf-body font-mono focus:outline-none focus:border-bf-cyan';
-const labelCls = 'text-[9.5px] text-bf-faint block mb-1 font-bold uppercase tracking-wider';
+const labelCls = 'text-[11px] text-bf-faint block mb-1 font-bold uppercase tracking-wider';
 const chipCls = (active: boolean) =>
-  `px-1.5 py-0.5 rounded border text-[9.5px] font-mono transition-colors ${
+  `px-1.5 py-0.5 rounded border text-[11px] font-mono transition-colors ${
     active
       ? 'bg-bf-cyan/15 text-bf-cyan border-bf-cyan/50'
       : 'bg-bf-panel text-bf-mute border-bf-line hover:text-bf-body'
@@ -128,9 +128,9 @@ const chipCls = (active: boolean) =>
 const navButton =
   'w-full px-3 py-2 rounded text-left font-mono text-[11px] transition-colors bg-bf-head border border-bf-line text-bf-body hover:border-bf-cyan/60 hover:text-bf-cyan disabled:opacity-40 disabled:hover:border-bf-line';
 const killButton =
-  'shrink-0 self-stretch px-2 rounded border border-bf-line text-bf-faint hover:text-bf-fault hover:border-bf-fault/50 text-[10px] font-mono transition-colors disabled:opacity-40';
+  'shrink-0 self-stretch px-2 rounded border border-bf-line text-bf-faint hover:text-bf-fault hover:border-bf-fault/50 text-[11px] font-mono transition-colors disabled:opacity-40';
 const sectionCls = 'rounded-md bg-bf-deep border border-bf-line p-3';
-const sectionTitleCls = 'text-[9px] text-bf-cyan/70 uppercase tracking-wider font-bold';
+const sectionTitleCls = 'text-[11px] text-bf-cyan/70 uppercase tracking-wider font-bold';
 
 /** A titled, bordered group inside a launcher column. */
 const Card: React.FC<{ title: string; right?: React.ReactNode; children: React.ReactNode; className?: string }> = ({
@@ -154,35 +154,112 @@ const errorBox = (message: string) => (
   </div>
 );
 
-const emptyHint = (text: string) => <p className="text-[9.5px] text-bf-faint font-mono py-1">{text}</p>;
+const emptyHint = (text: string) => <p className="text-[10px] text-bf-faint font-mono py-1">{text}</p>;
+
+/** Poll connected serial ports every 2s and on window focus/visibility, keeping UI state stable when unchanged. */
+const useSerialPortScanner = (core: TauriCore | null) => {
+  const [ports, setPorts] = useState<SerialPort[]>([]);
+  const [scanning, setScanning] = useState(false);
+  const sigRef = useRef<string>('');
+  const inFlightRef = useRef(false);
+
+  const scan = useCallback(async () => {
+    if (!core || inFlightRef.current) return;
+    inFlightRef.current = true;
+    setScanning(true);
+    try {
+      const list = (await core.invoke('list_serial_ports')) as SerialPort[] | null;
+      const items = list ?? [];
+      const sig = items.map((p) => `${p.device_path}|${p.vid_pid ?? ''}|${p.serial ?? ''}`).join('\n');
+      if (sig !== sigRef.current) {
+        sigRef.current = sig;
+        setPorts(items);
+      }
+    } catch {
+      // Ignore transient OS serial enumeration failures
+    } finally {
+      inFlightRef.current = false;
+      setScanning(false);
+    }
+  }, [core]);
+
+  useEffect(() => {
+    if (!core) return;
+    void scan();
+    const timer = window.setInterval(() => {
+      void scan();
+    }, 2000);
+    const onFocus = () => void scan();
+    const onVisibility = () => {
+      if (document.visibilityState === 'visible') void scan();
+    };
+    window.addEventListener('focus', onFocus);
+    document.addEventListener('visibilitychange', onVisibility);
+    return () => {
+      window.clearInterval(timer);
+      window.removeEventListener('focus', onFocus);
+      document.removeEventListener('visibilitychange', onVisibility);
+    };
+  }, [core, scan]);
+
+  return { ports, scanning, rescan: scan };
+};
+
+/** Compact spinning refresh button used in serial port card headers. */
+const RescanButton: React.FC<{ scanning: boolean; onRescan: () => void }> = ({ scanning, onRescan }) => (
+  <button
+    type="button"
+    onClick={onRescan}
+    disabled={scanning}
+    title="Rescan serial ports"
+    className={`p-0.5 rounded transition-colors ${
+      scanning ? 'text-bf-cyan animate-spin' : 'text-bf-faint hover:text-bf-cyan'
+    }`}
+  >
+    <RefreshCw className="w-3 h-3" />
+  </button>
+);
 
 /* ------------------------------------------------------------------ */
 /* LEFT COLUMN — configure a session from scratch                      */
 /* ------------------------------------------------------------------ */
 
-const ConfigureSession: React.FC<{ core: TauriCore; onSaved: () => void }> = ({ core, onSaved }) => {
-  const [ports, setPorts] = useState<SerialPort[]>([]);
+const ConfigureSession: React.FC<{
+  core: TauriCore;
+  ports: SerialPort[];
+  scanningPorts: boolean;
+  onRescanPorts: () => void;
+  resolveVault: () => string | null;
+  onSaved: () => void;
+}> = ({ core, ports, scanningPorts, onRescanPorts, resolveVault, onSaved }) => {
   const [f, setF] = useState<ConfigState>(DEFAULT_CONFIG);
   const [headerPath, setHeaderPath] = useState<string | null>(null);
   const [busy, setBusy] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
+  const prevPortsRef = useRef<SerialPort[]>([]);
   const set = (patch: Partial<ConfigState>) => setF((prev) => ({ ...prev, ...patch }));
 
   useEffect(() => {
-    core
-      .invoke('list_serial_ports')
-      .then((list) => {
-        const items = (list as SerialPort[]) ?? [];
-        setPorts(items);
-        if (items.length > 0) set({ portPath: items[0].device_path });
-      })
-      .catch(() => {});
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, []);
+    const prevPorts = prevPortsRef.current;
+    prevPortsRef.current = ports;
+    setF((prev) => {
+      const current = prev.portPath;
+      if (!current) {
+        return ports.length > 0 ? { ...prev, portPath: ports[0].device_path } : prev;
+      }
+      if (ports.some((p) => p.device_path === current)) {
+        return prev;
+      }
+      if (prevPorts.some((p) => p.device_path === current)) {
+        return { ...prev, portPath: ports[0]?.device_path ?? '' };
+      }
+      return prev;
+    });
+  }, [ports]);
 
   const portPath = f.portPath || ports[0]?.device_path || '';
 
-  const startOrSave = async (mode: 'start' | 'save') => {
+  const startOrSave = async (mode: 'start' | 'save' | 'create') => {
     setBusy(mode);
     setError(null);
     try {
@@ -192,9 +269,22 @@ const ConfigureSession: React.FC<{ core: TauriCore; onSaved: () => void }> = ({ 
         const url = (await core.invoke('start_configured', {
           configText: toml,
           profileName: profileName || null,
+          vault: resolveVault(),
         })) as string;
         logAction('session_configured', `${portPath} @ ${f.baud} ${f.framingMode}${headerPath ? ' + dissector' : ''}`);
         window.location.replace(`index.html?api=${url}&v=${Date.now()}`);
+        return;
+      }
+      if (mode === 'create') {
+        const url = (await core.invoke('create_workspace', {
+          configText: toml,
+          suggest: profileName || 'workspace.bforge.toml',
+          vault: resolveVault(),
+        })) as string | null;
+        if (url) {
+          logAction('workspace_created', profileName || 'workspace.bforge.toml');
+          window.location.replace(`index.html?api=${url}&v=${Date.now()}`);
+        }
         return;
       }
       if (!profileName) {
@@ -234,9 +324,12 @@ const ConfigureSession: React.FC<{ core: TauriCore; onSaved: () => void }> = ({ 
         </div>
       </Card>
 
-      <Card title="Serial port">
+      <Card title="Serial port" right={<RescanButton scanning={scanningPorts} onRescan={onRescanPorts} />}>
         <label className={labelCls}>Detected ports</label>
         <select className={inputCls} value={f.portPath} onChange={(e) => set({ portPath: e.target.value })}>
+          {ports.length === 0 && !f.portPath && (
+            <option value="">No serial ports detected</option>
+          )}
           {ports.map((p) => (
             <option key={p.device_path} value={p.device_path}>
               {p.device_path} {p.vid_pid ? `(${p.vid_pid})` : ''}
@@ -356,7 +449,7 @@ const ConfigureSession: React.FC<{ core: TauriCore; onSaved: () => void }> = ({ 
         <div className="flex gap-1.5">
           <button
             onClick={pickHeader}
-            className="flex-1 px-2 py-1.5 rounded text-[10.5px] font-mono bg-bf-panel border border-bf-line hover:border-bf-cyan/50 text-bf-mute hover:text-bf-cyan transition-colors"
+            className="flex-1 px-2 py-1.5 rounded text-[11px] font-mono bg-bf-panel border border-bf-line hover:border-bf-cyan/50 text-bf-mute hover:text-bf-cyan transition-colors"
           >
             {headerPath ? `📄 ${headerPath.split(/[\\/]/).pop()}` : 'Pick C header (.h)…'}
           </button>
@@ -378,14 +471,21 @@ const ConfigureSession: React.FC<{ core: TauriCore; onSaved: () => void }> = ({ 
         <button
           onClick={() => startOrSave('start')}
           disabled={busy !== null || !portPath}
-          className="flex-1 px-2 py-2 bg-bf-cyan hover:bg-bf-cyan-hi text-bf-onfill font-bold rounded text-[10.5px] disabled:opacity-40"
+          className="flex-1 px-2 py-2 bg-bf-cyan hover:bg-bf-cyan-hi text-bf-onfill font-bold rounded text-[11px] disabled:opacity-40"
         >
           {busy === 'start' ? 'STARTING…' : 'START SESSION'}
         </button>
         <button
+          onClick={() => startOrSave('create')}
+          disabled={busy !== null || !portPath}
+          className="px-2.5 py-2 bg-bf-subpanel hover:bg-bf-hover border border-bf-line hover:border-bf-cyan/50 text-bf-mute hover:text-bf-cyan rounded text-[11px] font-mono disabled:opacity-40"
+        >
+          {busy === 'create' ? 'SAVING…' : 'CREATE WORKSPACE…'}
+        </button>
+        <button
           onClick={() => startOrSave('save')}
           disabled={busy !== null || !portPath}
-          className="px-3 py-2 bg-bf-subpanel hover:bg-bf-hover border border-bf-line hover:border-bf-cyan/50 text-bf-mute hover:text-bf-cyan rounded text-[10.5px] font-mono disabled:opacity-40"
+          className="px-2.5 py-2 bg-bf-subpanel hover:bg-bf-hover border border-bf-line hover:border-bf-cyan/50 text-bf-mute hover:text-bf-cyan rounded text-[11px] font-mono disabled:opacity-40"
         >
           {busy === 'save' ? 'SAVING…' : 'SAVE PROFILE'}
         </button>
@@ -469,7 +569,7 @@ const RecentWorkspaces: React.FC<{
           <button
             onClick={clearAll}
             title="Remove every entry from this list — the workspace files are kept"
-            className="px-1.5 py-0.5 rounded border text-[9px] font-mono uppercase tracking-wider transition-colors border-bf-line text-bf-faint hover:text-bf-fault hover:border-bf-fault/50"
+            className="px-1.5 py-0.5 rounded border text-[11px] font-mono uppercase tracking-wider transition-colors border-bf-line text-bf-faint hover:text-bf-fault hover:border-bf-fault/50"
           >
             {clearLabel}
           </button>
@@ -490,7 +590,7 @@ const RecentWorkspaces: React.FC<{
               removeTitle="Remove from this list — the workspace file is kept"
             >
               <span className="block truncate">{path.split(/[\\/]/).pop()}</span>
-              <span className="block truncate text-[8.5px] text-bf-faint">{path}</span>
+              <span className="block truncate text-[10px] text-bf-faint">{path}</span>
             </OpenRow>
           ))}
         </div>
@@ -502,9 +602,10 @@ const RecentWorkspaces: React.FC<{
 const SavedProfiles: React.FC<{
   core: TauriCore;
   reloadKey: number;
-  onOpenProfile: (path: string) => void;
+  resolveVault: () => string | null;
+  onStart: (url: string) => void;
   busy: string | null;
-}> = ({ core, reloadKey, onOpenProfile, busy }) => {
+}> = ({ core, reloadKey, resolveVault, onStart, busy }) => {
   const [profiles, setProfiles] = useState<Profile[]>([]);
   const [starting, setStarting] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
@@ -520,8 +621,11 @@ const SavedProfiles: React.FC<{
     setStarting(profile.path);
     setError(null);
     try {
-      await core.invoke('start_workspace', { path: profile.path });
-      onOpenProfile(profile.path);
+      const url = (await core.invoke('start_workspace', {
+        path: profile.path,
+        vault: resolveVault(),
+      })) as string;
+      onStart(url);
     } catch (e) {
       setError(String(e));
       setStarting(null);
@@ -563,28 +667,35 @@ const SavedProfiles: React.FC<{
 };
 
 export const Launcher: React.FC = () => {
+  const core = useMemo(() => tauri(), []);
+  const settings = useSettingsStore((s) => s.settings);
+  const updateSettings = useSettingsStore((s) => s.updateSettings);
   const [recents, setRecents] = useState<string[]>([]);
-  const [ports, setPorts] = useState<SerialPort[]>([]);
+  const { ports, scanning: scanningPorts, rescan: rescanPorts } = useSerialPortScanner(core);
   const [pickedPort, setPickedPort] = useState<string>('');
   const [busy, setBusy] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [profileReloadKey, setProfileReloadKey] = useState(0);
 
   useEffect(() => {
-    const core = tauri();
     if (!core) return;
     core
       .invoke('recent_workspaces')
       .then((list) => setRecents((list as string[]) ?? []))
       .catch(() => {});
-    core
-      .invoke('list_serial_ports')
-      .then((list) => {
-        const items = (list as SerialPort[]) ?? [];
-        setPorts(items);
-        if (items.length > 0) setPickedPort(items[0].device_path);
-      })
-      .catch(() => {});
+  }, [core]);
+
+  useEffect(() => {
+    setPickedPort((prev) =>
+      prev && ports.some((p) => p.device_path === prev)
+        ? prev
+        : ports[0]?.device_path ?? ''
+    );
+  }, [ports]);
+
+  const resolveLauncherVault = useCallback((): string | null => {
+    const s = useSettingsStore.getState().settings;
+    return s.recordingEnabled ? buildVaultPath(s.vaultNamePattern, s.recordingDir) : null;
   }, []);
 
   const navigate = (base: string) => {
@@ -596,13 +707,15 @@ export const Launcher: React.FC = () => {
   };
 
   const startWorkspace = async (path: string) => {
-    const core = tauri();
     if (!core) return;
     setBusy(path);
     setError(null);
     logAction('workspace_open', path);
     try {
-      const url = (await core.invoke('start_workspace', { path })) as string;
+      const url = (await core.invoke('start_workspace', {
+        path,
+        vault: resolveLauncherVault(),
+      })) as string;
       navigate(url);
     } catch (e) {
       setError(String(e));
@@ -612,7 +725,6 @@ export const Launcher: React.FC = () => {
   };
 
   const openPicker = async () => {
-    const core = tauri();
     if (!core) return;
     let path: string | null = null;
     try {
@@ -624,8 +736,38 @@ export const Launcher: React.FC = () => {
     if (path) await startWorkspace(path);
   };
 
+  const createNewWorkspace = async () => {
+    if (!core) return;
+    setBusy('create');
+    setError(null);
+    try {
+      const url = (await core.invoke('create_workspace', {
+        configText: null,
+        suggest: 'workspace.bforge.toml',
+        vault: resolveLauncherVault(),
+      })) as string | null;
+      if (url) {
+        logAction('workspace_created', 'workspace.bforge.toml');
+        navigate(url);
+      }
+    } catch (e) {
+      setError(String(e));
+    } finally {
+      setBusy(null);
+    }
+  };
+
+  const pickRecordingDir = async () => {
+    if (!core) return;
+    try {
+      const folder = (await core.invoke('pick_recording_folder')) as string | null;
+      if (folder) updateSettings({ recordingDir: folder });
+    } catch (e) {
+      setError(String(e));
+    }
+  };
+
   const openDemo = async () => {
-    const core = tauri();
     if (!core) return;
     setBusy('demo');
     setError(null);
@@ -640,11 +782,10 @@ export const Launcher: React.FC = () => {
   };
 
   const reviewVault = async () => {
-    const core = tauri();
     if (!core) return;
     let path: string | null = null;
     try {
-      path = (await core.invoke('pick_vault', { suggest: 'capture.bflog' })) as string | null;
+      path = (await core.invoke('pick_existing_vault')) as string | null;
     } catch (e) {
       setError(String(e));
       return;
@@ -663,7 +804,6 @@ export const Launcher: React.FC = () => {
   };
 
   const quickConnect = async () => {
-    const core = tauri();
     if (!core) return;
     setBusy(`qc-${pickedPort}`);
     setError(null);
@@ -672,6 +812,7 @@ export const Launcher: React.FC = () => {
       const url = (await core.invoke('quick_connect', {
         device: pickedPort,
         baudRate: 115200,
+        vault: resolveLauncherVault(),
       })) as string;
       navigate(url);
     } catch (e) {
@@ -683,7 +824,13 @@ export const Launcher: React.FC = () => {
 
   // A workspace or profile is starting whenever `busy` holds a path rather
   // than one of the named actions below.
-  const startingPath = busy !== null && busy !== 'demo' && busy !== 'review' && !busy.startsWith('qc-');
+  const startingPath =
+    busy !== null && busy !== 'demo' && busy !== 'review' && busy !== 'create' && !busy.startsWith('qc-');
+
+  const recordingPreview = buildVaultPath(settings.vaultNamePattern, settings.recordingDir).replace(
+    /\d{4}-\d{2}-\d{2}T\d{2}-\d{2}-\d{2}/,
+    '<stamp>'
+  );
 
   // Ctrl+, opens Settings here too.
   useEffect(() => {
@@ -700,9 +847,9 @@ export const Launcher: React.FC = () => {
   return (
     <div className="w-full h-screen bg-bf-onfill flex flex-col select-none overflow-hidden">
       <header className="shrink-0 flex items-baseline gap-2 px-5 pt-4 pb-3 bg-bf-panel border-b border-bf-line">
-        <span className="text-bf-cyan font-mono font-bold text-sm tracking-widest">BAUDFORGE</span>
-        <span className="text-[9px] px-1 py-0.2 rounded bg-bf-hover text-bf-mute border border-bf-line">v1.0</span>
-        <span className="ml-auto text-[10px] text-bf-faint font-mono truncate">
+        <span className="text-bf-cyan font-mono font-bold text-[14px] tracking-widest">BAUDFORGE</span>
+        <span className="text-[10px] px-1 py-0.2 rounded bg-bf-hover text-bf-mute border border-bf-line">v1.0</span>
+        <span className="ml-auto text-[11px] text-bf-faint font-mono truncate">
           Hardware engineering workstation — configure a session on the left, or open one from the right.
         </span>
         <button
@@ -718,28 +865,42 @@ export const Launcher: React.FC = () => {
         {/* LEFT — configure session */}
         <section className="w-[620px] shrink-0 flex flex-col bg-bf-panel border border-bf-line rounded-lg shadow-[0_0_40px_rgb(var(--bf-shadow-rgb)/0.6)] overflow-hidden">
           <div className="shrink-0 px-4 pt-3.5 pb-2.5 border-b border-bf-line">
-            <h1 className="text-[10px] text-bf-body uppercase tracking-wider font-bold">
+            <h1 className="text-[11px] text-bf-body uppercase tracking-wider font-bold">
               Configure session <span className="text-bf-faint font-normal normal-case tracking-normal">— every parameter, no TOML needed</span>
             </h1>
           </div>
           <div className="flex-1 min-h-0 overflow-y-auto px-4 py-3">
-            <ConfigureSession core={tauri()!} onSaved={() => setProfileReloadKey((k) => k + 1)} />
+            <ConfigureSession
+              core={core!}
+              ports={ports}
+              scanningPorts={scanningPorts}
+              onRescanPorts={rescanPorts}
+              resolveVault={resolveLauncherVault}
+              onSaved={() => setProfileReloadKey((k) => k + 1)}
+            />
           </div>
         </section>
 
         {/* RIGHT — quick open */}
         <section className="flex-1 min-w-0 flex flex-col bg-bf-panel border border-bf-line rounded-lg shadow-[0_0_40px_rgb(var(--bf-shadow-rgb)/0.6)] overflow-y-auto p-4">
-          <h1 className="text-[10px] text-bf-body uppercase tracking-wider font-bold mb-3">
+          <h1 className="text-[11px] text-bf-body uppercase tracking-wider font-bold mb-3">
             Quick open <span className="text-bf-faint font-normal normal-case tracking-normal">— one click back into a session</span>
           </h1>
 
-          <div className="flex gap-1.5">
+          <div className="grid grid-cols-2 gap-1.5">
             <button
               onClick={openPicker}
               disabled={busy !== null}
               className={navButton + ' font-bold border-bf-cyan/40 text-bf-cyan'}
             >
               {startingPath ? 'STARTING…' : 'OPEN WORKSPACE…'}
+            </button>
+            <button
+              onClick={createNewWorkspace}
+              disabled={busy !== null}
+              className={navButton + ' font-bold border-bf-cyan/40 text-bf-cyan'}
+            >
+              {busy === 'create' ? 'CREATING…' : 'CREATE WORKSPACE…'}
             </button>
           </div>
           <div className="flex gap-1.5 mt-1.5">
@@ -751,8 +912,68 @@ export const Launcher: React.FC = () => {
             </button>
           </div>
 
+          <Card
+            title="Session recording"
+            className="mt-3"
+            right={
+              <button
+                type="button"
+                onClick={() => updateSettings({ recordingEnabled: !settings.recordingEnabled })}
+                className={`px-2 py-0.5 rounded border text-[11px] font-mono font-bold transition-colors ${
+                  settings.recordingEnabled
+                    ? 'bg-bf-fault/15 border-bf-fault/50 text-bf-fault'
+                    : 'bg-bf-panel border-bf-line text-bf-mute hover:text-bf-body hover:border-bf-cyan/50'
+                }`}
+              >
+                {settings.recordingEnabled ? 'RECORD ON START' : 'STANDBY (OFF)'}
+              </button>
+            }
+          >
+            <div className="space-y-2">
+              <div>
+                <label className={labelCls}>Storage directory</label>
+                <div className="flex gap-1.5">
+                  <input
+                    className={inputCls + ' flex-1 min-w-0'}
+                    value={settings.recordingDir}
+                    onChange={(e) => updateSettings({ recordingDir: e.target.value })}
+                    placeholder="vaults/ (workspace default)"
+                    spellCheck={false}
+                  />
+                  <button
+                    type="button"
+                    onClick={pickRecordingDir}
+                    disabled={busy !== null}
+                    className="shrink-0 px-2.5 py-1.5 bg-bf-subpanel hover:bg-bf-hover border border-bf-line hover:border-bf-cyan/50 text-bf-mute hover:text-bf-cyan rounded text-[11px] font-mono transition-colors disabled:opacity-40"
+                  >
+                    CHOOSE FOLDER…
+                  </button>
+                  {settings.recordingDir.trim() !== '' && (
+                    <button
+                      type="button"
+                      onClick={() => updateSettings({ recordingDir: '' })}
+                      disabled={busy !== null}
+                      className="shrink-0 px-2 py-1.5 bg-bf-subpanel hover:bg-bf-hover border border-bf-line hover:border-bf-fault/50 text-bf-faint hover:text-bf-fault rounded text-[11px] font-mono transition-colors disabled:opacity-40"
+                    >
+                      RESET
+                    </button>
+                  )}
+                </div>
+              </div>
+              <p className="text-[10px] text-bf-faint font-mono truncate" title={recordingPreview}>
+                {settings.recordingEnabled ? (
+                  <>
+                    Capture target: <span className="text-bf-ok">{recordingPreview}</span>
+                  </>
+                ) : (
+                  'No .bflog file is created until you press REC inside the workbench.'
+                )}
+              </p>
+            </div>
+          </Card>
+
           <RecentWorkspaces
-            core={tauri()!}
+            core={core!}
             recents={recents}
             setRecents={setRecents}
             onOpen={startWorkspace}
@@ -760,13 +981,18 @@ export const Launcher: React.FC = () => {
           />
 
           <SavedProfiles
-            core={tauri()!}
+            core={core!}
             reloadKey={profileReloadKey}
-            onOpenProfile={() => window.location.replace(`index.html?v=${Date.now()}`)}
+            resolveVault={resolveLauncherVault}
+            onStart={navigate}
             busy={busy}
           />
 
-          <Card title="Quick connect (serial, 115200 8N1)" className="mt-3">
+          <Card
+            title="Quick connect (serial, 115200 8N1)"
+            className="mt-3"
+            right={<RescanButton scanning={scanningPorts} onRescan={rescanPorts} />}
+          >
             {ports.length === 0 ? (
               emptyHint('No serial ports detected.')
             ) : (
@@ -774,7 +1000,7 @@ export const Launcher: React.FC = () => {
                 <select
                   value={pickedPort}
                   onChange={(e) => setPickedPort(e.target.value)}
-                  className="flex-1 bg-bf-onfill border border-bf-line rounded px-2 py-1.5 text-[10.5px] text-bf-body font-mono focus:outline-none focus:border-bf-cyan"
+                  className="flex-1 bg-bf-onfill border border-bf-line rounded px-2 py-1.5 text-[11px] text-bf-body font-mono focus:outline-none focus:border-bf-cyan"
                 >
                   {ports.map((p) => (
                     <option key={p.device_path} value={p.device_path}>
@@ -785,7 +1011,7 @@ export const Launcher: React.FC = () => {
                 <button
                   onClick={quickConnect}
                   disabled={busy !== null || !pickedPort}
-                  className="px-3 py-1.5 bg-bf-cyan hover:bg-bf-cyan-hi text-bf-onfill font-bold rounded text-[10px] disabled:opacity-40"
+                  className="px-3 py-1.5 bg-bf-cyan hover:bg-bf-cyan-hi text-bf-onfill font-bold rounded text-[11px] disabled:opacity-40"
                 >
                   {busy === `qc-${pickedPort}` ? '…' : 'CONNECT'}
                 </button>

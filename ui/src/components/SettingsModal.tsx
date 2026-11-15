@@ -40,7 +40,7 @@ const THEME_META: Array<{ id: BfTheme; label: string; swatch: [string, string, s
 /** Theme picker: swatch triplet + label per skin. */
 const ThemeRow: React.FC<{ value: BfTheme; onChange: (t: BfTheme) => void }> = ({ value, onChange }) => (
   <div className="flex items-center justify-between gap-2">
-    <span className="flex items-center gap-1 text-bf-faint text-[10px]">
+    <span className="flex items-center gap-1 text-bf-faint text-[11px]">
       Theme:
       <InfoHint text="Visual skin for the whole workstation — CLASSIC (original engineering dark), MATERIAL (Material Design 3 tonal surfaces), SKEUO (textured leather, glossy candy fills), SOFT (neumorphic extruded panels). Each has a light and dark variant; the scope canvas repaints instantly. Applies on APPLY." />
     </span>
@@ -53,7 +53,7 @@ const ThemeRow: React.FC<{ value: BfTheme; onChange: (t: BfTheme) => void }> = (
             type="button"
             onClick={() => onChange(t.id)}
             title={t.label}
-            className={`flex items-center gap-1.5 px-2 py-0.5 rounded text-[10px] font-semibold transition-colors border ${
+            className={`flex items-center gap-1.5 px-2 py-0.5 rounded text-[11px] font-semibold transition-colors border ${
               active
                 ? 'bg-bf-cyan/15 border-bf-cyan text-bf-cyan'
                 : 'bg-bf-subpanel border-bf-line text-bf-mute hover:border-bf-sky/40'
@@ -96,7 +96,7 @@ const BoolRow: React.FC<{
   offLabel?: string;
 }> = ({ label, tooltip, value, onChange, onLabel = 'ON', offLabel = 'OFF' }) => (
   <div className="flex items-center justify-between gap-2">
-    <span className="flex items-center gap-1 text-bf-faint text-[10px]">
+    <span className="flex items-center gap-1 text-bf-faint text-[11px]">
       {label}
       <InfoHint text={tooltip} />
     </span>
@@ -106,7 +106,7 @@ const BoolRow: React.FC<{
           key={String(v)}
           type="button"
           onClick={() => onChange(v)}
-          className={`w-12 py-0.5 rounded text-[10px] font-semibold transition-colors border ${
+          className={`w-12 py-0.5 rounded text-[11px] font-semibold transition-colors border ${
             value === v
               ? 'bg-bf-cyan/15 border-bf-cyan text-bf-cyan'
               : 'bg-bf-subpanel border-bf-line text-bf-mute hover:border-bf-sky/40'
@@ -128,7 +128,7 @@ const SegRow: React.FC<{
   onChange: (v: any) => void;
 }> = ({ label, tooltip, value, options, onChange }) => (
   <div className="flex items-center justify-between gap-2">
-    <span className="flex items-center gap-1 text-bf-faint text-[10px]">
+    <span className="flex items-center gap-1 text-bf-faint text-[11px]">
       {label}
       <InfoHint text={tooltip} />
     </span>
@@ -138,7 +138,7 @@ const SegRow: React.FC<{
           key={String(o.v)}
           type="button"
           onClick={() => onChange(o.v)}
-          className={`px-2 py-0.5 rounded text-[10px] font-semibold transition-colors border ${
+          className={`px-2 py-0.5 rounded text-[11px] font-semibold transition-colors border ${
             value === o.v
               ? 'bg-bf-cyan/15 border-bf-cyan text-bf-cyan'
               : 'bg-bf-subpanel border-bf-line text-bf-mute hover:border-bf-sky/40'
@@ -162,7 +162,7 @@ const NumRow: React.FC<{
   onChange: (v: number) => void;
 }> = ({ label, tooltip, value, min, max, step, suffix, onChange }) => (
   <div className="flex items-center justify-between gap-2">
-    <span className="flex items-center gap-1 text-bf-faint text-[10px]">
+    <span className="flex items-center gap-1 text-bf-faint text-[11px]">
       {label}
       <InfoHint text={tooltip} />
     </span>
@@ -177,9 +177,9 @@ const NumRow: React.FC<{
           const n = parseFloat(e.target.value);
           if (!isNaN(n)) onChange(n);
         }}
-        className="w-20 h-6 px-1.5 bg-bf-onfill border border-bf-line rounded text-bf-cyan font-bold text-[10.5px] text-right focus:outline-none focus:border-bf-cyan font-mono"
+        className="w-20 h-6 px-1.5 bg-bf-onfill border border-bf-line rounded text-bf-cyan font-bold text-[11px] text-right focus:outline-none focus:border-bf-cyan font-mono"
       />
-      {suffix && <span className="text-[9px] text-bf-faint">{suffix}</span>}
+      {suffix && <span className="text-[10px] text-bf-faint">{suffix}</span>}
     </div>
   </div>
 );
@@ -240,7 +240,23 @@ export const SettingsModal: React.FC = () => {
 
   const handleReset = () => setDraft({ ...DEFAULT_SETTINGS });
 
-  const patternPreview = buildVaultPath(draft.vaultNamePattern).replace(
+  const tauriCore = (
+    window as unknown as {
+      __TAURI__?: { core?: { invoke: (cmd: string, args?: Record<string, unknown>) => Promise<unknown> } };
+    }
+  ).__TAURI__?.core;
+
+  const chooseRecordingDir = async () => {
+    if (!tauriCore) return;
+    try {
+      const folder = (await tauriCore.invoke('pick_recording_folder')) as string | null;
+      if (folder) set('recordingDir', folder);
+    } catch {
+      // Ignore cancelled or unavailable folder dialog
+    }
+  };
+
+  const patternPreview = buildVaultPath(draft.vaultNamePattern, draft.recordingDir).replace(
     /\d{4}-\d{2}-\d{2}T\d{2}-\d{2}-\d{2}/,
     '<stamp>'
   );
@@ -260,10 +276,10 @@ export const SettingsModal: React.FC = () => {
       >
         {/* Header */}
         <div className="h-[32px] bg-bf-head border-b border-bf-line px-3 flex items-center justify-between shrink-0">
-          <div className="flex items-center gap-1.5 text-bf-cyan font-semibold text-[11.5px]">
+          <div className="flex items-center gap-1.5 text-bf-cyan font-semibold text-[12px]">
             <Settings className="w-3.5 h-3.5" />
             <span>SETTINGS</span>
-            <span className="text-[9px] text-bf-faint font-normal ml-1">applied on APPLY · stored locally</span>
+            <span className="text-[10px] text-bf-faint font-normal ml-1">applied on APPLY · stored locally</span>
           </div>
           <button
             onClick={() => setSettingsOpen(false)}
@@ -285,7 +301,7 @@ export const SettingsModal: React.FC = () => {
                   key={s.id}
                   type="button"
                   onClick={() => setSection(s.id)}
-                  className={`flex items-center gap-1.5 px-2 py-1.5 rounded text-[10px] font-semibold tracking-wider transition-colors border text-left ${
+                  className={`flex items-center gap-1.5 px-2 py-1.5 rounded text-[11px] font-semibold tracking-wider transition-colors border text-left ${
                     active
                       ? 'bg-bf-cyan/10 border-bf-cyan/40 text-bf-cyan'
                       : 'bg-transparent border-transparent text-bf-faint hover:text-bf-mute hover:bg-bf-subpanel'
@@ -313,13 +329,13 @@ export const SettingsModal: React.FC = () => {
                   ]}
                   onChange={(v) => set('themeMode', v)}
                 />
-                <div className="bg-bf-subpanel border border-bf-line px-2.5 py-1.5 rounded text-[9.5px] text-bf-faint leading-relaxed">
+                <div className="bg-bf-subpanel border border-bf-line px-2.5 py-1.5 rounded text-[10px] text-bf-faint leading-relaxed">
                   The skin recolors the entire workstation — panels, docking chrome, scrollbars,
                   tooltips, the oscilloscope canvas and every accent glow. The choice persists
                   across restarts and is restored before the first paint.
                 </div>
                 <div className="border-t border-bf-line pt-3 space-y-3">
-                  <div className="text-[10px] font-semibold text-bf-mute uppercase tracking-wider">
+                  <div className="text-[11px] font-semibold text-bf-mute uppercase tracking-wider">
                     Flash Yield
                   </div>
                   <NumRow
@@ -355,7 +371,7 @@ export const SettingsModal: React.FC = () => {
                   onChange={(v) => set('timestampBase', v)}
                 />
                 <div className="border-t border-bf-line pt-3 space-y-3">
-                  <div className="text-[10px] font-semibold text-bf-mute uppercase tracking-wider">
+                  <div className="text-[11px] font-semibold text-bf-mute uppercase tracking-wider">
                     Hex Inspector Display
                   </div>
                   <SegRow
@@ -392,7 +408,7 @@ export const SettingsModal: React.FC = () => {
 
             {section === 'performance' && (
               <>
-                <div className="bg-bf-subpanel border border-bf-line px-2.5 py-1.5 rounded text-[9.5px] text-bf-faint leading-relaxed">
+                <div className="bg-bf-subpanel border border-bf-line px-2.5 py-1.5 rounded text-[10px] text-bf-faint leading-relaxed">
                   Buffer depths bound the rolling in-memory history. Changes apply to newly captured
                   data — the current session's existing frames are not truncated retroactively.
                 </div>
@@ -421,15 +437,57 @@ export const SettingsModal: React.FC = () => {
 
             {section === 'data' && (
               <>
+                <BoolRow
+                  label="Record Session on Startup:"
+                  tooltip="When ON, launching a session immediately creates a .bflog capture in the recording directory. When OFF (standby), sessions start without writing disk logs until you press REC."
+                  value={draft.recordingEnabled}
+                  onChange={(v) => set('recordingEnabled', v)}
+                />
+                <div className="space-y-1.5">
+                  <div className="flex items-center justify-between gap-2">
+                    <span className="flex items-center gap-1 text-bf-faint text-[11px]">
+                      Recording Storage Directory:
+                      <InfoHint text="Optional custom directory for session captures. Leave blank to store recordings under the workspace vaults/ folder." />
+                    </span>
+                    <div className="flex items-center gap-1.5">
+                      <input
+                        type="text"
+                        value={draft.recordingDir}
+                        onChange={(e) => set('recordingDir', e.target.value)}
+                        placeholder="vaults/ (workspace default)"
+                        spellCheck={false}
+                        className="w-[180px] h-6 px-1.5 bg-bf-onfill border border-bf-line rounded text-bf-body text-[11px] focus:outline-none focus:border-bf-cyan font-mono"
+                      />
+                      {tauriCore && (
+                        <button
+                          type="button"
+                          onClick={chooseRecordingDir}
+                          className="h-6 px-2 rounded bg-bf-panel hover:bg-bf-subpanel border border-bf-line hover:border-bf-cyan/50 text-bf-mute hover:text-bf-cyan text-[11px] transition-colors"
+                        >
+                          Browse…
+                        </button>
+                      )}
+                      {draft.recordingDir.trim() !== '' && (
+                        <button
+                          type="button"
+                          onClick={() => set('recordingDir', '')}
+                          className="h-6 px-2 rounded bg-bf-panel hover:bg-bf-subpanel border border-bf-line hover:border-bf-fault/50 text-bf-faint hover:text-bf-fault text-[11px] transition-colors"
+                        >
+                          Reset
+                        </button>
+                      )}
+                    </div>
+                  </div>
+                </div>
                 <div className="flex items-center justify-between gap-2">
-                  <span className="flex items-center gap-1 text-bf-faint text-[10px]">
+                  <span className="flex items-center gap-1 text-bf-faint text-[11px]">
                     Default Export Format:
                     <InfoHint text="Format preselected when the EXPORT dialog opens." />
                   </span>
                   <select
                     value={draft.defaultExportFormat}
                     onChange={(e) => set('defaultExportFormat', e.target.value as any)}
-                    className="bg-bf-panel border border-bf-line rounded px-1.5 py-0.5 text-[10px] text-bf-body focus:outline-none focus:border-bf-cyan"
+                    className="bg-bf-panel border border-bf-line rounded px-1.5 py-0.5 text-[11px] text-bf-body focus:outline-none focus:border-bf-cyan"
                   >
                     {EXPORT_FORMATS.map((f) => (
                       <option key={f} value={f}>
@@ -440,9 +498,9 @@ export const SettingsModal: React.FC = () => {
                 </div>
                 <div className="space-y-1.5">
                   <div className="flex items-center justify-between gap-2">
-                    <span className="flex items-center gap-1 text-bf-faint text-[10px]">
+                    <span className="flex items-center gap-1 text-bf-faint text-[11px]">
                       Vault Name Pattern:
-                      <InfoHint text="REC file name template. <stamp> expands to the capture timestamp; .bflog and the vaults/ directory are always enforced." />
+                      <InfoHint text="REC file name template. <stamp> expands to the capture timestamp; .bflog and the configured storage directory (or vaults/) are always enforced." />
                     </span>
                     <input
                       type="text"
@@ -450,12 +508,14 @@ export const SettingsModal: React.FC = () => {
                       onChange={(e) => set('vaultNamePattern', e.target.value)}
                       placeholder="rec-<stamp>"
                       spellCheck={false}
-                      className="w-[220px] h-6 px-1.5 bg-bf-onfill border border-bf-line rounded text-bf-cyan font-bold text-[10.5px] focus:outline-none focus:border-bf-cyan font-mono"
+                      className="w-[220px] h-6 px-1.5 bg-bf-onfill border border-bf-line rounded text-bf-cyan font-bold text-[11px] focus:outline-none focus:border-bf-cyan font-mono"
                     />
                   </div>
-                  <div className="flex items-center justify-end gap-1.5 text-[9px] text-bf-faint">
+                  <div className="flex items-center justify-end gap-1.5 text-[10px] text-bf-faint">
                     <span>PREVIEW:</span>
-                    <span className="text-bf-ok">{patternPreview}</span>
+                    <span className="text-bf-ok truncate max-w-[340px]" title={patternPreview}>
+                      {patternPreview}
+                    </span>
                   </div>
                 </div>
               </>
@@ -468,7 +528,7 @@ export const SettingsModal: React.FC = () => {
           <button
             type="button"
             onClick={handleReset}
-            className="flex items-center gap-1 text-[10px] text-bf-faint hover:text-bf-mute transition-colors"
+            className="flex items-center gap-1 text-[11px] text-bf-faint hover:text-bf-mute transition-colors"
           >
             <RotateCcw className="w-2.5 h-2.5" />
             <span>Reset to defaults</span>
@@ -477,14 +537,14 @@ export const SettingsModal: React.FC = () => {
             <button
               type="button"
               onClick={() => setSettingsOpen(false)}
-              className="px-2.5 py-1 rounded bg-bf-btn hover:bg-bf-btn-hi text-bf-mute text-[10.5px] transition-colors"
+              className="px-2.5 py-1 rounded bg-bf-btn hover:bg-bf-btn-hi text-bf-mute text-[11px] transition-colors"
             >
               Cancel
             </button>
             <button
               type="button"
               onClick={handleApply}
-              className="flex items-center gap-1 px-3 py-1 rounded bg-bf-cyan hover:bg-bf-cyan-hi text-bf-onfill font-semibold text-[10.5px] transition-colors shadow-[0_0_8px_rgb(var(--bf-cyan-rgb)/0.4)]"
+              className="flex items-center gap-1 px-3 py-1 rounded bg-bf-cyan hover:bg-bf-cyan-hi text-bf-onfill font-semibold text-[11px] transition-colors shadow-[0_0_8px_rgb(var(--bf-cyan-rgb)/0.4)]"
             >
               <Check className="w-3 h-3" />
               <span>Apply</span>

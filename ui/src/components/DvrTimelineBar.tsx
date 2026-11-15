@@ -107,7 +107,7 @@ export const DvrTimelineBar: React.FC = () => {
         </button>
 
         {/* Speed Chips — live controls for the replay loop */}
-        <div className="flex items-center gap-0.5 bg-bf-subpanel border border-bf-line rounded px-1 py-0.2 font-mono text-[9px]">
+        <div className="flex items-center gap-0.5 bg-bf-subpanel border border-bf-line rounded px-1 py-0.2 font-mono text-[11px]">
           {speedOptions.map((s) => (
             <button
               key={s}
@@ -127,7 +127,7 @@ export const DvrTimelineBar: React.FC = () => {
 
       {/* Center: Full-width Scrubber Bar */}
       <div className="flex-1 mx-4 flex items-center gap-3">
-        <span className="text-[10px] font-mono text-bf-faint w-12 text-right">
+        <span className="text-[11px] font-mono text-bf-faint w-12 text-right">
           #{Math.max(0, currentIdx + 1)}
         </span>
         <input
@@ -139,7 +139,7 @@ export const DvrTimelineBar: React.FC = () => {
           disabled={totalPackets <= 1}
           className="flex-1 h-1.5 bg-bf-line rounded-lg appearance-none cursor-pointer accent-bf-cyan"
         />
-        <span className="text-[10px] font-mono text-bf-faint w-12">
+        <span className="text-[11px] font-mono text-bf-faint w-12">
           #{totalPackets}
         </span>
       </div>

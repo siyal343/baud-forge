@@ -133,19 +133,19 @@ export const PinSequencerView: React.FC = () => {
       <div className="h-[24px] bg-bf-subpanel border-b border-bf-line px-2.5 flex items-center justify-between shrink-0">
         <div className="flex items-center gap-1.5">
           <Sliders className="w-3 h-3 text-bf-cyan" />
-          <span className="font-mono font-semibold text-bf-body tracking-wide text-[10.5px]">
+          <span className="font-mono font-semibold text-bf-body tracking-wide text-[11px]">
             PIN SEQUENCER & MODEM LINES
           </span>
           <span
             data-tooltip="Timed GPIO pattern sequence generator for hardware reset & bootloader sequencing"
-            className="text-[9.5px] px-1 py-0.2 rounded bg-bf-hover text-bf-cyan font-mono border border-bf-cyan/30 cursor-help"
+            className="text-[10px] px-1 py-0.2 rounded bg-bf-hover text-bf-cyan font-mono border border-bf-cyan/30 cursor-help"
           >
             TIMED GPIO
           </span>
         </div>
 
         {statusMsg && (
-          <span className="text-[10px] font-mono text-bf-cyan animate-pulse">
+          <span className="text-[11px] font-mono text-bf-cyan animate-pulse">
             {statusMsg}
           </span>
         )}
@@ -155,11 +155,11 @@ export const PinSequencerView: React.FC = () => {
       <div className="bg-bf-head border-b border-bf-line p-2 flex items-center justify-between gap-3 shrink-0">
         {/* DTR Toggle */}
         <div className="flex items-center gap-2 bg-bf-subpanel border border-bf-line rounded px-2.5 py-1">
-          <span className="font-mono font-semibold text-bf-body text-[10.5px]">DTR LINE:</span>
+          <span className="font-mono font-semibold text-bf-body text-[11px]">DTR LINE:</span>
           <button
             onClick={() => handleApplyPins(!dtrState, rtsState)}
             data-tooltip="Toggle DTR (Data Terminal Ready) UART hardware line"
-            className={`px-2 py-0.5 rounded text-[10px] font-mono font-bold transition-colors ${
+            className={`px-2 py-0.5 rounded text-[11px] font-mono font-bold transition-colors ${
               dtrState
                 ? 'bg-bf-cyan text-bf-onfill'
                 : 'bg-bf-line text-bf-faint hover:text-bf-mute'
@@ -171,11 +171,11 @@ export const PinSequencerView: React.FC = () => {
 
         {/* RTS Toggle */}
         <div className="flex items-center gap-2 bg-bf-subpanel border border-bf-line rounded px-2.5 py-1">
-          <span className="font-mono font-semibold text-bf-body text-[10.5px]">RTS LINE:</span>
+          <span className="font-mono font-semibold text-bf-body text-[11px]">RTS LINE:</span>
           <button
             onClick={() => handleApplyPins(dtrState, !rtsState)}
             data-tooltip="Toggle RTS (Request To Send) UART hardware line"
-            className={`px-2 py-0.5 rounded text-[10px] font-mono font-bold transition-colors ${
+            className={`px-2 py-0.5 rounded text-[11px] font-mono font-bold transition-colors ${
               rtsState
                 ? 'bg-bf-cyan text-bf-onfill'
                 : 'bg-bf-line text-bf-faint hover:text-bf-mute'
@@ -186,7 +186,7 @@ export const PinSequencerView: React.FC = () => {
         </div>
 
         {/* Quick Pulse */}
-        <div className="flex items-center gap-1 font-mono text-[10px]">
+        <div className="flex items-center gap-1 font-mono text-[11px]">
           <button
             onClick={() => handlePulse(100)}
             data-tooltip="Emit a 100 ms active-low hardware reset pulse on DTR / RTS lines"
@@ -199,7 +199,7 @@ export const PinSequencerView: React.FC = () => {
       </div>
 
       {/* Preset Macro Buttons */}
-      <div className="bg-bf-panel border-b border-bf-line px-2 py-1 flex items-center gap-2 shrink-0 font-mono text-[9.5px]">
+      <div className="bg-bf-panel border-b border-bf-line px-2 py-1 flex items-center gap-2 shrink-0 font-mono text-[11px]">
         <span className="text-bf-faint">PRESET MACROS:</span>
         <button
           onClick={loadEsp32BootloaderMacro}
@@ -222,7 +222,7 @@ export const PinSequencerView: React.FC = () => {
       {/* Sequence Step Table */}
       <div className="flex-1 overflow-auto p-2 font-mono">
         <div className="bg-bf-subpanel border border-bf-line rounded overflow-hidden">
-          <div className="h-[22px] bg-bf-head border-b border-bf-line grid grid-cols-[40px_100px_100px_120px_1fr_40px] px-2 text-[9.5px] text-bf-faint uppercase tracking-wider items-center">
+          <div className="h-[22px] bg-bf-head border-b border-bf-line grid grid-cols-[40px_100px_100px_120px_1fr_40px] px-2 text-[11px] text-bf-faint uppercase tracking-wider items-center">
             <div data-tooltip="Sequential execution step number">Step</div>
             <div data-tooltip="DTR logic state during this step">DTR State</div>
             <div data-tooltip="RTS logic state during this step">RTS State</div>
@@ -230,7 +230,7 @@ export const PinSequencerView: React.FC = () => {
             <div data-tooltip="Microcontroller hardware pin action explanation">Description</div>
             <div data-tooltip="Delete step action" className="text-center">Del</div>
           </div>
-          <div className="divide-y divide-bf-line/50 text-[10.5px]">
+          <div className="divide-y divide-bf-line/50 text-[12px]">
             {steps.map((s, idx) => (
               <div
                 key={s.id}
@@ -241,7 +241,7 @@ export const PinSequencerView: React.FC = () => {
                   <button
                     onClick={() => handleUpdateStep(s.id, { dtr: !s.dtr })}
                     data-tooltip={`Click to toggle DTR logic level for step #${idx + 1}`}
-                    className={`px-1.5 py-0.2 rounded text-[10px] font-bold ${
+                    className={`px-1.5 py-0.2 rounded text-[11px] font-bold ${
                       s.dtr
                         ? 'bg-bf-cyan/20 text-bf-cyan border border-bf-cyan/40'
                         : 'bg-bf-line text-bf-faint'
@@ -254,7 +254,7 @@ export const PinSequencerView: React.FC = () => {
                   <button
                     onClick={() => handleUpdateStep(s.id, { rts: !s.rts })}
                     data-tooltip={`Click to toggle RTS logic level for step #${idx + 1}`}
-                    className={`px-1.5 py-0.2 rounded text-[10px] font-bold ${
+                    className={`px-1.5 py-0.2 rounded text-[11px] font-bold ${
                       s.rts
                         ? 'bg-bf-cyan/20 text-bf-cyan border border-bf-cyan/40'
                         : 'bg-bf-line text-bf-faint'
@@ -273,11 +273,11 @@ export const PinSequencerView: React.FC = () => {
                       handleUpdateStep(s.id, { wait_ms: parseInt(e.target.value, 10) || 10 })
                     }
                     data-tooltip="Duration in milliseconds to hold these pin states before next step (1 - 5000 ms)"
-                    className="w-16 bg-bf-panel border border-bf-line rounded px-1 py-0.2 text-[10.5px] text-bf-body focus:outline-none focus:border-bf-cyan"
+                    className="w-16 bg-bf-panel border border-bf-line rounded px-1 py-0.2 text-[12px] text-bf-body focus:outline-none focus:border-bf-cyan"
                   />
-                  <span className="text-bf-faint text-[10px]">ms</span>
+                  <span className="text-bf-faint text-[11px]">ms</span>
                 </div>
-                <div className="text-bf-mute text-[10px] truncate">
+                <div className="text-bf-mute text-[12px] truncate">
                   {s.dtr && !s.rts
                     ? 'Drive MCU into Boot Mode'
                     : !s.dtr && s.rts
@@ -319,7 +319,7 @@ export const PinSequencerView: React.FC = () => {
           <button
             onClick={handleAddStep}
             data-tooltip="Append a new hardware pin transition step to the sequence"
-            className="flex items-center gap-1 px-2.5 py-1 bg-bf-subpanel hover:bg-bf-active text-bf-mute hover:text-bf-cyan border border-bf-line rounded text-[10.5px] font-mono transition-colors"
+            className="flex items-center gap-1 px-2.5 py-1 bg-bf-subpanel hover:bg-bf-active text-bf-mute hover:text-bf-cyan border border-bf-line rounded text-[11px] font-mono transition-colors"
           >
             <Plus className="w-3 h-3" />
             <span>ADD TRANSITION STEP</span>
@@ -329,7 +329,7 @@ export const PinSequencerView: React.FC = () => {
             onClick={handleRunSequence}
             disabled={running || steps.length === 0}
             data-tooltip="Transmit timed hardware pin sequence to physical UART modem lines"
-            className="flex items-center gap-1 px-3 py-1 bg-bf-ok hover:bg-bf-ok-hi disabled:opacity-50 text-bf-onfill font-bold rounded font-mono text-[10.5px] transition-colors shadow-sm"
+            className="flex items-center gap-1 px-3 py-1 bg-bf-ok hover:bg-bf-ok-hi disabled:opacity-50 text-bf-onfill font-bold rounded font-mono text-[11px] transition-colors shadow-sm"
           >
             <Play className="w-3 h-3 fill-current" />
             <span>{running ? 'EXECUTING SEQUENCE...' : 'EXECUTE TIMED SEQUENCE'}</span>

@@ -161,12 +161,12 @@ export const ElfSymbolView: React.FC = () => {
           <span className="font-bold tracking-wider uppercase text-bf-bright">
             ELF Symbol & Crash Resolver
           </span>
-          <span className="text-[9px] px-1.5 py-0.2 rounded bg-bf-hover text-bf-cyan border border-bf-cyan/30">
+          <span className="text-[10px] px-1.5 py-0.2 rounded bg-bf-hover text-bf-cyan border border-bf-cyan/30">
             DWARF & TOKENS
           </span>
           <span
             data-tooltip="This panel currently renders a built-in demonstration dataset — symbols are not yet loaded from a real ELF binary."
-            className="text-[9px] px-1.5 py-0.2 rounded bg-bf-amber/15 text-bf-amber border border-bf-amber/50 font-bold cursor-help"
+            className="text-[10px] px-1.5 py-0.2 rounded bg-bf-amber/15 text-bf-amber border border-bf-amber/50 font-bold cursor-help"
           >
             DEMO DATA
           </span>
@@ -176,7 +176,7 @@ export const ElfSymbolView: React.FC = () => {
         <div className="flex items-center gap-1 bg-bf-subpanel p-0.5 rounded border border-bf-line">
           <button
             onClick={() => setActiveTab('stack')}
-            className={`px-2 py-0.5 rounded text-[10px] transition-colors ${
+            className={`px-2 py-0.5 rounded text-[11px] transition-colors ${
               activeTab === 'stack' ? 'bg-bf-cyan/20 text-bf-cyan font-bold' : 'text-bf-mute hover:text-bf-body'
             }`}
           >
@@ -184,7 +184,7 @@ export const ElfSymbolView: React.FC = () => {
           </button>
           <button
             onClick={() => setActiveTab('tokens')}
-            className={`px-2 py-0.5 rounded text-[10px] transition-colors ${
+            className={`px-2 py-0.5 rounded text-[11px] transition-colors ${
               activeTab === 'tokens' ? 'bg-bf-cyan/20 text-bf-cyan font-bold' : 'text-bf-mute hover:text-bf-body'
             }`}
           >
@@ -194,7 +194,7 @@ export const ElfSymbolView: React.FC = () => {
       </div>
 
       {/* ELF Upload Bar — real firmware image loaded onto the engine */}
-      <div className="flex items-center justify-between gap-2 px-3 py-1.5 bg-bf-subpanel border-b border-bf-line text-[10px]">
+      <div className="flex items-center justify-between gap-2 px-3 py-1.5 bg-bf-subpanel border-b border-bf-line text-[11px]">
         <div className="flex items-center gap-2 flex-1 min-w-0">
           <FileCode className="w-3.5 h-3.5 text-bf-mute" />
           <span className="text-bf-faint shrink-0">Active ELF:</span>
@@ -263,13 +263,13 @@ export const ElfSymbolView: React.FC = () => {
             {/* Crash Log Input Box */}
             <div className="bg-bf-head border border-bf-line rounded p-2.5 space-y-2">
               <div className="flex items-center justify-between">
-                <span className="text-[10px] font-bold uppercase tracking-wider text-bf-mute flex items-center gap-1.5">
+                <span className="text-[11px] font-bold uppercase tracking-wider text-bf-mute flex items-center gap-1.5">
                   <Terminal className="w-3 h-3 text-bf-warn" />
                   <span>Crash Log / Panic Backtrace Input</span>
                 </span>
                 <button
                   onClick={handleResolveTrace}
-                  className="px-2.5 py-0.5 bg-bf-cyan hover:bg-bf-cyan-hi text-bf-onfill font-bold rounded text-[10px] transition-colors"
+                  className="px-2.5 py-0.5 bg-bf-cyan hover:bg-bf-cyan-hi text-bf-onfill font-bold rounded text-[11px] transition-colors"
                 >
                   DECODE CRASH TRACE
                 </button>
@@ -279,17 +279,17 @@ export const ElfSymbolView: React.FC = () => {
                 onChange={(e) => setRawTrace(e.target.value)}
                 rows={3}
                 placeholder="Paste panic log or backtrace here (e.g. Backtrace: 0x42001484:0x3fc91cd0 ...)"
-                className="w-full bg-bf-onfill border border-bf-line rounded p-2 text-[10px] text-bf-body font-mono focus:border-bf-cyan focus:outline-none resize-none"
+                className="w-full bg-bf-onfill border border-bf-line rounded p-2 text-[12px] text-bf-body font-mono focus:border-bf-cyan focus:outline-none resize-none"
               />
             </div>
 
             {/* Resolved Stack Frames Table */}
             <div className="bg-bf-head border border-bf-line rounded overflow-hidden">
               <div className="px-3 py-1.5 bg-bf-subpanel border-b border-bf-line flex items-center justify-between">
-                <span className="text-[10px] font-bold uppercase tracking-wider text-bf-mute">
+                <span className="text-[11px] font-bold uppercase tracking-wider text-bf-mute">
                   Resolved Call Stack ({resolvedFrames.length} Frames)
                 </span>
-                <span className="text-[9px] text-bf-faint">
+                <span className="text-[10px] text-bf-faint">
                   Demangled Rust & C Source Mappings
                 </span>
               </div>
@@ -301,24 +301,24 @@ export const ElfSymbolView: React.FC = () => {
                     className="flex items-start justify-between gap-3 px-3 py-2 hover:bg-bf-subpanel/60 transition-colors"
                   >
                     <div className="flex items-start gap-2.5">
-                      <span className="text-bf-faint font-bold text-[10px] mt-0.5">
+                      <span className="text-bf-faint font-bold text-[11px] mt-0.5">
                         #{frame.depth}
                       </span>
                       <div>
                         <div className="flex items-center gap-2">
-                          <span className="text-bf-cyan font-bold">{frame.functionName}</span>
+                          <span className="text-bf-cyan font-bold text-[12px]">{frame.functionName}</span>
                           {frame.isRust && (
-                            <span className="px-1 py-0.2 rounded text-[8px] bg-bf-warn/20 text-bf-warn border border-bf-warn/30">
+                            <span className="px-1 py-0.2 rounded text-[10px] bg-bf-warn/20 text-bf-warn border border-bf-warn/30">
                               RUST DEMANGLED
                             </span>
                           )}
                           {frame.inline && (
-                            <span className="px-1 py-0.2 rounded text-[8px] bg-bf-info/20 text-bf-info border border-bf-info/30">
+                            <span className="px-1 py-0.2 rounded text-[10px] bg-bf-info/20 text-bf-info border border-bf-info/30">
                               INLINE
                             </span>
                           )}
                         </div>
-                        <div className="text-bf-mute text-[10px] mt-0.5 flex items-center gap-2">
+                        <div className="text-bf-mute text-[11px] mt-0.5 flex items-center gap-2">
                           <span>{frame.sourceFile}:{frame.line}</span>
                           <span className="text-bf-faint">·</span>
                           <span className="text-bf-faint">{frame.address}</span>
@@ -349,16 +349,16 @@ export const ElfSymbolView: React.FC = () => {
           <div className="space-y-3">
             <div className="flex items-center justify-between gap-2">
               <div className="relative flex-1 max-w-sm">
-                <Search className="w-3 h-3 absolute left-2 top-2 text-bf-faint" />
+                <Search className="w-3 h-3 absolute left-2 top-1/2 -translate-y-1/2 text-bf-faint" />
                 <input
                   type="text"
                   placeholder="Search token ID, format string, or file..."
                   value={tokenSearch}
                   onChange={(e) => setTokenSearch(e.target.value)}
-                  className="w-full bg-bf-subpanel border border-bf-line rounded pl-7 pr-2 py-1 text-[10px] text-bf-body focus:border-bf-cyan focus:outline-none"
+                  className="w-full bg-bf-subpanel border border-bf-line rounded pl-7 pr-2 py-1 text-[12px] text-bf-body focus:border-bf-cyan focus:outline-none"
                 />
               </div>
-              <span className="text-[10px] text-bf-mute">
+              <span className="text-[11px] text-bf-mute">
                 {filteredTokens.length} active format tokens
               </span>
             </div>
@@ -366,19 +366,19 @@ export const ElfSymbolView: React.FC = () => {
             <div className="bg-bf-head border border-bf-line rounded overflow-hidden">
               <table className="w-full text-left border-collapse">
                 <thead>
-                  <tr className="bg-bf-subpanel border-b border-bf-line text-[9px] uppercase tracking-wider text-bf-mute">
+                  <tr className="bg-bf-subpanel border-b border-bf-line text-[11px] uppercase tracking-wider text-bf-mute">
                     <th className="py-1.5 px-3">Token ID</th>
                     <th className="py-1.5 px-3">Kind</th>
                     <th className="py-1.5 px-3">Format String Template</th>
                     <th className="py-1.5 px-3">Location</th>
                   </tr>
                 </thead>
-                <tbody className="divide-y divide-bf-line">
+                <tbody className="divide-y divide-bf-line text-[12px]">
                   {filteredTokens.map((t, idx) => (
                     <tr key={idx} className="hover:bg-bf-subpanel/50 transition-colors">
                       <td className="py-1.5 px-3 font-mono text-bf-cyan">{t.id}</td>
                       <td className="py-1.5 px-3">
-                        <span className={`px-1 py-0.2 rounded text-[8px] font-mono border ${
+                        <span className={`px-1 py-0.2 rounded text-[10px] font-mono border ${
                           t.kind === 'defmt'
                             ? 'bg-bf-ok/15 border-bf-ok/30 text-bf-ok'
                             : 'bg-bf-purple/15 border-bf-purple/30 text-bf-purple'

@@ -225,15 +225,15 @@ export const FileTransferView: React.FC = () => {
       <div className="h-[24px] bg-bf-subpanel border-b border-bf-line px-2.5 flex items-center justify-between shrink-0">
         <div className="flex items-center gap-1.5">
           <Upload className="w-3 h-3 text-bf-cyan" />
-          <span className="font-mono font-semibold text-bf-body tracking-wide text-[10.5px]">
+          <span className="font-mono font-semibold text-bf-body tracking-wide text-[11px]">
             X/YMODEM Transfer Rig
           </span>
-          <span className="text-[9.5px] px-1 py-0.2 rounded bg-bf-hover text-bf-cyan font-mono border border-bf-cyan/30">
+          <span className="text-[10px] px-1 py-0.2 rounded bg-bf-hover text-bf-cyan font-mono border border-bf-cyan/30">
             X/YMODEM PROTOCOL
           </span>
         </div>
         <span
-          className={`text-[9.5px] font-mono px-1.5 py-0.2 rounded ${
+          className={`text-[10px] font-mono px-1.5 py-0.2 rounded ${
             status === 'complete'
               ? 'bg-bf-ok/20 text-bf-ok border border-bf-ok/40'
               : status === 'error'
@@ -249,16 +249,16 @@ export const FileTransferView: React.FC = () => {
       <div className="flex-1 grid grid-cols-[1fr_1fr_1fr] gap-2 p-2 min-h-0 overflow-hidden">
         {/* Protocol & File Setup */}
         <div className="bg-bf-head border border-bf-line rounded p-2 flex flex-col gap-2 overflow-y-auto min-h-0">
-          <div className="text-[9.5px] font-bold uppercase tracking-wider text-bf-mute border-b border-bf-line pb-1">
+          <div className="text-[11px] font-bold uppercase tracking-wider text-bf-mute border-b border-bf-line pb-1">
             Protocol & File Setup
           </div>
 
           <div>
-            <span className="text-[9px] text-bf-faint block mb-1">PROTOCOL DIALECT</span>
+            <span className="text-[11px] text-bf-faint block mb-1">PROTOCOL DIALECT</span>
             <div className="grid grid-cols-2 gap-1">
               <button
                 onClick={() => setMode('xmodem-crc')}
-                className={`px-1.5 py-1 rounded text-[9.5px] font-mono transition-colors border ${
+                className={`px-1.5 py-1 rounded text-[11px] font-mono transition-colors border ${
                   mode === 'xmodem-crc'
                     ? 'bg-bf-cyan/15 border-bf-cyan/50 text-bf-cyan'
                     : 'bg-bf-onfill border-bf-line text-bf-faint hover:text-bf-mute'
@@ -268,7 +268,7 @@ export const FileTransferView: React.FC = () => {
               </button>
               <button
                 onClick={() => setMode('xmodem-1k')}
-                className={`px-1.5 py-1 rounded text-[9.5px] font-mono transition-colors border ${
+                className={`px-1.5 py-1 rounded text-[11px] font-mono transition-colors border ${
                   mode === 'xmodem-1k'
                     ? 'bg-bf-cyan/15 border-bf-cyan/50 text-bf-cyan'
                     : 'bg-bf-onfill border-bf-line text-bf-faint hover:text-bf-mute'
@@ -280,11 +280,11 @@ export const FileTransferView: React.FC = () => {
           </div>
 
           <div>
-            <span className="text-[9px] text-bf-faint block mb-1">TRANSFER DIRECTION</span>
+            <span className="text-[11px] text-bf-faint block mb-1">TRANSFER DIRECTION</span>
             <div className="grid grid-cols-2 gap-1">
               <button
                 onClick={() => setDirection('send')}
-                className={`px-1.5 py-1 rounded text-[9.5px] font-mono transition-colors border ${
+                className={`px-1.5 py-1 rounded text-[11px] font-mono transition-colors border ${
                   direction === 'send'
                     ? 'bg-bf-ok/15 border-bf-ok/50 text-bf-ok'
                     : 'bg-bf-onfill border-bf-line text-bf-faint hover:text-bf-mute'
@@ -294,7 +294,7 @@ export const FileTransferView: React.FC = () => {
               </button>
               <button
                 onClick={() => setDirection('recv')}
-                className={`px-1.5 py-1 rounded text-[9.5px] font-mono transition-colors border ${
+                className={`px-1.5 py-1 rounded text-[11px] font-mono transition-colors border ${
                   direction === 'recv'
                     ? 'bg-bf-ok/15 border-bf-ok/50 text-bf-ok'
                     : 'bg-bf-onfill border-bf-line text-bf-faint hover:text-bf-mute'
@@ -308,7 +308,7 @@ export const FileTransferView: React.FC = () => {
           {direction === 'send' && (
             <label
               data-tooltip="Pick the file to transmit — bytes stage on the engine"
-              className="flex items-center justify-center gap-1 px-2 py-1.5 bg-bf-cyan/10 hover:bg-bf-cyan/20 text-bf-cyan border border-bf-cyan/40 rounded text-[9.5px] font-bold cursor-pointer transition-colors"
+              className="flex items-center justify-center gap-1 px-2 py-1.5 bg-bf-cyan/10 hover:bg-bf-cyan/20 text-bf-cyan border border-bf-cyan/40 rounded text-[11px] font-bold cursor-pointer transition-colors"
             >
               <Upload className="w-3 h-3" />
               <span>{stagedBytes ? `STAGED: ${stagedName} (${stagedBytes.length} B)` : 'STAGE FILE…'}</span>
@@ -321,17 +321,17 @@ export const FileTransferView: React.FC = () => {
           )}
 
           <div>
-            <span className="text-[9px] text-bf-faint block mb-1">FILENAME (wire name)</span>
+            <span className="text-[11px] text-bf-faint block mb-1">FILENAME (wire name)</span>
             <input
               type="text"
               value={filename}
               onChange={(e) => setFilename(e.target.value)}
-              className="w-full bg-bf-onfill border border-bf-line rounded px-2 py-1 text-[10px] text-bf-body font-mono focus:border-bf-cyan focus:outline-none"
+              className="w-full bg-bf-onfill border border-bf-line rounded px-2 py-1 text-[12px] text-bf-body font-mono focus:border-bf-cyan focus:outline-none"
             />
           </div>
 
           <div>
-            <span className="text-[9px] text-bf-faint block mb-1">
+            <span className="text-[11px] text-bf-faint block mb-1">
               SIZE (BYTES){direction === 'recv' ? ' — expected, trims padding' : ''}
             </span>
             <input
@@ -339,24 +339,24 @@ export const FileTransferView: React.FC = () => {
               min={1}
               value={fileSize}
               onChange={(e) => setFileSize(parseInt(e.target.value, 10) || 1)}
-              className="w-full bg-bf-onfill border border-bf-line rounded px-2 py-1 text-[10px] text-bf-body font-mono focus:border-bf-cyan focus:outline-none"
+              className="w-full bg-bf-onfill border border-bf-line rounded px-2 py-1 text-[12px] text-bf-body font-mono focus:border-bf-cyan focus:outline-none"
             />
           </div>
 
           <div>
-            <span className="text-[9px] text-bf-faint block mb-1">MAX RETRIES</span>
+            <span className="text-[11px] text-bf-faint block mb-1">MAX RETRIES</span>
             <input
               type="number"
               value={maxRetries}
               readOnly
-              className="w-full bg-bf-onfill border border-bf-line rounded px-2 py-1 text-[10px] text-bf-faint font-mono"
+              className="w-full bg-bf-onfill border border-bf-line rounded px-2 py-1 text-[12px] text-bf-faint font-mono"
             />
           </div>
 
           <button
             onClick={handleStartTransfer}
             disabled={status === 'transferring' || status === 'handshake' || status === 'finishing'}
-            className="flex items-center justify-center gap-1.5 px-2 py-1.5 bg-bf-cyan hover:bg-bf-cyan-hi disabled:opacity-40 text-bf-onfill font-bold rounded text-[10px] transition-colors"
+            className="flex items-center justify-center gap-1.5 px-2 py-1.5 bg-bf-cyan hover:bg-bf-cyan-hi disabled:opacity-40 text-bf-onfill font-bold rounded text-[11px] transition-colors"
           >
             <Play className="w-3 h-3 fill-current" />
             <span>START TRANSFER</span>
@@ -365,14 +365,14 @@ export const FileTransferView: React.FC = () => {
           <div className="grid grid-cols-2 gap-1">
             <button
               onClick={handleCancel}
-              className="flex items-center justify-center gap-1 px-2 py-1 bg-bf-fault/15 hover:bg-bf-fault/25 text-bf-fault border border-bf-fault/40 rounded text-[9.5px] font-bold transition-colors"
+              className="flex items-center justify-center gap-1 px-2 py-1 bg-bf-fault/15 hover:bg-bf-fault/25 text-bf-fault border border-bf-fault/40 rounded text-[11px] font-bold transition-colors"
             >
               <Square className="w-3 h-3 fill-current" />
               CANCEL
             </button>
             <button
               onClick={handleReset}
-              className="flex items-center justify-center gap-1 px-2 py-1 bg-bf-subpanel hover:bg-bf-hover text-bf-mute border border-bf-line rounded text-[9.5px] font-bold transition-colors"
+              className="flex items-center justify-center gap-1 px-2 py-1 bg-bf-subpanel hover:bg-bf-hover text-bf-mute border border-bf-line rounded text-[11px] font-bold transition-colors"
             >
               <RotateCcw className="w-3 h-3" />
               RESET
@@ -382,12 +382,12 @@ export const FileTransferView: React.FC = () => {
 
         {/* Transfer Telemetry */}
         <div className="bg-bf-head border border-bf-line rounded p-2 flex flex-col gap-2 overflow-y-auto min-h-0">
-          <div className="text-[9.5px] font-bold uppercase tracking-wider text-bf-mute border-b border-bf-line pb-1">
+          <div className="text-[11px] font-bold uppercase tracking-wider text-bf-mute border-b border-bf-line pb-1">
             Transfer Telemetry
           </div>
 
           <div>
-            <div className="flex items-center justify-between text-[9.5px] mb-1">
+            <div className="flex items-center justify-between text-[11px] mb-1">
               <span className="text-bf-faint">Progress ({progress}%)</span>
               <span className="text-bf-cyan font-mono">
                 {bytesTransferred.toLocaleString()} /{' '}
@@ -404,22 +404,22 @@ export const FileTransferView: React.FC = () => {
 
           <div className="grid grid-cols-2 gap-2">
             <div className="bg-bf-onfill border border-bf-line rounded p-1.5">
-              <div className="text-[8.5px] text-bf-faint uppercase tracking-wider">Block Counter</div>
+              <div className="text-[10px] text-bf-faint uppercase tracking-wider">Block Counter</div>
               <div className="text-[14px] text-bf-cyan font-mono font-bold">
-                #{currentBlock} <span className="text-[10px] text-bf-faint">/ {totalBlocks || wireBlocks}</span>
+                #{currentBlock} <span className="text-[11px] text-bf-faint">/ {totalBlocks || wireBlocks}</span>
               </div>
             </div>
             <div className="bg-bf-onfill border border-bf-line rounded p-1.5">
-              <div className="text-[8.5px] text-bf-faint uppercase tracking-wider">Block Size</div>
+              <div className="text-[10px] text-bf-faint uppercase tracking-wider">Block Size</div>
               <div className="text-[14px] text-bf-mute font-mono font-bold">{blockSize} B</div>
             </div>
           </div>
 
           <div className="bg-bf-onfill border border-bf-line rounded p-1.5">
-            <div className="text-[8.5px] text-bf-faint uppercase tracking-wider mb-1">
+            <div className="text-[10px] text-bf-faint uppercase tracking-wider mb-1">
               Wire Frame Structure ({direction === 'send' ? 'SOH/STX + CRC16' : 'as received'})
             </div>
-            <div className="text-[9px] text-bf-faint font-mono break-all">
+            <div className="text-[11px] text-bf-faint font-mono break-all">
               {stagedBytes && direction === 'send'
                 ? Array.from(stagedBytes.slice(0, 12))
                     .map((b) => b.toString(16).padStart(2, '0').toUpperCase())
@@ -432,17 +432,17 @@ export const FileTransferView: React.FC = () => {
         {/* Transfer Protocol Log */}
         <div className="bg-bf-head border border-bf-line rounded p-2 flex flex-col min-h-0">
           <div className="flex items-center justify-between border-b border-bf-line pb-1 mb-1">
-            <span className="text-[9.5px] font-bold uppercase tracking-wider text-bf-mute">
+            <span className="text-[11px] font-bold uppercase tracking-wider text-bf-mute">
               Transfer Protocol Log
             </span>
             <button
               onClick={() => setLogMessages([])}
-              className="text-[9px] text-bf-faint hover:text-bf-body"
+              className="text-[11px] text-bf-faint hover:text-bf-body"
             >
               Clear
             </button>
           </div>
-          <div className="flex-1 overflow-y-auto font-mono text-[9px] space-y-0.5 min-h-0">
+          <div className="flex-1 overflow-y-auto font-mono text-[12px] space-y-0.5 min-h-0">
             {logMessages.length === 0 ? (
               <div className="text-bf-ghost">Ready. Arm a transfer to begin.</div>
             ) : (

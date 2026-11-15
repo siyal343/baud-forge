@@ -20,7 +20,7 @@ struct Running {
     stop: Arc<AtomicBool>,
     /// `None` in review mode, where an existing vault is read and nothing records.
     workspace: Option<PathBuf>,
-    vault: PathBuf,
+    vault: Option<PathBuf>,
 }
 
 #[derive(Default)]
@@ -53,12 +53,12 @@ fn ui_directory() -> Option<PathBuf> {
     repository.join("index.html").exists().then_some(repository)
 }
 
-fn default_vault() -> PathBuf {
-    let stamp = std::time::SystemTime::now()
-        .duration_since(std::time::UNIX_EPOCH)
-        .map(|since| since.as_secs())
-        .unwrap_or(0);
-    std::env::temp_dir().join(format!("bforge-gui-{stamp}.bflog"))
+/// Normalize an optional vault path argument from Tauri IPC into `Option<PathBuf>`.
+fn clean_vault_arg(vault: Option<String>) -> Option<PathBuf> {
+    vault
+        .map(|s| s.trim().to_string())
+        .filter(|s| !s.is_empty())
+        .map(PathBuf::from)
 }
 
 /// Window geometry, kept beside the workspace list so a launch looks like the last one.
@@ -231,11 +231,21 @@ fn start(app: &tauri::AppHandle, path: &Path, vault: Option<PathBuf>) -> Result<
         std::fs::read_to_string(path).map_err(|error| format!("{}: {error}", path.display()))?;
     let config: ProjectConfig =
         toml::from_str(&text).map_err(|error| format!("{}: {error}", path.display()))?;
-    let vault = vault.unwrap_or_else(default_vault);
+    let vault = vault.filter(|p| !p.to_string_lossy().trim().is_empty());
+    if let Some(ref vault_path) = vault
+        && let Some(parent) = vault_path.parent()
+        && !parent.as_os_str().is_empty()
+    {
+        std::fs::create_dir_all(parent)
+            .map_err(|error| format!("{}: {error}", vault_path.display()))?;
+    }
 
     let ports = session_ports_from_config(&config, &[]).map_err(|error| error.to_string())?;
-    let mut session = Session::start(ports, Some(&vault), config.workspace.elf_path.clone())
-        .map_err(|error| format!("{}: {error}", vault.display()))?;
+    let mut session = Session::start(ports, vault.as_deref(), config.workspace.elf_path.clone())
+        .map_err(|error| match &vault {
+            Some(vault_path) => format!("{}: {error}", vault_path.display()),
+            None => error.to_string(),
+        })?;
     session
         .enable_decode(&config.ports)
         .map_err(|error| error.to_string())?;
@@ -267,10 +277,14 @@ fn start(app: &tauri::AppHandle, path: &Path, vault: Option<PathBuf>) -> Result<
         Some(directory) => server.with_ui(directory),
         None => server,
     };
-    let server = server.with_vault(VaultSource {
-        path: vault.clone(),
-        ports: config.ports.clone(),
-    });
+    let server = if let Some(ref vault_path) = vault {
+        server.with_vault(VaultSource {
+            path: vault_path.clone(),
+            ports: config.ports.clone(),
+        })
+    } else {
+        server
+    };
     let server = server.with_config(config.clone());
     let stop = server.stop_handle();
 
@@ -280,11 +294,13 @@ fn start(app: &tauri::AppHandle, path: &Path, vault: Option<PathBuf>) -> Result<
         }
     });
 
-    // The vault cannot describe itself yet, so the workspace is copied beside it. Review
-    // reads that copy, which is what makes a reviewed capture decode (D-111).
-    let sidecar = vault.with_extension("bforge.toml");
-    if sidecar != path {
-        let _ = std::fs::copy(path, &sidecar);
+    if let Some(ref vault_path) = vault {
+        // The vault cannot describe itself yet, so the workspace is copied beside it. Review
+        // reads that copy, which is what makes a reviewed capture decode (D-111).
+        let sidecar = vault_path.with_extension("bforge.toml");
+        if sidecar != path {
+            let _ = std::fs::copy(path, &sidecar);
+        }
     }
 
     *engine.running.lock().unwrap() = Some(Running {
@@ -360,13 +376,131 @@ fn demo_workspace(app: tauri::AppHandle) -> Result<String, String> {
     Ok(path.display().to_string())
 }
 
+/// Start a session from an existing `.bforge.toml` workspace file.
 #[tauri::command]
 fn start_workspace(
     app: tauri::AppHandle,
     path: String,
     vault: Option<String>,
 ) -> Result<String, String> {
-    start(&app, Path::new(&path), vault.map(PathBuf::from))
+    start(&app, Path::new(&path), clean_vault_arg(vault))
+}
+
+/// Sanitize a suggested workspace filename and ensure a `.toml` suffix.
+fn sanitize_workspace_suggest(suggest: Option<&str>) -> String {
+    let raw = suggest.unwrap_or_default().trim();
+    let sanitized: String = raw
+        .chars()
+        .map(|c| {
+            if c.is_alphanumeric() || matches!(c, '-' | '_' | '.' | ' ') {
+                c
+            } else {
+                '-'
+            }
+        })
+        .collect();
+    let cleaned = sanitized.trim().trim_matches('.');
+    let mut name = if cleaned.is_empty() {
+        "workspace.bforge.toml".to_string()
+    } else {
+        cleaned.replace(' ', "-")
+    };
+    if !name.to_ascii_lowercase().ends_with(".toml") {
+        if name.to_ascii_lowercase().ends_with(".bforge") {
+            name.push_str(".toml");
+        } else {
+            name.push_str(".bforge.toml");
+        }
+    }
+    name
+}
+
+/// Ensure a user-selected workspace file path ends with `.toml`.
+fn ensure_toml_extension(mut path: PathBuf) -> PathBuf {
+    let is_toml = path
+        .extension()
+        .and_then(|ext| ext.to_str())
+        .is_some_and(|ext| ext.eq_ignore_ascii_case("toml"));
+    if !is_toml {
+        let mut name = path
+            .file_name()
+            .map(|n| n.to_string_lossy().into_owned())
+            .unwrap_or_else(|| "workspace".to_string());
+        if name.to_ascii_lowercase().ends_with(".bforge") {
+            name.push_str(".toml");
+        } else {
+            name.push_str(".bforge.toml");
+        }
+        path.set_file_name(name);
+    }
+    path
+}
+
+/// Build a valid starter `.bforge.toml` configuration for a newly created workspace.
+fn default_workspace_toml(file_path: &Path) -> String {
+    let ws_name: String = file_path
+        .file_stem()
+        .map(|s| s.to_string_lossy().into_owned())
+        .map(|s| s.strip_suffix(".bforge").map(str::to_string).unwrap_or(s))
+        .unwrap_or_else(|| "workspace".to_string())
+        .chars()
+        .filter(|c| *c != '"' && *c != '\\' && !c.is_control())
+        .collect();
+    let ws_name = if ws_name.trim().is_empty() {
+        "workspace".to_string()
+    } else {
+        ws_name
+    };
+    format!(
+        "[workspace]\nname = \"{ws_name}\"\nversion = \"0.1\"\n\n[[ports]]\nid = \"main\"\ntransport = \"tcp-server\"\naddress = \"127.0.0.1:0\"\nbaud_rate = 115200\nframing = {{ mode = \"cobs\" }}\n"
+    )
+}
+
+/// Prompt for a save location, write a validated `.bforge.toml` workspace, and start its session.
+#[tauri::command]
+fn create_workspace(
+    app: tauri::AppHandle,
+    config_text: Option<String>,
+    suggest: Option<String>,
+    vault: Option<String>,
+) -> Result<Option<String>, String> {
+    let suggest_name = sanitize_workspace_suggest(suggest.as_deref());
+    let Some(chosen) = rfd::FileDialog::new()
+        .add_filter("BaudForge workspace", &["toml"])
+        .set_title("Create a new BaudForge workspace")
+        .set_file_name(&suggest_name)
+        .save_file()
+    else {
+        return Ok(None);
+    };
+    let file_path = ensure_toml_extension(chosen);
+    let content = match config_text.filter(|text| !text.trim().is_empty()) {
+        Some(text) => text,
+        None => default_workspace_toml(&file_path),
+    };
+    let parsed: ProjectConfig =
+        toml::from_str(&content).map_err(|error| format!("config invalid: {error}"))?;
+    if parsed.ports.is_empty() {
+        return Err("config invalid: at least one [[ports]] entry is required".to_string());
+    }
+    if let Some(parent) = file_path.parent()
+        && !parent.as_os_str().is_empty()
+    {
+        std::fs::create_dir_all(parent)
+            .map_err(|error| format!("{}: {error}", file_path.display()))?;
+    }
+    std::fs::write(&file_path, &content)
+        .map_err(|error| format!("{}: {error}", file_path.display()))?;
+    start(&app, &file_path, clean_vault_arg(vault)).map(Some)
+}
+
+/// Choose the default directory where new `.bflog` recordings are stored.
+#[tauri::command]
+fn pick_recording_folder() -> Option<String> {
+    rfd::FileDialog::new()
+        .set_title("Choose recording storage directory")
+        .pick_folder()
+        .map(|path| path.display().to_string())
 }
 
 /// Choose where the next session records. The name comes from the workspace.
@@ -377,6 +511,16 @@ fn pick_vault(suggest: String) -> Option<String> {
         .set_title("Where should this session record?")
         .set_file_name(&suggest)
         .save_file()
+        .map(|path| path.display().to_string())
+}
+
+/// Choose an existing `.bflog` vault file to open in review mode.
+#[tauri::command]
+fn pick_existing_vault() -> Option<String> {
+    rfd::FileDialog::new()
+        .add_filter("BaudForge vault", &["bflog"])
+        .set_title("Open a recorded BaudForge vault")
+        .pick_file()
         .map(|path| path.display().to_string())
 }
 
@@ -432,7 +576,7 @@ fn start_review(app: tauri::AppHandle, path: String) -> Result<String, String> {
         port,
         stop,
         workspace: None,
-        vault,
+        vault: Some(vault),
     });
     Ok(format!("http://127.0.0.1:{port}"))
 }
@@ -571,6 +715,7 @@ fn start_configured(
     app: tauri::AppHandle,
     config_text: String,
     profile_name: Option<String>,
+    vault: Option<String>,
 ) -> Result<String, String> {
     // Validate before writing anything: a profile that cannot parse would
     // poison the launcher's saved list.
@@ -605,7 +750,7 @@ fn start_configured(
         )),
     };
     std::fs::write(&path, &config_text).map_err(|error| format!("{}: {error}", path.display()))?;
-    start(&app, &path, None)
+    start(&app, &path, clean_vault_arg(vault))
 }
 
 /// Pick a C-header file for the launcher's dissector field.
@@ -634,10 +779,12 @@ fn export_vault(
         _ => {
             let running = app.state::<Engine>();
             let guard = running.running.lock().unwrap();
-            guard
+            let r = guard
                 .as_ref()
-                .map(|running| running.vault.clone())
-                .ok_or("no session to export")?
+                .ok_or_else(|| "no session to export".to_string())?;
+            r.vault
+                .clone()
+                .ok_or_else(|| "no active session vault to export".to_string())?
         }
     };
     let Some(format) = bforge_storage::format_from_name(&format) else {
@@ -681,12 +828,14 @@ fn list_serial_ports() -> Result<Vec<bforge_hal::DeviceId>, String> {
     bforge_hal::uart::available().map_err(|e| e.to_string())
 }
 
+/// Start a quick-connect serial session without pre-saving a workspace profile.
 #[tauri::command]
 fn quick_connect(
     app: tauri::AppHandle,
     device: String,
     baud_rate: Option<u32>,
     framing: Option<String>,
+    vault: Option<String>,
 ) -> Result<String, String> {
     let baud = baud_rate.unwrap_or(115_200);
     let framing_mode = framing.unwrap_or_else(|| "delimiter".to_string());
@@ -751,7 +900,7 @@ fn quick_connect(
     let temp_path = std::env::temp_dir().join(format!("bforge-quick-{stamp}.bforge.toml"));
     std::fs::write(&temp_path, toml_str).map_err(|e| format!("{}: {e}", temp_path.display()))?;
 
-    start(&app, &temp_path, None)
+    start(&app, &temp_path, clean_vault_arg(vault))
 }
 
 fn main() {
@@ -764,7 +913,10 @@ fn main() {
         .invoke_handler(tauri::generate_handler![
             pick_workspace,
             pick_vault,
+            pick_existing_vault,
+            pick_recording_folder,
             pick_header_file,
+            create_workspace,
             start_review,
             recent_workspaces,
             remove_recent_workspace,
@@ -874,3 +1026,71 @@ fn main() {
 }
 
 use tauri::Manager;
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn clean_vault_arg_filters_empty_and_whitespace() {
+        assert_eq!(clean_vault_arg(None), None);
+        assert_eq!(clean_vault_arg(Some(String::new())), None);
+        assert_eq!(clean_vault_arg(Some("   \t ".to_string())), None);
+        assert_eq!(
+            clean_vault_arg(Some("  vaults/rec-1.bflog  ".to_string())),
+            Some(PathBuf::from("vaults/rec-1.bflog"))
+        );
+    }
+
+    #[test]
+    fn sanitize_workspace_suggest_normalizes_suffix_and_chars() {
+        assert_eq!(sanitize_workspace_suggest(None), "workspace.bforge.toml");
+        assert_eq!(
+            sanitize_workspace_suggest(Some("  ")),
+            "workspace.bforge.toml"
+        );
+        assert_eq!(
+            sanitize_workspace_suggest(Some("My board @ 115200")),
+            "My-board---115200.bforge.toml"
+        );
+        assert_eq!(
+            sanitize_workspace_suggest(Some("lab.bforge")),
+            "lab.bforge.toml"
+        );
+        assert_eq!(sanitize_workspace_suggest(Some("lab.toml")), "lab.toml");
+    }
+
+    #[test]
+    fn ensure_toml_extension_preserves_toml_and_appends_bforge_toml() {
+        assert_eq!(
+            ensure_toml_extension(PathBuf::from("dir/demo.bforge.toml")),
+            PathBuf::from("dir/demo.bforge.toml")
+        );
+        assert_eq!(
+            ensure_toml_extension(PathBuf::from("dir/demo.toml")),
+            PathBuf::from("dir/demo.toml")
+        );
+        assert_eq!(
+            ensure_toml_extension(PathBuf::from("dir/demo")),
+            PathBuf::from("dir/demo.bforge.toml")
+        );
+        assert_eq!(
+            ensure_toml_extension(PathBuf::from("dir/demo.bforge")),
+            PathBuf::from("dir/demo.bforge.toml")
+        );
+    }
+
+    #[test]
+    fn default_workspace_toml_parses_and_validates() {
+        let toml = default_workspace_toml(Path::new("/tmp/bench.bforge.toml"));
+        let config: ProjectConfig = toml::from_str(&toml).expect("default TOML must parse");
+        assert_eq!(config.workspace.name, "bench");
+        assert_eq!(config.ports.len(), 1);
+        assert_eq!(config.ports[0].id, "main");
+        assert!(
+            config.validate().is_empty(),
+            "issues: {:?}",
+            config.validate()
+        );
+    }
+}

@@ -28,9 +28,9 @@ const ToastRow: React.FC<{ toast: Toast }> = ({ toast }) => {
     >
       <Icon className={`w-3.5 h-3.5 mt-0.5 shrink-0 ${style.text}`} />
       <div className="flex-1 min-w-0">
-        <div className={`text-[10.5px] font-semibold leading-tight ${style.text}`}>{toast.title}</div>
+        <div className={`text-[12px] font-semibold leading-tight ${style.text}`}>{toast.title}</div>
         {toast.detail && (
-          <div className="text-[9.5px] text-bf-mute leading-snug mt-0.5 break-words">{toast.detail}</div>
+          <div className="text-[11px] text-bf-mute leading-snug mt-0.5 break-words">{toast.detail}</div>
         )}
       </div>
       <button

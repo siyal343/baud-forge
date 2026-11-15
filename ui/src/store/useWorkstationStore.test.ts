@@ -233,4 +233,67 @@ describe('workstation store', () => {
       expect(useWorkstationStore.getState().selectedPacket?.timestampUs).toBe(sel);
     });
   });
+
+  describe('hex byte selection and packet pin correlation', () => {
+    beforeEach(() => {
+      useWorkstationStore.setState({
+        packets: [],
+        selectedPacket: null,
+        selectedField: null,
+        hoveredField: null,
+        hoveredByteOffset: null,
+        selectedByteOffset: null,
+        autoScroll: true,
+      });
+    });
+
+    it('tracks hoveredByteOffset and selectedByteOffset and resets them on selectPacket', () => {
+      const s = useWorkstationStore.getState();
+      expect(s.hoveredByteOffset).toBeNull();
+      expect(s.selectedByteOffset).toBeNull();
+
+      s.setHoveredByteOffset(4);
+      s.setSelectedByteOffset(10);
+      expect(useWorkstationStore.getState().hoveredByteOffset).toBe(4);
+      expect(useWorkstationStore.getState().selectedByteOffset).toBe(10);
+
+      const pkt = makePacket({
+        seqId: 101,
+        dissectedFields: [
+          { name: 'sync', type: 'uint16', offset: 0, length: 2, rawHex: 'AA 55', decodedValue: '0xAA55' },
+        ],
+      });
+      s.selectPacket(pkt);
+
+      const afterSelect = useWorkstationStore.getState();
+      expect(afterSelect.selectedPacket).toEqual(pkt);
+      expect(afterSelect.selectedField?.name).toBe('sync');
+      expect(afterSelect.hoveredByteOffset).toBeNull();
+      expect(afterSelect.selectedByteOffset).toBeNull();
+
+      // Clearing hovered/selected offsets explicitly also works, and selectPacket(null) resets them.
+      s.setHoveredByteOffset(2);
+      s.setSelectedByteOffset(3);
+      s.selectPacket(null);
+      expect(useWorkstationStore.getState().hoveredByteOffset).toBeNull();
+      expect(useWorkstationStore.getState().selectedByteOffset).toBeNull();
+      expect(useWorkstationStore.getState().selectedPacket).toBeNull();
+    });
+
+    it('stepFrame disables autoScroll and resets byte offsets on frame change', () => {
+      const s = useWorkstationStore.getState();
+      s.addPacket(makePacket({ timestampUs: 1000 }));
+      s.addPacket(makePacket({ timestampUs: 2000 }));
+      s.setAutoScroll(true);
+      s.setHoveredByteOffset(1);
+      s.setSelectedByteOffset(2);
+
+      s.stepFrame('back');
+      const afterStep = useWorkstationStore.getState();
+      expect(afterStep.autoScroll).toBe(false);
+      expect(afterStep.selectedPacket?.timestampUs).toBe(1000);
+      expect(afterStep.hoveredByteOffset).toBeNull();
+      expect(afterStep.selectedByteOffset).toBeNull();
+    });
+  });
 });

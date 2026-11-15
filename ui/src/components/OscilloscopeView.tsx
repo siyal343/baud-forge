@@ -580,7 +580,7 @@ export const OscilloscopeView: React.FC = () => {
           ctx.stroke();
 
           ctx.fillStyle = C.math;
-          ctx.font = 'bold 9.5px "JetBrains Mono", monospace';
+          ctx.font = 'bold 11px "JetBrains Mono", monospace';
           ctx.textAlign = 'left';
           ctx.fillText(`MATH FFT [Peak: ${stats.fftPeakFreq} Hz]`, 10, 22);
         }
@@ -621,7 +621,7 @@ export const OscilloscopeView: React.FC = () => {
         ctx.stroke();
 
         ctx.fillStyle = C.math;
-        ctx.font = 'bold 9.5px "JetBrains Mono", monospace';
+        ctx.font = 'bold 11px "JetBrains Mono", monospace';
         ctx.textAlign = 'left';
         ctx.fillText(`MATH (${mathOp}) · ${mathScale}x`, 10, 22);
       }
@@ -652,7 +652,7 @@ export const OscilloscopeView: React.FC = () => {
       ctx.closePath();
       ctx.fill();
 
-      ctx.font = 'bold 8.5px "JetBrains Mono", monospace';
+      ctx.font = 'bold 10px "JetBrains Mono", monospace';
       ctx.textAlign = 'right';
       ctx.fillText(trigLabel, width - 14, trigY - 2);
     }
@@ -696,9 +696,9 @@ export const OscilloscopeView: React.FC = () => {
       const unit = binding.unit ? ` ${binding.unit}` : '';
       const fmt = (v: number) => (Math.abs(v) >= 1000 ? v.toFixed(0) : v.toPrecision(3));
       ctx.fillStyle = color;
-      ctx.font = 'bold 8.5px "JetBrains Mono", monospace';
+      ctx.font = 'bold 10px "JetBrains Mono", monospace';
       ctx.textAlign = 'right';
-      ctx.fillText(`${binding.name} [${fmt(min)}..${fmt(max)}${unit}]`, width - 6, laneTop + 8);
+      ctx.fillText(`${binding.name} [${fmt(min)}..${fmt(max)}${unit}]`, width - 6, laneTop + 10);
     });
 
     // --- Digital Logic Rails ---
@@ -774,12 +774,14 @@ export const OscilloscopeView: React.FC = () => {
           ctx.setLineDash([]);
 
           // Tag
+          ctx.font = 'bold 10px "JetBrains Mono", monospace';
+          const x1Label = `${ch}:X1`;
+          const x1W = Math.max(40, Math.ceil(ctx.measureText(x1Label).width) + 8);
           ctx.fillStyle = isHovered ? '#FFFFFF' : chColor;
-          ctx.fillRect(x1 - 18, 2, 36, 14);
+          ctx.fillRect(x1 - x1W / 2, 2, x1W, 15);
           ctx.fillStyle = C.canvas;
-          ctx.font = 'bold 8.5px "JetBrains Mono", monospace';
           ctx.textAlign = 'center';
-          ctx.fillText(`${ch}:X1`, x1, 12);
+          ctx.fillText(x1Label, x1, 13);
         }
 
         // X2
@@ -799,12 +801,14 @@ export const OscilloscopeView: React.FC = () => {
           ctx.setLineDash([]);
 
           // Tag
+          ctx.font = 'bold 10px "JetBrains Mono", monospace';
+          const x2Label = `${ch}:X2`;
+          const x2W = Math.max(40, Math.ceil(ctx.measureText(x2Label).width) + 8);
           ctx.fillStyle = isHovered ? '#FFFFFF' : chColor;
-          ctx.fillRect(x2 - 18, 18, 36, 14);
+          ctx.fillRect(x2 - x2W / 2, 19, x2W, 15);
           ctx.fillStyle = C.canvas;
-          ctx.font = 'bold 8.5px "JetBrains Mono", monospace';
           ctx.textAlign = 'center';
-          ctx.fillText(`${ch}:X2`, x2, 28);
+          ctx.fillText(x2Label, x2, 30);
         }
       }
 
@@ -832,6 +836,11 @@ export const OscilloscopeView: React.FC = () => {
           y2Text = `Y2 ${cursors.y2.toFixed(2)}`;
         }
 
+        ctx.font = 'bold 10px "JetBrains Mono", monospace';
+        const y1W = Math.max(68, Math.ceil(ctx.measureText(y1Text).width) + 10);
+        const y2W = Math.max(68, Math.ceil(ctx.measureText(y2Text).width) + 10);
+        const y2X = 6 + y1W;
+
         // Y1
         if (y1Pos >= 0 && y1Pos <= analogHeight) {
           const isHovered =
@@ -848,11 +857,11 @@ export const OscilloscopeView: React.FC = () => {
           ctx.setLineDash([]);
 
           ctx.fillStyle = isHovered ? '#FFFFFF' : C.ok;
-          ctx.fillRect(2, y1Pos - 8, 62, 16);
+          ctx.fillRect(2, y1Pos - 9, y1W, 18);
           ctx.fillStyle = C.canvas;
-          ctx.font = 'bold 8px "JetBrains Mono", monospace';
+          ctx.font = 'bold 10px "JetBrains Mono", monospace';
           ctx.textAlign = 'center';
-          ctx.fillText(y1Text, 33, y1Pos + 3);
+          ctx.fillText(y1Text, 2 + y1W / 2, y1Pos + 3.5);
         }
 
         // Y2
@@ -871,11 +880,11 @@ export const OscilloscopeView: React.FC = () => {
           ctx.setLineDash([]);
 
           ctx.fillStyle = isHovered ? '#FFFFFF' : '#A855F7';
-          ctx.fillRect(66, y2Pos - 8, 62, 16);
+          ctx.fillRect(y2X, y2Pos - 9, y2W, 18);
           ctx.fillStyle = C.canvas;
-          ctx.font = 'bold 8px "JetBrains Mono", monospace';
+          ctx.font = 'bold 10px "JetBrains Mono", monospace';
           ctx.textAlign = 'center';
-          ctx.fillText(y2Text, 97, y2Pos + 3);
+          ctx.fillText(y2Text, y2X + y2W / 2, y2Pos + 3.5);
         }
       }
     });
@@ -885,13 +894,13 @@ export const OscilloscopeView: React.FC = () => {
       ctx.fillStyle = `${C.fault}22`;
       ctx.strokeStyle = C.fault;
       ctx.lineWidth = 1;
-      ctx.fillRect(width - 110, 8, 100, 22);
-      ctx.strokeRect(width - 110, 8, 100, 22);
+      ctx.fillRect(width - 128, 8, 118, 22);
+      ctx.strokeRect(width - 128, 8, 118, 22);
 
       ctx.fillStyle = C.fault;
-      ctx.font = 'bold 9.5px "JetBrains Mono", monospace';
+      ctx.font = 'bold 11px "JetBrains Mono", monospace';
       ctx.textAlign = 'center';
-      ctx.fillText(singleArmed ? '● ARMED SINGLE' : '■ STOPPED', width - 60, 22);
+      ctx.fillText(singleArmed ? '● ARMED SINGLE' : '■ STOPPED', width - 69, 23);
     }
   }, [
     displaySamples,
@@ -1295,7 +1304,7 @@ export const OscilloscopeView: React.FC = () => {
               onClick={handleToggleRunStop}
               data-tooltip={isRunning ? 'Freeze scope acquisition (Stop)' : 'Resume real-time telemetry streaming (Run)'}
               data-tooltip-shortcut="Space"
-              className={`flex items-center gap-1.5 px-2.5 py-0.5 rounded text-[10px] font-bold transition-all shadow-sm ${
+              className={`flex items-center gap-1.5 px-2.5 py-0.5 rounded text-[11px] font-bold transition-all shadow-sm ${
                 isRunning
                   ? 'bg-bf-ok/20 border border-bf-ok text-bf-ok hover:bg-bf-ok/30'
                   : 'bg-bf-fault text-white animate-pulse shadow-[0_0_8px_rgb(var(--bf-fault-rgb)/0.6)]'
@@ -1309,7 +1318,7 @@ export const OscilloscopeView: React.FC = () => {
             <button
               onClick={handleSingleShot}
               data-tooltip="Arm Single Capture: Ingest one complete frame and freeze acquisition"
-              className={`px-2 py-0.5 rounded text-[9.5px] font-bold border transition-colors ${
+              className={`px-2 py-0.5 rounded text-[11px] font-bold border transition-colors ${
                 singleArmed
                   ? 'bg-bf-warn text-bf-onfill border-bf-warn animate-pulse'
                   : 'bg-bf-panel text-bf-mute border-bf-line hover:text-white'
@@ -1319,7 +1328,7 @@ export const OscilloscopeView: React.FC = () => {
             </button>
 
             {/* Horizontal Timebase Stepper / Direct Input */}
-            <div className="flex items-center gap-0.5 bg-bf-panel border border-bf-line rounded px-1 py-0.5 text-[9.5px]">
+            <div className="flex items-center gap-0.5 bg-bf-panel border border-bf-line rounded px-1 py-0.5 text-[11px]">
               <span className="text-bf-faint pl-0.5 font-bold">TIME:</span>
               <button
                 onClick={() => stepTimeDiv('down')}
@@ -1373,14 +1382,14 @@ export const OscilloscopeView: React.FC = () => {
               >
                 <Plus className="w-2.5 h-2.5" />
               </button>
-              <span className="text-bf-faint text-[8.5px] pr-0.5">({timeDivMs * 10}ms)</span>
+              <span className="text-bf-faint text-[10px] pr-0.5">({timeDivMs * 10}ms)</span>
             </div>
           </div>
 
           {/* Right: Per-Channel Stems (CH1, CH2, MATH, LOGIC) with Vertical Scale & Horizontal Skew */}
           <div className="flex items-center gap-1.5 shrink-0">
             {/* CH1 Stem */}
-            <div className="flex items-center gap-1 bg-bf-panel border border-bf-line rounded px-1.5 py-0.5 text-[9.5px]">
+            <div className="flex items-center gap-1 bg-bf-panel border border-bf-line rounded px-1.5 py-0.5 text-[11px]">
               <button
                 onClick={() => toggleChannel('ch1')}
                 data-tooltip="Toggle Channel 1 (Battery Voltage Telemetry)"
@@ -1421,7 +1430,7 @@ export const OscilloscopeView: React.FC = () => {
               </button>
 
               {/* CH1 Horizontal Skew / Offset */}
-              <div className="flex items-center border-l border-bf-line pl-1 ml-0.5 text-[9px]">
+              <div className="flex items-center border-l border-bf-line pl-1 ml-0.5 text-[10px]">
                 <span className="text-bf-faint pr-0.5">Δt:</span>
                 <button
                   onClick={() => setCh1TimeOffsetMs((prev) => prev - 5)}
@@ -1450,7 +1459,7 @@ export const OscilloscopeView: React.FC = () => {
             </div>
 
             {/* CH2 Stem */}
-            <div className="flex items-center gap-1 bg-bf-panel border border-bf-line rounded px-1.5 py-0.5 text-[9.5px]">
+            <div className="flex items-center gap-1 bg-bf-panel border border-bf-line rounded px-1.5 py-0.5 text-[11px]">
               <button
                 onClick={() => toggleChannel('ch2')}
                 data-tooltip="Toggle Channel 2 (Gyroscope Z Rate)"
@@ -1491,7 +1500,7 @@ export const OscilloscopeView: React.FC = () => {
               </button>
 
               {/* CH2 Horizontal Skew / Offset */}
-              <div className="flex items-center border-l border-bf-line pl-1 ml-0.5 text-[9px]">
+              <div className="flex items-center border-l border-bf-line pl-1 ml-0.5 text-[10px]">
                 <span className="text-bf-faint pr-0.5">Δt:</span>
                 <button
                   onClick={() => setCh2TimeOffsetMs((prev) => prev - 5)}
@@ -1520,7 +1529,7 @@ export const OscilloscopeView: React.FC = () => {
             </div>
 
             {/* MATH Stem */}
-            <div className="flex items-center gap-1 bg-bf-panel border border-bf-line rounded px-1.5 py-0.5 text-[9.5px]">
+            <div className="flex items-center gap-1 bg-bf-panel border border-bf-line rounded px-1.5 py-0.5 text-[11px]">
               <button
                 onClick={() => setMathVisible(!mathVisible)}
                 data-tooltip="Toggle Oscilloscope Math Channel (Differential, FFT, Inverted)"
@@ -1549,12 +1558,12 @@ export const OscilloscopeView: React.FC = () => {
                   <button
                     onClick={() => setMathScale((prev) => (prev === 0.5 ? 1.0 : prev === 1.0 ? 2.0 : 0.5))}
                     data-tooltip="Cycle Math Amplitude Scale Multiplier"
-                    className="px-1 text-bf-mute text-[9px] hover:text-white border-l border-bf-line"
+                    className="px-1 text-bf-mute text-[11px] hover:text-white border-l border-bf-line"
                   >
                     {mathScale}x
                   </button>
 
-                  <div className="flex items-center border-l border-bf-line pl-1 ml-0.5 text-[9px]">
+                  <div className="flex items-center border-l border-bf-line pl-1 ml-0.5 text-[10px]">
                     <span className="text-bf-faint pr-0.5">Δt:</span>
                     <button
                       onClick={() => setMathTimeOffsetMs((prev) => prev - 5)}
@@ -1596,7 +1605,7 @@ export const OscilloscopeView: React.FC = () => {
                   <button
                     onClick={() => toggleTraceVisibility(binding.id)}
                     data-tooltip={`Toggle trace lane for bound field ${binding.name}`}
-                    className={`flex items-center gap-1 px-1.5 py-0.5 rounded text-[9.5px] transition-colors border ${
+                    className={`flex items-center gap-1 px-1.5 py-0.5 rounded text-[11px] transition-colors border ${
                       hidden
                         ? 'bg-bf-panel border-bf-line text-bf-faint hover:text-bf-mute'
                         : 'bg-bf-panel text-bf-body'
@@ -1609,7 +1618,7 @@ export const OscilloscopeView: React.FC = () => {
                   <button
                     onClick={() => unbindScopeTrace(binding.id)}
                     data-tooltip={`Unbind ${binding.name} and remove its trace lane`}
-                    className="text-bf-faint hover:text-bf-fault text-[10px] px-0.5"
+                    className="text-bf-faint hover:text-bf-fault text-[11px] px-0.5"
                   >
                     ×
                   </button>
@@ -1621,7 +1630,7 @@ export const OscilloscopeView: React.FC = () => {
             <button
               onClick={() => toggleChannel('logic')}
               data-tooltip="Toggle Digital Logic State Rails (D0-D2: RUN, ARMED, FAULT)"
-              className={`flex items-center gap-1 px-1.5 py-0.5 rounded text-[9.5px] transition-colors border ${
+              className={`flex items-center gap-1 px-1.5 py-0.5 rounded text-[11px] transition-colors border ${
                 logicRailsVisible
                   ? 'bg-bf-ok/20 border-bf-ok/60 text-bf-ok'
                   : 'bg-bf-panel border-bf-line text-bf-faint hover:text-bf-mute'
@@ -1634,7 +1643,7 @@ export const OscilloscopeView: React.FC = () => {
         </div>
 
         {/* ROW 2: Trigger Engine, Independent Channel Cursors, Display Zoom & HUD */}
-        <div className="h-[30px] px-2 flex items-center justify-between gap-2 overflow-x-auto text-[9.5px]">
+        <div className="h-[30px] px-2 flex items-center justify-between gap-2 overflow-x-auto text-[11px]">
           {/* Left: Trigger Engine */}
           <div className="flex items-center gap-1.5 shrink-0">
             <div className="flex items-center gap-1 bg-bf-panel border border-bf-line rounded px-1.5 py-0.5">
@@ -1884,17 +1893,19 @@ export const OscilloscopeView: React.FC = () => {
           <div
             style={{
               transform: `translate(${hudPos.x}px, ${hudPos.y}px)`,
+              pointerEvents: 'none',
             }}
-            className={`absolute top-0 left-0 bg-bf-surface/90 border border-bf-line-strong backdrop-blur-md rounded-lg shadow-[0_8px_24px_rgb(var(--bf-shadow-rgb)/0.7)] text-[10.5px] transition-shadow z-20 ${
+            className={`absolute top-0 left-0 bg-bf-surface/90 border border-bf-line-strong backdrop-blur-md rounded-lg shadow-[0_8px_24px_rgb(var(--bf-shadow-rgb)/0.7)] text-[11px] transition-shadow z-20 ${
               isDraggingHud ? 'shadow-[0_0_16px_rgb(var(--bf-cyan-rgb)/0.4)] border-bf-cyan/70' : ''
             }`}
           >
             {/* Drag Handle & HUD Header */}
             <div
               onMouseDown={handleHudMouseDown}
+              style={{ pointerEvents: 'auto' }}
               className="h-[26px] bg-bf-head border-b border-bf-line px-2 flex items-center justify-between cursor-grab active:cursor-grabbing select-none rounded-t-lg gap-2"
             >
-              <div className="flex items-center gap-1.5 text-bf-mute font-semibold text-[10px]">
+              <div className="flex items-center gap-1.5 text-bf-mute font-semibold text-[11px]">
                 <GripHorizontal className="w-3 h-3 text-bf-faint" />
                 <span className="tracking-wider uppercase text-bf-dim">
                   MEASUREMENTS [{cursorTargetChannel}]
@@ -1920,22 +1931,22 @@ export const OscilloscopeView: React.FC = () => {
                 {/* Section 1: Time Cursors */}
                 {(cursorMode === 'TIME' || cursorMode === 'BOTH') && (
                   <div className="space-y-1">
-                    <div className="text-[9px] text-bf-faint uppercase tracking-wider font-bold">
+                    <div className="text-[11px] text-bf-faint uppercase tracking-wider font-bold">
                       TIME CURSORS (X) · {cursorTargetChannel}
                     </div>
                     {deltaTUs !== null ? (
                       <>
-                        <div className="flex items-center justify-between gap-3 text-[10px]">
+                        <div className="flex items-center justify-between gap-3 text-[11px]">
                           <span className="text-bf-mute">Δt (X2 - X1):</span>
                           <span className="text-bf-cyan font-bold">{deltaTUs.toLocaleString()} μs</span>
                         </div>
-                        <div className="flex items-center justify-between gap-3 text-[10px]">
+                        <div className="flex items-center justify-between gap-3 text-[11px]">
                           <span className="text-bf-mute">1/Δt (Freq):</span>
                           <span className="text-bf-amber font-bold">{freqHz} Hz</span>
                         </div>
                       </>
                     ) : (
-                      <div className="text-bf-faint text-[9.5px]">Drag X1/X2 markers on screen</div>
+                      <div className="text-bf-faint text-[11px]">Drag X1/X2 markers on screen</div>
                     )}
                   </div>
                 )}
@@ -1943,13 +1954,13 @@ export const OscilloscopeView: React.FC = () => {
                 {/* Section 2: Voltage/Signal Cursors */}
                 {(cursorMode === 'VOLT' || cursorMode === 'BOTH') && (
                   <div className="space-y-1 border-t border-bf-line pt-1">
-                    <div className="flex items-center justify-between text-[9px] text-bf-faint uppercase tracking-wider font-bold">
+                    <div className="flex items-center justify-between text-[11px] text-bf-faint uppercase tracking-wider font-bold">
                       <span>SIGNAL CURSORS (Y)</span>
                       <span className={cursorTargetChannel === 'CH1' ? 'text-bf-amber' : cursorTargetChannel === 'CH2' ? 'text-bf-cyan' : 'text-bf-math'}>
                         [{cursorTargetChannel}]
                       </span>
                     </div>
-                    <div className="flex items-center justify-between gap-3 text-[10px]">
+                    <div className="flex items-center justify-between gap-3 text-[11px]">
                       <span className="text-bf-ok">
                         Y1: {cursorTargetChannel === 'CH1' ? `${(activeCursors.y1 / 1000).toFixed(2)} V` : cursorTargetChannel === 'CH2' ? `${activeCursors.y1.toFixed(2)} r/s` : activeCursors.y1.toFixed(2)}
                       </span>
@@ -1957,12 +1968,12 @@ export const OscilloscopeView: React.FC = () => {
                         Y2: {cursorTargetChannel === 'CH1' ? `${(activeCursors.y2 / 1000).toFixed(2)} V` : cursorTargetChannel === 'CH2' ? `${activeCursors.y2.toFixed(2)} r/s` : activeCursors.y2.toFixed(2)}
                       </span>
                     </div>
-                    <div className="flex items-center justify-between gap-3 text-[10px]">
+                    <div className="flex items-center justify-between gap-3 text-[11px]">
                       <span className="text-bf-mute">ΔY (|Y2 - Y1|):</span>
                       <span className="text-bf-ok font-bold">{deltaY}</span>
                     </div>
                     {slewRate && (
-                      <div className="flex items-center justify-between gap-3 text-[10px]">
+                      <div className="flex items-center justify-between gap-3 text-[11px]">
                         <span className="text-bf-mute">Slew / Rate:</span>
                         <span className="text-bf-body">{slewRate}</span>
                       </div>
@@ -1972,28 +1983,28 @@ export const OscilloscopeView: React.FC = () => {
 
                 {/* Section 3: Telemetry Channel Stats */}
                 <div className="space-y-1 border-t border-bf-line pt-1">
-                  <div className="text-[9px] text-bf-faint uppercase tracking-wider font-bold">
+                  <div className="text-[11px] text-bf-faint uppercase tracking-wider font-bold">
                     WAVEFORM METRICS
                   </div>
-                  <div className="flex items-center justify-between gap-3 text-[9.5px]">
+                  <div className="flex items-center justify-between gap-3 text-[11px]">
                     <span className="text-bf-amber">CH1 Vpp:</span>
                     <span className="text-bf-body font-semibold">{stats.pkPkV} mV</span>
                   </div>
-                  <div className="flex items-center justify-between gap-3 text-[9.5px]">
+                  <div className="flex items-center justify-between gap-3 text-[11px]">
                     <span className="text-bf-amber">CH1 Vmean:</span>
                     <span className="text-bf-body">{stats.meanV} mV</span>
                   </div>
-                  <div className="flex items-center justify-between gap-3 text-[9.5px]">
+                  <div className="flex items-center justify-between gap-3 text-[11px]">
                     <span className="text-bf-amber">CH1 Min/Max:</span>
                     <span className="text-bf-body">
                       {stats.minV} / {stats.maxV} mV
                     </span>
                   </div>
-                  <div className="flex items-center justify-between gap-3 text-[9.5px]">
+                  <div className="flex items-center justify-between gap-3 text-[11px]">
                     <span className="text-bf-amber">CH1 RMS:</span>
                     <span className="text-bf-body">{stats.rmsV} mV</span>
                   </div>
-                  <div className="flex items-center justify-between gap-3 text-[9.5px]">
+                  <div className="flex items-center justify-between gap-3 text-[11px]">
                     <span className="text-bf-cyan">CH2 Gyro Pk-Pk:</span>
                     <span className="text-bf-body font-semibold">{stats.gyroPkPk} rad/s</span>
                   </div>
@@ -2002,16 +2013,16 @@ export const OscilloscopeView: React.FC = () => {
                 {/* Section 4: Math Channel Output */}
                 {mathVisible && (
                   <div className="space-y-1 border-t border-bf-line pt-1">
-                    <div className="text-[9px] text-bf-math uppercase tracking-wider font-bold">
+                    <div className="text-[11px] text-bf-math uppercase tracking-wider font-bold">
                       MATH: {mathOp}
                     </div>
                     {mathOp === 'FFT' ? (
-                      <div className="flex items-center justify-between gap-3 text-[9.5px]">
+                      <div className="flex items-center justify-between gap-3 text-[11px]">
                         <span className="text-bf-faint">Dominant Peak:</span>
                         <span className="text-bf-math font-bold">{stats.fftPeakFreq} Hz</span>
                       </div>
                     ) : (
-                      <div className="flex items-center justify-between gap-3 text-[9.5px]">
+                      <div className="flex items-center justify-between gap-3 text-[11px]">
                         <span className="text-bf-faint">Scale:</span>
                         <span className="text-bf-math font-bold">{mathScale}x Multiplier</span>
                       </div>
@@ -2019,13 +2030,13 @@ export const OscilloscopeView: React.FC = () => {
                   </div>
                 )}
 
-                <div className="text-[8.5px] text-bf-ghost pt-0.5 border-t border-bf-btn">
+                <div className="text-[10px] text-bf-ghost pt-0.5 border-t border-bf-btn">
                   Drag card to reposition · Click & drag markers
                 </div>
               </div>
             ) : (
               // Collapsed HUD pill view
-              <div className="px-2 py-1 flex items-center gap-3 text-[10px]">
+              <div className="px-2 py-1 flex items-center gap-3 text-[11px]">
                 {deltaTUs !== null && (
                   <span className="text-bf-cyan font-bold">Δt: {deltaTUs.toLocaleString()} μs</span>
                 )}

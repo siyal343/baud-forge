@@ -221,7 +221,7 @@ export const GlobalRibbon: React.FC = () => {
           <span className="font-mono font-bold tracking-wider text-bf-cyan text-[12px]">
             BAUDFORGE
           </span>
-          <span className="hidden xl:inline text-[9px] text-bf-faint font-mono px-1 py-0.2 bg-bf-subpanel rounded border border-bf-line">
+          <span className="hidden xl:inline text-[10px] text-bf-faint font-mono px-1 py-0.2 bg-bf-subpanel rounded border border-bf-line">
             v1.0
           </span>
         </div>
@@ -264,7 +264,7 @@ export const GlobalRibbon: React.FC = () => {
           title="UART baud rate in bits/second (Standard 115.2k up to 12 Mbps)"
           className="flex items-center gap-1 bg-bf-subpanel border border-bf-line rounded px-1.5 py-0.5 font-mono text-[11px]"
         >
-          <span className="text-bf-faint text-[10px]">BAUD:</span>
+          <span className="text-bf-faint text-[11px]">BAUD:</span>
           {isCustomBaud ? (
             <input
               autoFocus
@@ -330,8 +330,8 @@ export const GlobalRibbon: React.FC = () => {
           <span className="font-bold text-bf-body">
             {dataBits}{parity.charAt(0).toUpperCase()}{stopBits}
           </span>
-          <span className="text-bf-faint text-[9.5px]">·</span>
-          <span className="text-bf-cyan uppercase font-semibold text-[10px]">
+          <span className="text-bf-faint text-[11px]">·</span>
+          <span className="text-bf-cyan uppercase font-semibold text-[11px]">
             {delimiterMode}
           </span>
         </button>
@@ -369,7 +369,7 @@ export const GlobalRibbon: React.FC = () => {
         <button
           onClick={toggleLayoutMenu}
           data-tooltip="Switch workbench layout presets, re-open closed panels, or manage saved layouts"
-          className="flex items-center gap-1.5 px-2 py-0.5 bg-bf-subpanel hover:bg-bf-hover border border-bf-line hover:border-bf-cyan rounded text-[10.5px] font-mono text-bf-body transition-colors"
+          className="flex items-center gap-1.5 px-2 py-0.5 bg-bf-subpanel hover:bg-bf-hover border border-bf-line hover:border-bf-cyan rounded text-[11px] font-mono text-bf-body transition-colors"
         >
           <LayoutGrid className="w-3 h-3 text-bf-cyan" />
           <span className="font-semibold">LAYOUTS & PANELS</span>
@@ -387,9 +387,9 @@ export const GlobalRibbon: React.FC = () => {
                 left: `${menuPos.left}px`,
                 zIndex: 999999,
               }}
-              className="w-72 bg-bf-surface border border-bf-line rounded-lg shadow-[0_16px_48px_rgb(var(--bf-shadow-rgb)/0.95)] p-2.5 font-mono text-[10.5px] text-bf-body flex flex-col gap-1"
+              className="w-72 bg-bf-surface border border-bf-line rounded-lg shadow-[0_16px_48px_rgb(var(--bf-shadow-rgb)/0.95)] p-2.5 font-mono text-[11px] text-bf-body flex flex-col gap-1"
             >
-              <div className="text-[9.5px] uppercase tracking-wider text-bf-faint px-2 py-0.5 font-bold">
+              <div className="text-[11px] uppercase tracking-wider text-bf-faint px-2 py-0.5 font-bold">
                 Layout Presets
               </div>
 
@@ -412,8 +412,8 @@ export const GlobalRibbon: React.FC = () => {
                   }`}
                 >
                   <div>
-                    <div className="text-[10px] text-bf-bright">{p.name}</div>
-                    <div className="text-[8.5px] text-bf-faint">{p.desc}</div>
+                    <div className="text-[12px] text-bf-bright">{p.name}</div>
+                    <div className="text-[10px] text-bf-faint">{p.desc}</div>
                   </div>
                   {activePreset === p.id && <Check className="w-3 h-3 text-bf-cyan mt-0.5 shrink-0" />}
                 </button>
@@ -421,7 +421,7 @@ export const GlobalRibbon: React.FC = () => {
 
               <div className="border-t border-bf-line my-1" />
 
-              <div className="text-[9.5px] uppercase tracking-wider text-bf-faint px-2 py-0.5 font-bold">
+              <div className="text-[11px] uppercase tracking-wider text-bf-faint px-2 py-0.5 font-bold">
                 Re-open Closed Panel
               </div>
 
@@ -433,17 +433,17 @@ export const GlobalRibbon: React.FC = () => {
                       requestOpenPanel(panel.id);
                       setIsLayoutMenuOpen(false);
                     }}
-                    className="w-full flex items-center justify-between px-2 py-1 rounded text-left text-[10px] text-bf-mute hover:text-bf-cyan hover:bg-bf-subpanel transition-colors"
+                    className="w-full flex items-center justify-between px-2 py-1 rounded text-left text-[11px] text-bf-mute hover:text-bf-cyan hover:bg-bf-subpanel transition-colors"
                   >
                     <span>{panel.name}</span>
-                    <span className="text-[9px] text-bf-faint font-mono">OPEN</span>
+                    <span className="text-[10px] text-bf-faint font-mono">OPEN</span>
                   </button>
                 ))}
               </div>
 
               <div className="border-t border-bf-line my-1" />
 
-              <div className="text-[9.5px] uppercase tracking-wider text-bf-faint px-2 py-0.5 font-bold">
+              <div className="text-[11px] uppercase tracking-wider text-bf-faint px-2 py-0.5 font-bold">
                 Layout Management
               </div>
 
@@ -455,13 +455,13 @@ export const GlobalRibbon: React.FC = () => {
                       setIsSaveNameOpen(true);
                     }}
                     data-tooltip="Save the current panel arrangement, tab order, and sizes under a name"
-                    className="w-full flex items-center justify-between px-2 py-1 bg-bf-subpanel hover:bg-bf-hover text-bf-cyan rounded text-[10px] transition-colors font-bold"
+                    className="w-full flex items-center justify-between px-2 py-1 bg-bf-subpanel hover:bg-bf-hover text-bf-cyan rounded text-[11px] transition-colors font-bold"
                   >
                     <div className="flex items-center gap-1.5">
                       <Save className="w-3 h-3" />
                       <span>Save Current Layout…</span>
                     </div>
-                    <span className="text-[8.5px] text-bf-faint">CUSTOM</span>
+                    <span className="text-[10px] text-bf-faint">CUSTOM</span>
                   </button>
                 ) : (
                   <div className="flex items-center gap-1 bg-bf-panel border border-bf-cyan/60 rounded px-1.5 py-1">
@@ -476,12 +476,12 @@ export const GlobalRibbon: React.FC = () => {
                         if (e.key === 'Escape') setIsSaveNameOpen(false);
                       }}
                       title="Name for this saved layout (Enter to save, Esc to cancel)"
-                      className="flex-1 min-w-0 bg-transparent text-bf-cyan font-mono text-[10px] placeholder-bf-faint focus:outline-none"
+                      className="flex-1 min-w-0 bg-transparent text-bf-cyan font-mono text-[12px] placeholder-bf-faint focus:outline-none"
                     />
                     <button
                       onClick={submitLayoutSave}
                       title="Save layout"
-                      className="px-1.5 py-0.5 bg-bf-cyan text-bf-onfill font-bold text-[9px] rounded hover:bg-bf-sky shrink-0"
+                      className="px-1.5 py-0.5 bg-bf-cyan text-bf-onfill font-bold text-[11px] rounded hover:bg-bf-sky shrink-0"
                     >
                       SAVE
                     </button>
@@ -515,18 +515,18 @@ export const GlobalRibbon: React.FC = () => {
                             className="flex-1 min-w-0 text-left"
                           >
                             <div
-                              className={`flex items-center gap-1 text-[10px] ${
+                              className={`flex items-center gap-1 text-[12px] ${
                                 isDefault ? 'text-bf-cyan font-bold' : 'text-bf-body'
                               }`}
                             >
                               <span className="truncate">{name}</span>
                               {isDefault && (
-                                <span className="text-[7.5px] px-1 rounded bg-bf-cyan text-bf-onfill font-bold shrink-0">
+                                <span className="text-[10px] px-1 rounded bg-bf-cyan text-bf-onfill font-bold shrink-0">
                                   DEFAULT
                                 </span>
                               )}
                             </div>
-                            <div className="text-[8px] text-bf-faint">
+                            <div className="text-[10px] text-bf-faint">
                               {formatLayoutDate(entry.savedAt)} ·{' '}
                               {Object.keys((entry.data as any)?.panels ?? {}).length} panels
                             </div>
@@ -573,13 +573,13 @@ export const GlobalRibbon: React.FC = () => {
                     setIsLayoutMenuOpen(false);
                   }}
                   data-tooltip="Rebuild the canonical factory layout — your named saved layouts are kept"
-                  className="w-full flex items-center justify-between px-2 py-1 bg-bf-subpanel hover:bg-bf-hover text-bf-warn rounded text-[10px] transition-colors font-bold"
+                  className="w-full flex items-center justify-between px-2 py-1 bg-bf-subpanel hover:bg-bf-hover text-bf-warn rounded text-[11px] transition-colors font-bold"
                 >
                   <div className="flex items-center gap-1.5">
                     <RotateCcw className="w-3 h-3" />
                     <span>Reset to Factory Layout</span>
                   </div>
-                  <span className="text-[8.5px] text-bf-warn/70">FACTORY</span>
+                  <span className="text-[10px] text-bf-warn/70">FACTORY</span>
                 </button>
               </div>
             </div>,
@@ -593,13 +593,13 @@ export const GlobalRibbon: React.FC = () => {
         {isYielded ? (
           <div className="flex items-center gap-1.5 bg-bf-warn/20 border border-bf-warn text-bf-warn px-2 py-0.5 rounded animate-pulse">
             <Clock className="w-3 h-3" />
-            <span className="font-mono font-bold text-[10px]">
+            <span className="font-mono font-bold text-[11px]">
               YIELD ({yieldRemainingSecs}s)
             </span>
             <button
               onClick={reclaimPort}
               title="Reclaim serial handle immediately"
-              className="px-1 py-0.2 bg-bf-warn text-bf-onfill font-bold text-[9px] rounded hover:bg-bf-warn-hi"
+              className="px-1 py-0.2 bg-bf-warn text-bf-onfill font-bold text-[10px] rounded hover:bg-bf-warn-hi"
             >
               RECLAIM
             </button>
@@ -611,7 +611,7 @@ export const GlobalRibbon: React.FC = () => {
             className="flex items-center gap-1 px-2 py-0.5 bg-bf-subpanel border border-bf-warn/40 text-bf-warn rounded hover:bg-bf-warn/10 transition-colors"
           >
             <Zap className="w-3 h-3" />
-            <span className="font-mono text-[10px] hidden md:inline">YIELD</span>
+            <span className="font-mono text-[11px] hidden md:inline">YIELD</span>
           </button>
         )}
 
@@ -623,7 +623,7 @@ export const GlobalRibbon: React.FC = () => {
               ? 'Disarm fault injection interlock and restore clean serial wire'
               : 'Arm hardware fault injection rig: Corrupt bits, drop frames, or delay bytes'
           }
-          className={`flex items-center gap-1 px-2 py-0.5 rounded font-mono text-[10px] transition-all ${
+          className={`flex items-center gap-1 px-2 py-0.5 rounded font-mono text-[11px] transition-all ${
             isFaultArmed
               ? 'bg-bf-fault text-white font-bold animate-pulse shadow-[0_0_8px_rgb(var(--bf-fault-rgb)/0.5)]'
               : 'bg-bf-subpanel border border-bf-fault/50 text-bf-fault hover:bg-bf-fault/10'
@@ -641,7 +641,7 @@ export const GlobalRibbon: React.FC = () => {
               ? 'Running Simulated Loopback. Click to connect physical hardware'
               : 'Running Physical Hardware. Click to enable simulated loopback'
           }
-          className={`flex items-center gap-1 px-2 py-0.5 rounded font-mono text-[10px] transition-colors ${
+          className={`flex items-center gap-1 px-2 py-0.5 rounded font-mono text-[11px] transition-colors ${
             isSimulated
               ? 'bg-bf-active border border-bf-cyan text-bf-cyan'
               : 'bg-bf-subpanel border border-bf-line text-bf-faint hover:text-bf-mute'
@@ -655,7 +655,7 @@ export const GlobalRibbon: React.FC = () => {
         <button
           onClick={loadSampleCapture}
           title="Load demonstration telemetry capture stream (50 sample frames)"
-          className="hidden xl:inline-block px-1.5 py-0.5 bg-bf-subpanel hover:bg-bf-hover text-bf-mute hover:text-bf-body border border-bf-line rounded text-[10px] font-mono"
+          className="hidden xl:inline-block px-1.5 py-0.5 bg-bf-subpanel hover:bg-bf-hover text-bf-mute hover:text-bf-body border border-bf-line rounded text-[11px] font-mono"
         >
           DEMO
         </button>
@@ -696,7 +696,7 @@ export const GlobalRibbon: React.FC = () => {
               ? `Recording active: ${vaultPath} (${formatVaultBytes(vaultBytes)}) — click to seal the vault`
               : 'Record raw session to an append-only binary .bflog on the engine host'
           }
-          className={`flex items-center gap-1 px-2 py-0.5 rounded font-mono text-[10px] transition-colors ${
+          className={`flex items-center gap-1 px-2 py-0.5 rounded font-mono text-[11px] transition-colors ${
             engineRecording
               ? 'bg-bf-fault text-white font-bold animate-pulse'
               : 'bg-bf-subpanel border border-bf-line text-bf-mute hover:text-bf-body'
@@ -716,7 +716,7 @@ export const GlobalRibbon: React.FC = () => {
         <button
           onClick={() => setExportModalOpen(true)}
           title="Export session vault to Wireshark PCAP-NG, Saleae Logic CSV, or Streaming NDJSON"
-          className="flex items-center gap-1 px-2 py-0.5 bg-bf-subpanel hover:bg-bf-hover text-bf-cyan hover:text-bf-sky border border-bf-cyan/40 rounded font-mono text-[10px] transition-colors shadow-[0_0_8px_rgb(var(--bf-cyan-rgb)/0.15)]"
+          className="flex items-center gap-1 px-2 py-0.5 bg-bf-subpanel hover:bg-bf-hover text-bf-cyan hover:text-bf-sky border border-bf-cyan/40 rounded font-mono text-[11px] transition-colors shadow-[0_0_8px_rgb(var(--bf-cyan-rgb)/0.15)]"
         >
           <Download className="w-3 h-3" />
           <span className="hidden sm:inline font-bold">EXPORT</span>
