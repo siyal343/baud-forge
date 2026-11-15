@@ -115,6 +115,13 @@ Full technical design, bottleneck measurements, and symbol record: [`PLOTTING_AR
 - **Zero-Allocation Plot Core (`ui/src/plot/`)**: Added L1 64-sample mipmap `SampleRing.statsInRange` + `resize` (`rings.ts`), branchless zero-alloc `decimateMinMaxInto` (`decimate.ts`), memoized Hann/twiddle radix-2 FFT (`fft.ts`), specialized `expr.ts` closures + `PI`/`E`/`TAU`/`atan2`/`hypot`/`deg`/`rad`/`clamp`, DSO `findTriggerCrossing` (`trigger.ts`), offscreen `renderWaveformsWebGL` with relative `Float64` subtraction (`webglRenderer.ts`), cached `palette.ts`, and unified single-pass `O(F + C)` `PlotEngine` (`getSeriesScratch`, `getCachedSpectrum`, `getAlignedXy`, array/bitfield extraction, `expr` backfill, `meta:rate` fix).
 - **Stores & Panels (`useWorkstationStore.ts`, `usePlotStore.ts`, `ProtocolDissector.tsx`, `OscilloscopeView.tsx`, `PlotForgeView.tsx`)**: Added single-slice ring helpers, real logic flag extraction, multi-chart layouts (`TAB`/`STACK`/`GRID`), `GPU`/`2D` renderer toggle, working `AUTO`/`NORM`/`SINGLE`/`ROLL` triggering, `CH1`/`CH2` field binding + vertical center + `AUTOSET`, `OVERLAY`/`STACKED` scope lanes, `Y1`/`Y2` cursors + `v(X)` readouts, `FFT`/`XY`/`HIST` crosshairs, workstation `seekToTimestamp` cross-probing, dirty-flag `rAF` loops, and stabilized DOM listeners.
 - **Verification**: `vitest run` (`14` files, `160` tests), `tsc --noEmit && vite build`, `scripts/smoke-gate.mjs` (`40/40`), `cargo fmt --all --check`, `cargo clippy --workspace --all-targets --locked -- -D warnings`, and `cargo test --workspace --locked` (`26` targets, `379` tests) all passed.
+- **GitHub Actions CI & Windows Artifacts**:
+  - Committed in `24ad7b8` (`24ad7b8688aa1a1ae981ca4a67ff235bfee2a0ee`) and pushed to `origin/main`.
+  - CI run [`43697860561`](https://github.com/siyal343/baud-forge/actions/runs/43697860561) passed all `10/10` jobs (`build (windows desktop shell)`, `test (windows-x86_64)`, `test (windows-aarch64)`, `test (linux-x86_64)`, `test (linux-aarch64)`, `build (macos-x86_64)`, `test (macos-aarch64)`, `format and lints`, `ui unit, build and headless smoke`, `e2e bridge, REC and X/YMODEM`).
+  - Downloaded Windows CI artifacts from run `43697860561`:
+    - Desktop bundle (`bforge-desktop-windows-x86_64`): `F:\Datapack\Personal\Programa\baud-forge-ci\desktop-x86_64\bforge-desktop.exe` (`12,261,376` bytes) + `ui/` (`index-D8uCM96Q.js`, `index-CO3PSjpH.css`), also synced to `target\release\bforge-desktop.exe` and `target\release\ui\`.
+    - CLI (`bforge-windows-x86_64`): `F:\Datapack\Personal\Programa\baud-forge-ci\cli-x86_64\bforge-windows-x86_64.exe` (`3,859,968` bytes), verified locally (`bforge 0.8.0`).
+- **Not run**: Launching the GUI `bforge-desktop.exe` window directly on desktop hardware.
 
 ---
 

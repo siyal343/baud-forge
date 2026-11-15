@@ -68,3 +68,14 @@ Scope: Unified zero-allocation `PlotEngine`, L1 mipmap `SampleRing`, real DSO tr
 | End-to-End Smoke Gate | `node scripts/smoke-gate.mjs` (`chrome-headless-shell`) | **40/40** checks passed |
 | Rust Format & Clippy | `cargo fmt --all --check` & `cargo clippy --workspace --all-targets --locked -- -D warnings` | Passed, **0** warnings |
 | Rust Workspace Tests | `cargo test --workspace --locked` | **26** test targets, **379/379** tests passed (including `8/8` in `bforge_core::telemetry::tests`) |
+
+---
+
+## 4. CI & Windows Artifacts (2026-11-15)
+
+- **Commit**: `24ad7b8` (`24ad7b8688aa1a1ae981ca4a67ff235bfee2a0ee`) on `main` (`origin/main`).
+- **GitHub Actions CI**: Run [`43697860561`](https://github.com/siyal343/baud-forge/actions/runs/43697860561) passed all **10/10** jobs (`e2e bridge, REC and X/YMODEM`, `ui unit, build and headless smoke`, `format and lints`, `test (linux-x86_64)`, `test (linux-aarch64)`, `build (windows desktop shell)`, `test (windows-aarch64)`, `test (windows-x86_64)`, `build (macos-x86_64)`, `test (macos-aarch64)`).
+- **Downloaded Windows Artifacts**:
+  - Desktop bundle (`bforge-desktop-windows-x86_64`): `F:\Datapack\Personal\Programa\baud-forge-ci\desktop-x86_64\bforge-desktop.exe` (`12,261,376` bytes) + `ui/` (`index-D8uCM96Q.js` `1,131,537` bytes, `index-CO3PSjpH.css` `207,506` bytes, `index.html`, `popout.html`, `baudforge-mark.svg`), also copied to `F:\Datapack\Personal\Programa\baud-forge\target\release\bforge-desktop.exe` and `target\release\ui\`.
+  - CLI binary (`bforge-windows-x86_64`): `F:\Datapack\Personal\Programa\baud-forge-ci\cli-x86_64\bforge-windows-x86_64.exe` (`3,859,968` bytes); verified locally (`bforge 0.8.0`).
+- **Not run in this turn**: Launching the GUI `bforge-desktop.exe` window directly or benchmarking live hardware WebGL2 GPU frame timings (headless UI smoke ran under `chrome-headless-shell`).
