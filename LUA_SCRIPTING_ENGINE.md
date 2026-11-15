@@ -3,7 +3,7 @@
 **Document Status:** Implemented & Verified (`RFC-002`) — Waves 1–3 complete in working tree (`2026-11-15`)  
 **Date:** 2026-11-15  
 **Target Codebase:** `crates/bforge-script`, `crates/bforge-core`, `crates/bforge-dissect`, `crates/bforge-storage`, `ui/`  
-**Related Specs:** [`PLUGIN_ARCHITECTURE.md`](./PLUGIN_ARCHITECTURE.md) (`Tier 2`), [`specs/0034-script-fields.md`](./specs/0034-script-fields.md), [`specs/ADR & SRS.md`](./specs/ADR%20%26%20SRS.md) (`FR-SCR-01`, `FR-MITM-01`, `FR-FLT-01`)  
+**Related Specs:** [`PLUGIN_ARCHITECTURE.md`](./PLUGIN_ARCHITECTURE.md) (`Tier 2`), [`specs/0034-script-fields.md`](./specs/0034-script-fields.md), [`specs/ADR & SRS.md`](./specs/ADR%20%26%20SRS.md) (`FR-SCR-01`, `FR-MITM-01`, `FR-FLT-01`), [`docs/PYTHON_VS_LUA_ANALYSIS.md`](./docs/PYTHON_VS_LUA_ANALYSIS.md)  
 **Tutorial & Examples:** [`docs/LUA_SCRIPTING_TUTORIAL.md`](./docs/LUA_SCRIPTING_TUTORIAL.md) · [`01_packet_filter_and_metadata.lua`](./examples/tutorials/01_packet_filter_and_metadata.lua)–[`15_fail_closed_safety_interlock_and_budget.lua`](./examples/tutorials/15_fail_closed_safety_interlock_and_budget.lua)
 
 ---
