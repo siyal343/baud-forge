@@ -104,3 +104,14 @@ Scope: Workspace Loader (auto-reload devices, create workspace, standby recordin
     - Desktop bundle (`bforge-desktop-windows-x86_64`): `F:\Datapack\Personal\Programa\baud-forge-ci\desktop-x86_64\bforge-desktop.exe` (`12,238,336` bytes) + `ui/` (`index-D0CY0GKl.js`, `index-DLZKu67-.css`), also synced to `target\release\bforge-desktop.exe` and `target\release\ui\`.
     - CLI (`bforge-windows-x86_64`): `F:\Datapack\Personal\Programa\baud-forge-ci\cli-x86_64\bforge-windows-x86_64.exe` (`3,859,968` bytes), verified locally (`bforge 0.8.0`).
 - **Not run**: live hardware USB hotplug test (no physical serial adapter attached; verified via unit tests and `useSerialPortScanner` polling/focus listeners) and launching the GUI `bforge-desktop.exe` window directly.
+
+---
+
+## 6. High-Speed & Flexible Plotting Architecture Refactor (2026-11-15)
+
+Full technical design, bottleneck measurements, and symbol record: [`PLOTTING_ARCHITECTURE.md`](./PLOTTING_ARCHITECTURE.md).
+
+- **Rust Telemetry (`crates/bforge-core/src/telemetry.rs`)**: Added `find_trigger_crossing` (with sub-sample linear interpolation and holdoff), `decimate_min_max`, and `WindowStats` (`8/8` tests passing).
+- **Zero-Allocation Plot Core (`ui/src/plot/`)**: Added L1 64-sample mipmap `SampleRing.statsInRange` + `resize` (`rings.ts`), branchless zero-alloc `decimateMinMaxInto` (`decimate.ts`), memoized Hann/twiddle radix-2 FFT (`fft.ts`), specialized `expr.ts` closures + `PI`/`E`/`TAU`/`atan2`/`hypot`/`deg`/`rad`/`clamp`, DSO `findTriggerCrossing` (`trigger.ts`), offscreen `renderWaveformsWebGL` with relative `Float64` subtraction (`webglRenderer.ts`), cached `palette.ts`, and unified single-pass `O(F + C)` `PlotEngine` (`getSeriesScratch`, `getCachedSpectrum`, `getAlignedXy`, array/bitfield extraction, `expr` backfill, `meta:rate` fix).
+- **Stores & Panels (`useWorkstationStore.ts`, `usePlotStore.ts`, `ProtocolDissector.tsx`, `OscilloscopeView.tsx`, `PlotForgeView.tsx`)**: Added single-slice ring helpers, real logic flag extraction, multi-chart layouts (`TAB`/`STACK`/`GRID`), `GPU`/`2D` renderer toggle, working `AUTO`/`NORM`/`SINGLE`/`ROLL` triggering, `CH1`/`CH2` field binding + vertical center + `AUTOSET`, `OVERLAY`/`STACKED` scope lanes, `Y1`/`Y2` cursors + `v(X)` readouts, `FFT`/`XY`/`HIST` crosshairs, workstation `seekToTimestamp` cross-probing, dirty-flag `rAF` loops, and stabilized DOM listeners.
+- **Verification**: `vitest run` (`14` files, `160` tests), `tsc --noEmit && vite build`, `scripts/smoke-gate.mjs` (`40/40`), `cargo fmt --all --check`, `cargo clippy --workspace --all-targets --locked -- -D warnings`, and `cargo test --workspace --locked` (`26` targets, `379` tests) all passed.
