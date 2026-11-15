@@ -132,3 +132,40 @@ Considering a "regular embedded engineer" (MCU firmware bring-up on STM32/ESP32/
    - Treat `PacketStreamView`'s embedded `<HexInspector embedded />` as the primary hex view rather than opening `HexInspector` as a separate dock tab by default.
 3. **Level 3 — Code-Split Heavy Specialist Panels:**
    - Lazy-load (`React.lazy`) `ScriptLabView` (+ `luaSandboxFallback.ts` `3,524` LOC), `PlotForgeView`, `ElfSymbolView`, and `FileTransferView` in `WorkstationDock.tsx` so the initial workbench JS payload (`1.25 MB`) does not parse ~`8,000+` LOC of specialist code when the user only wants to open a serial port.
+
+---
+
+## 6. Executed De-Bloating Results (Measured)
+
+**Backup Restore Point:** `81a2f3f` (`81a2f3fc9974ada88dd5895c1412888a1086e7e6`, `"chore: backup restore point before workbench de-bloating [skip ci]"`) and Git tag `backup/pre-debloat` pushed to `origin` before any structural edits.
+
+### Implemented Changes
+1. **Default Layout Diet & Progressive Disclosure (`WorkstationDock.tsx`, `GlobalRibbon.tsx`, `useWorkstationStore.ts`):**
+   - Shrunk `buildDefaultLayout` from **13** simultaneous panels down to **4** core daily panels: `packetStream` (`56% × 54%`, with inline `HEX PANE`), `protocolDissector` (right), `oscilloscope` (bottom-left), and `commandForge` (bottom-right).
+   - Preserved the full **13**-panel workstation layout as `buildFullCadLayout` under the new `'full'` (`Full 13-Panel CAD Layout`) preset alongside `'default'` (`Core Workbench (4 Panels)`).
+   - Grouped `PANEL_CATALOG` in `GlobalRibbon.tsx` into 3 progressive-disclosure tiers (`Core Daily Workbench`, `Telemetry, Hex & Symbols`, `HIL, Scripting & Specialist`).
+2. **Cross-Linking Overlapping Workbenches (`OscilloscopeView.tsx`, `PlotForgeView.tsx`, `ScriptLabView.tsx`, `PacketStreamView.tsx`):**
+   - Added `PLOT STUDIO` (`[data-testid="scope-open-plotforge-btn"]`) in `OscilloscopeView.tsx` and `DSO SCOPE` (`[data-testid="plotforge-open-scope-btn"]`) in `PlotForgeView.tsx` for one-click switching between live scope and multi-chart analysis.
+   - Added collapsible inline `QUICK FAULTS` bar (`[data-testid="script-quick-faults-toggle"]`, `[data-testid="script-quick-fault-bar"]`) inside `ScriptLabView.tsx` (primitive selector, `APPLY FAULT`, `DISARM ALL`, 1-shot bad-CRC/drop helpers, and `FULL FAULT RIG ↗`).
+   - Added a `Tab ↗` pop-out action inside `PacketStreamView.tsx`'s inline `HEX PANE` header (`requestOpenPanel('hexInspector')`).
+3. **Code-Splitting, Lazy Panel Loader & Toast Overlay Fix (`ui/vite.config.ts`, `WorkstationDock.tsx`, `ToastHost.tsx`):**
+   - Added `manualChunks` in `ui/vite.config.ts` splitting `lua-sandbox`, `plot-engine`, and `vendor`.
+   - Split all 10 non-default specialist panels (`SessionDiffView`, `PinSequencerView`, `FaultRigView`, `BridgePanel`, `FileTransferView`, `ElfSymbolView`, `SchemaDialectView`, `ActivityLogView`, `PlotForgeView`, `ScriptLabView`) into dynamic `import()` chunks via `createLazyPanel` (a `useState` + `useEffect` + module-cache loader that avoids an 8.5–10.9 s React 19 Concurrent `<Suspense>` commit delay observed in headless smoke testing under 20 Hz simulation + WebGL frames).
+   - Fixed `ToastHost.tsx` click interception over bottom-right `CommandForge` (`pointer-events-none` on `ToastRow`, `pointer-events-auto` on the Dismiss button).
+
+### Measured Before vs. After Bundle Footprint (`vite build`, `2115` modules)
+
+| Asset / Chunk | Before (`index-DHpNpOy1.js`) | After (Measured Bytes) | Gzip Size | Notes |
+| :--- | ---: | ---: | ---: | :--- |
+| Main Entry (`index-Cds8c90t.js`) | `1,247,679` B *(single monolithic JS)* | **`297,689` B** (`297.69 kB`) | `83.10 kB` | **-76.1%** entry JS (`4` core panels + shell) |
+| Shared Dependencies (`vendor-CufUCl0L.js`) | *(included in entry)* | `688,842` B (`688.84 kB`) | `177.94 kB` | Long-cache React/Dockview/Lucide chunk |
+| Lua Sandbox (`lua-sandbox-BJhSpe1k.js`) | *(included in entry)* | `75,003` B (`75.00 kB`) | `22.35 kB` | Isolated `luaSandboxFallback.ts` chunk |
+| Plot Core (`plot-engine-CaK4Qjlf.js`) | *(included in entry)* | `31,628` B (`31.63 kB`) | `11.31 kB` | Shared DSP / FFT / WebGL plot core |
+| 10 Lazy Specialist Panel Chunks | *(included in entry)* | **`164,841` B** combined (`5,510`–`60,248` B each) | `47.37 kB` sum | `PlotForgeView` `60,248` B, `ScriptLabView` `33,592` B, `FileTransferView` `11,646` B, `FaultRigView` `10,537` B, `ElfSymbolView` `10,403` B, `PinSequencerView` `9,800` B, `SchemaDialectView` `9,505` B, `SessionDiffView` `7,826` B, `BridgePanel` `5,774` B, `ActivityLogView` `5,510` B |
+| CSS (`index-Cx4DLiTz.css`) | `209,603` B | `209,631` B (`209.63 kB`) | `23.57 kB` | Tailwind + Dockview theme tokens |
+
+### Measured Verification Results
+- `pnpm exec tsc --noEmit` + `vite build`: passed (`0` errors, `2115` modules transformed), `ui/dist` synced to `target/release/ui`.
+- `pnpm test` (`vitest run`): **`16/16` test files passed, `187/187` tests passed** (`0` failed).
+- `node scripts/smoke-gate.mjs` (`chrome-headless-shell`): **`42/42` checks passed** (`0` failed), including Script Lab dry-run + `QUICK FAULTS` inline toggle, Plot Forge live streaming, Toast non-interference on Command Forge TX (`T8b`), lazy panel mounting (`T8c`/`T10`/`T14`/`T15`), and layout persistence (`T12`/`T13`).
+- `cargo test --workspace --locked`: **`33` test targets, `401` passed, `0` failed, `0` ignored**.

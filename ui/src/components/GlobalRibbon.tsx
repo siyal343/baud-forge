@@ -29,22 +29,30 @@ import {
 } from 'lucide-react';
 import { UartConfigModal } from './UartConfigModal';
 
-const PANEL_CATALOG = [
-  { id: 'packetStream', name: 'Packet Stream (COBS)' },
-  { id: 'protocolDissector', name: 'Protocol Dissector' },
-  { id: 'hexInspector', name: 'Canonical Hex & ASCII' },
-  { id: 'sessionDiff', name: 'Session Diff & Comparison' },
-  { id: 'oscilloscope', name: 'Telemetry Oscilloscope' },
-  { id: 'plotForge', name: 'Plot Forge (Advanced Plotting)' },
-  { id: 'commandForge', name: 'Command Forge' },
-  { id: 'pinSequencer', name: 'Pin Sequencer & Modem Lines' },
-  { id: 'faultRig', name: 'HIL Fault Injection Rig' },
-  { id: 'scriptLab', name: 'Lua 5.4 Script Lab' },
-  { id: 'fileTransfer', name: 'X/YMODEM File Transfer' },
-  { id: 'bridge', name: 'MITM Bridge & Relay' },
-  { id: 'activityLog', name: 'Activity Log' },
-  { id: 'elfSymbols', name: 'ELF Symbol & Crash Trace' },
-  { id: 'schemaDialects', name: 'Schema Dialects (Proto/MAVLink)' },
+type PanelTier = 'core' | 'telemetry' | 'hil';
+
+const PANEL_TIERS: Array<{ id: PanelTier; label: string }> = [
+  { id: 'core', label: 'Core Daily Workbench' },
+  { id: 'telemetry', label: 'Telemetry, Hex & Symbols' },
+  { id: 'hil', label: 'HIL, Scripting & Specialist' },
+];
+
+const PANEL_CATALOG: Array<{ id: string; name: string; tier: PanelTier }> = [
+  { id: 'packetStream', name: 'Packet Stream (COBS)', tier: 'core' },
+  { id: 'protocolDissector', name: 'Protocol Dissector', tier: 'core' },
+  { id: 'oscilloscope', name: 'Telemetry Oscilloscope', tier: 'core' },
+  { id: 'commandForge', name: 'Command Forge', tier: 'core' },
+  { id: 'plotForge', name: 'Plot Forge (Multi-Chart Studio)', tier: 'telemetry' },
+  { id: 'hexInspector', name: 'Canonical Hex & ASCII', tier: 'telemetry' },
+  { id: 'schemaDialects', name: 'Schema Dialects (Proto/MAVLink)', tier: 'telemetry' },
+  { id: 'elfSymbols', name: 'ELF Symbol & Crash Trace', tier: 'telemetry' },
+  { id: 'sessionDiff', name: 'Session Diff & Comparison', tier: 'telemetry' },
+  { id: 'scriptLab', name: 'Lua 5.4 Script Lab', tier: 'hil' },
+  { id: 'faultRig', name: 'HIL Fault Injection Rig', tier: 'hil' },
+  { id: 'pinSequencer', name: 'Pin Sequencer & Modem Lines', tier: 'hil' },
+  { id: 'fileTransfer', name: 'X/YMODEM File Transfer', tier: 'hil' },
+  { id: 'bridge', name: 'MITM Bridge & Relay', tier: 'hil' },
+  { id: 'activityLog', name: 'Activity Log', tier: 'hil' },
 ];
 
 export const GlobalRibbon: React.FC = () => {
@@ -395,10 +403,11 @@ export const GlobalRibbon: React.FC = () => {
               </div>
 
               {[
-                { id: 'default', name: 'Default CAD Workbench', desc: 'Stream + Dissector + Scope + Tools' },
-                { id: 'dissector', name: 'Dissector & Schemas Focus', desc: 'Wide dissector, hex, schemas & symbols' },
-                { id: 'scope', name: 'Telemetry Oscilloscope Focus', desc: 'Maximized analog DSO and logic analyzer' },
-                { id: 'hil', name: 'HIL & Hardware Rig', desc: 'Stream + Fault rig + Pins + Transfers' },
+                { id: 'default', name: 'Core Workbench (4 Panels)', desc: 'Stream + Inline Hex + Dissector + Scope + TX' },
+                { id: 'dissector', name: 'Protocol Dissector Focus', desc: 'Wide dissector, hex, schemas & symbols' },
+                { id: 'scope', name: 'Oscilloscope & Telemetry', desc: 'Maximized analog DSO and logic analyzer' },
+                { id: 'hil', name: 'HIL Fault & Scripting Rig', desc: 'Stream + Fault rig + Lua Script Lab + Pins' },
+                { id: 'full', name: 'Full 13-Panel CAD Layout', desc: 'All core and specialist tabs mounted upfront' },
               ].map((p) => (
                 <button
                   key={p.id}
@@ -426,19 +435,26 @@ export const GlobalRibbon: React.FC = () => {
                 Re-open Closed Panel
               </div>
 
-              <div className="max-h-56 overflow-y-auto space-y-0.5">
-                {PANEL_CATALOG.map((panel) => (
-                  <button
-                    key={panel.id}
-                    onClick={() => {
-                      requestOpenPanel(panel.id);
-                      setIsLayoutMenuOpen(false);
-                    }}
-                    className="w-full flex items-center justify-between px-2 py-1 rounded text-left text-[11px] text-bf-mute hover:text-bf-cyan hover:bg-bf-subpanel transition-colors"
-                  >
-                    <span>{panel.name}</span>
-                    <span className="text-[10px] text-bf-faint font-mono">OPEN</span>
-                  </button>
+              <div className="max-h-56 overflow-y-auto space-y-1.5">
+                {PANEL_TIERS.map((tier) => (
+                  <div key={tier.id} className="space-y-0.5">
+                    <div className="text-[9px] uppercase tracking-wider text-bf-faint px-2 pt-0.5 font-semibold">
+                      {tier.label}
+                    </div>
+                    {PANEL_CATALOG.filter((panel) => panel.tier === tier.id).map((panel) => (
+                      <button
+                        key={panel.id}
+                        onClick={() => {
+                          requestOpenPanel(panel.id);
+                          setIsLayoutMenuOpen(false);
+                        }}
+                        className="w-full flex items-center justify-between px-2 py-1 rounded text-left text-[11px] text-bf-mute hover:text-bf-cyan hover:bg-bf-subpanel transition-colors"
+                      >
+                        <span>{panel.name}</span>
+                        <span className="text-[10px] text-bf-faint font-mono">OPEN</span>
+                      </button>
+                    ))}
+                  </div>
                 ))}
               </div>
 

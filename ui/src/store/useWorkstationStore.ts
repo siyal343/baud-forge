@@ -112,7 +112,7 @@ interface WorkstationState {
   packetRate: number;
   overruns: number;
   isExportModalOpen: boolean;
-  activePreset: 'default' | 'dissector' | 'scope' | 'hil';
+  activePreset: 'default' | 'dissector' | 'scope' | 'hil' | 'full';
   openPanelId: string | null;
   resetLayoutTrigger: number;
 
@@ -128,7 +128,7 @@ interface WorkstationState {
 
   // Actions
   setExportModalOpen: (open: boolean) => void;
-  setActivePreset: (preset: 'default' | 'dissector' | 'scope' | 'hil') => void;
+  setActivePreset: (preset: 'default' | 'dissector' | 'scope' | 'hil' | 'full') => void;
   requestOpenPanel: (id: string) => void;
   requestResetLayout: () => void;
   connect: () => Promise<void>;

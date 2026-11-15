@@ -1,5 +1,5 @@
 import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
-import { Crosshair, Eye, EyeOff, Minus, Pause, Pencil, Play, Plus, X, Zap } from 'lucide-react';
+import { Activity, Crosshair, Eye, EyeOff, Minus, Pause, Pencil, Play, Plus, X, Zap } from 'lucide-react';
 import {
   usePlotStore,
   SPAN_MIN_US,
@@ -2601,6 +2601,16 @@ export const PlotForgeView: React.FC = () => {
           >
             <Zap size={10} />
             {gpuAccel ? 'GPU' : '2D'}
+          </button>
+          <button
+            type="button"
+            data-testid="plotforge-open-scope-btn"
+            onClick={() => useWorkstationStore.getState().requestOpenPanel('oscilloscope')}
+            className={ribbonBtn}
+            data-tooltip="Switch to / open Fixed-Channel DSO Oscilloscope"
+          >
+            <Activity size={10} />
+            DSO SCOPE
           </button>
         </div>
       </div>

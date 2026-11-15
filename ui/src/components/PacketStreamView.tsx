@@ -514,6 +514,14 @@ export const PacketStreamView: React.FC = () => {
                 {opt.label}
               </button>
             ))}
+            <button
+              type="button"
+              onClick={() => useWorkstationStore.getState().requestOpenPanel('hexInspector')}
+              title="Open standalone Canonical Hex & ASCII dock tab"
+              className="px-1.5 py-0.5 text-[10px] font-mono leading-none border-l border-bf-line text-bf-mute hover:text-bf-cyan hover:bg-bf-hover transition-colors"
+            >
+              Tab ↗
+            </button>
           </div>
 
           {/* Stream Search / Filter Input */}

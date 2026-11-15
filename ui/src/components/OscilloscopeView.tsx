@@ -22,6 +22,7 @@ import {
   ChevronDown,
   ChevronUp,
   Crosshair,
+  LineChart,
   Plus,
   Minus,
 } from 'lucide-react';
@@ -3364,6 +3365,17 @@ export const OscilloscopeView: React.FC = () => {
             >
               {logicRailsVisible ? <Eye className="w-2.5 h-2.5" /> : <EyeOff className="w-2.5 h-2.5" />}
               <span>LOGIC</span>
+            </button>
+
+            <button
+              type="button"
+              data-testid="scope-open-plotforge-btn"
+              onClick={() => useWorkstationStore.getState().requestOpenPanel('plotForge')}
+              data-tooltip="Switch to / open Multi-Chart Plot Forge Studio (FFT, XY, Histogram, Expressions)"
+              className="flex items-center gap-1 px-1.5 py-0.5 rounded text-[11px] font-bold transition-colors border border-bf-cyan/40 bg-bf-panel text-bf-cyan hover:bg-bf-cyan/15 shrink-0"
+            >
+              <LineChart className="w-2.5 h-2.5" />
+              <span>PLOT STUDIO</span>
             </button>
           </div>
         </div>

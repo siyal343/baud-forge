@@ -293,14 +293,17 @@ try {
       });
       if (tx) {
         await page.mouse.click(tx.x, tx.y);
-        await sleep(900);
-        const dispatched = await page.evaluate(() => {
-          // The store is the authoritative record: the virtualized grid only
-          // renders the visible window, which may have scrolled off the tail.
-          const hasCommandRow = window.__bforgeStore.getState().packets.some((p) => p.protocol === 'Command');
-          const toastsNow = [...document.querySelectorAll('[role="status"]')].map((d) => d.textContent).join(' ');
-          return hasCommandRow && toastsNow.includes('TX recorded locally only');
-        });
+        let dispatched = false;
+        for (let i = 0; i < 8 && !dispatched; i++) {
+          await sleep(400);
+          dispatched = await page.evaluate(() => {
+            // The store is the authoritative record: the virtualized grid only
+            // renders the visible window, which may have scrolled off the tail.
+            const hasCommandRow = window.__bforgeStore.getState().packets.some((p) => p.protocol === 'Command');
+            const toastsNow = [...document.querySelectorAll('[role="status"]')].map((d) => d.textContent).join(' ');
+            return hasCommandRow && toastsNow.includes('TX recorded locally only');
+          });
+        }
         check(
           'struct form parses, packs, and transmits',
           !!panel.label && !!panel.wire && filled && dispatched,
@@ -321,7 +324,11 @@ try {
   // the interactive audit and is timing-flaky under automation mid-flow.
   {
     await page.evaluate(() => window.__bforgeStore.getState().requestOpenPanel('bridge'));
-    await sleep(800);
+    await page.waitForFunction(
+      () => [...document.querySelectorAll('button')].some((x) => x.textContent.trim() === 'ARM BRIDGE'),
+      { timeout: 15000 }
+    );
+    await sleep(200);
     const panelUp = await page.evaluate(() => {
       // Panel presence via its content — dockview renders the new tab inside
       // an overflowed strip that may sit outside the probed DOM region.
@@ -390,10 +397,12 @@ try {
   }
 
   // T9: dissector highlighted-field readout + honest plot action.
-  // Both panels live in dockview groups whose inactive tabs are unmounted —
-  // activate the tabs first (keyboard path, same as the scope).
-  const hexTab = await activateTab('CANONICAL HEX & ASCII');
-  const hl = hexTab
+  // In the 4-panel default layout, HexInspector is embedded inline inside
+  // PACKET STREAM by default; if standalone CANONICAL HEX & ASCII is active
+  // (e.g. Dissector preset), prefer it and fall back to PACKET STREAM.
+  const hexHost =
+    (await activateTab('CANONICAL HEX & ASCII')) || (await activateTab('PACKET STREAM'));
+  const hl = hexHost
     ? await page.evaluate(() => {
         const el = [...document.querySelectorAll('div,span')].find((d) => /^HL: /.test(d.textContent.trim()) && d.textContent.includes('· 0x'));
         return el ? el.textContent.trim().slice(0, 90) : null;
@@ -445,7 +454,11 @@ try {
   // tests and the curl pass).
   {
     await page.evaluate(() => window.__bforgeStore.getState().requestOpenPanel('activityLog'));
-    await sleep(800);
+    await page.waitForFunction(
+      () => [...document.querySelectorAll('span')].some((s) => s.textContent.trim() === 'ACTIVITY LOG'),
+      { timeout: 15000 }
+    );
+    await sleep(200);
     const state = await page.evaluate(() => {
       const tab = [...document.querySelectorAll('[role="tab"]')].find((x) => x.textContent.includes('ACTIVITY LOG'));
       const header = [...document.querySelectorAll('span')].some((s) => s.textContent.trim() === 'ACTIVITY LOG');
@@ -761,12 +774,12 @@ try {
       );
 
     // The saved fixture must be deterministic: earlier tests open panels (MITM
-    // bridge, activity log) and — now that boot honors the saved arrangement
-    // instead of clobbering it to the factory preset (F-16) — those panels
-    // survive reloads into the capture. Close them before saving so
-    // "Smoke Layout" is exactly the default panel set.
+    // bridge, activity log, standalone hex inspector) and — now that boot honors
+    // the saved arrangement instead of clobbering it to the factory preset
+    // (F-16) — those panels survive reloads into the capture. Close them
+    // before saving so "Smoke Layout" is exactly the 4-panel default set.
     await page.evaluate(() => {
-      for (const id of ['bridge', 'activityLog']) {
+      for (const id of ['bridge', 'activityLog', 'hexInspector']) {
         window.__bforgeDockApi?.getPanel(id)?.api.close();
       }
     });
@@ -883,7 +896,14 @@ try {
   // engine/decimation unit tests, here we assert real plotted data.
   {
     await page.evaluate(() => window.__bforgeStore.getState().requestOpenPanel('plotForge'));
-    await sleep(800);
+    await page.waitForFunction(
+      () =>
+        Boolean(window.__bforgePlotStore) &&
+        [...document.querySelectorAll('[role="tab"]')].some((x) => x.textContent.includes('PLOT FORGE')) &&
+        [...document.querySelectorAll('canvas')].some((c) => c.width > 50 && c.height > 50),
+      { timeout: 15000 }
+    );
+    await sleep(300);
     const opened = await page.evaluate(() => {
       const tab = [...document.querySelectorAll('[role="tab"]')].find((x) =>
         x.textContent.includes('PLOT FORGE')
@@ -928,7 +948,8 @@ try {
   // dry-runs against a packet cleanly in offline simulated sandbox mode.
   {
     await page.evaluate(() => window.__bforgeStore.getState().requestOpenPanel('scriptLab'));
-    await sleep(600);
+    await page.waitForSelector('[data-testid="script-lab-panel"]', { timeout: 15000 });
+    await sleep(200);
     const opened = await page.evaluate(() => {
       const panel = document.querySelector('[data-testid="script-lab-panel"]');
       const tab = [...document.querySelectorAll('[role="tab"]')].find((x) =>
@@ -970,6 +991,13 @@ try {
         dryRun.hasMetric,
       `opened=${opened} verdict="${dryRun.verdict}" sandbox="${dryRun.sandbox}" diff=${dryRun.hasFieldDiff} metric=${dryRun.hasMetric}`
     );
+
+    await page.click('[data-testid="script-quick-faults-toggle"]');
+    await page.waitForSelector('[data-testid="script-quick-fault-bar"]', { timeout: 5000 });
+    const hasQuickFaults = await page.evaluate(
+      () => Boolean(document.querySelector('[data-testid="script-quick-fault-bar"]'))
+    );
+    check('Script Lab inline QUICK FAULTS strip expands', hasQuickFaults, `bar=${hasQuickFaults}`);
   }
 } finally {
   await browser.close();

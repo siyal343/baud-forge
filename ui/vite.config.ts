@@ -7,6 +7,24 @@ export default defineConfig({
     tailwindcss(),
     react(),
   ],
+  build: {
+    rollupOptions: {
+      output: {
+        manualChunks(id) {
+          const normalized = id.replace(/\\/g, '/');
+          if (normalized.includes('services/luaSandboxFallback')) {
+            return 'lua-sandbox';
+          }
+          if (normalized.includes('/src/plot/')) {
+            return 'plot-engine';
+          }
+          if (normalized.includes('/node_modules/')) {
+            return 'vendor';
+          }
+        },
+      },
+    },
+  },
   server: {
     port: 5173,
     proxy: {

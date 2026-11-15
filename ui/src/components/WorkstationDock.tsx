@@ -15,32 +15,98 @@ import { ProtocolDissector } from './ProtocolDissector';
 import { HexInspector } from './HexInspector';
 import { OscilloscopeView } from './OscilloscopeView';
 import { CommandForge } from './CommandForge';
-import { SessionDiffView } from './SessionDiffView';
-import { PinSequencerView } from './PinSequencerView';
-import { FaultRigView } from './FaultRigView';
-import { BridgePanel } from './BridgePanel';
-import { FileTransferView } from './FileTransferView';
-import { ElfSymbolView } from './ElfSymbolView';
-import { SchemaDialectView } from './SchemaDialectView';
-import { ActivityLogView } from './ActivityLogView';
-import { PlotForgeView } from './PlotForgeView';
-import { ScriptLabView } from './ScriptLabView';
+
+const PanelLoadingFallback: React.FC = () => (
+  <div className="h-full w-full flex items-center justify-center bg-bf-panel text-bf-faint font-mono text-[11px]">
+    Loading panel…
+  </div>
+);
+
+// Direct dynamic import + state loader avoids React 19 Suspense commit delays under 20Hz live streams.
+function createLazyPanel(loader: () => Promise<React.FC>): React.FC<IDockviewPanelProps> {
+  let Cached: React.FC | null = null;
+  let pending: Promise<React.FC | null> | null = null;
+
+  return function LazyDockPanel(_props: IDockviewPanelProps) {
+    const [Component, setComponent] = useState<React.FC | null>(() => Cached);
+    const [loadError, setLoadError] = useState<string | null>(null);
+
+    useEffect(() => {
+      if (Component) return;
+      let cancelled = false;
+      if (!pending) {
+        pending = loader()
+          .then((Comp) => {
+            Cached = Comp;
+            return Comp;
+          })
+          .catch((err) => {
+            pending = null;
+            if (!cancelled) {
+              setLoadError(err instanceof Error ? err.message : String(err));
+            }
+            return null;
+          });
+      }
+      pending.then((Comp) => {
+        if (!cancelled && Comp) {
+          setComponent(() => Comp);
+        }
+      });
+      return () => {
+        cancelled = true;
+      };
+    }, [Component]);
+
+    if (loadError) {
+      return (
+        <div className="h-full w-full flex items-center justify-center bg-bf-panel text-bf-crimson font-mono text-[11px] px-4 text-center">
+          Failed to load panel: {loadError}
+        </div>
+      );
+    }
+    if (!Component) {
+      return <PanelLoadingFallback />;
+    }
+    return <Component />;
+  };
+}
 
 const StreamPanel = (_props: IDockviewPanelProps) => <PacketStreamView />;
 const DissectorPanel = (_props: IDockviewPanelProps) => <ProtocolDissector />;
 const HexPanel = (_props: IDockviewPanelProps) => <HexInspector />;
 const ScopePanel = (_props: IDockviewPanelProps) => <OscilloscopeView />;
 const CommandPanel = (_props: IDockviewPanelProps) => <CommandForge />;
-const DiffPanel = (_props: IDockviewPanelProps) => <SessionDiffView />;
-const PinsPanel = (_props: IDockviewPanelProps) => <PinSequencerView />;
-const FaultPanel = (_props: IDockviewPanelProps) => <FaultRigView />;
-const TransferPanel = (_props: IDockviewPanelProps) => <FileTransferView />;
-const ElfPanel = (_props: IDockviewPanelProps) => <ElfSymbolView />;
-const SchemaPanel = (_props: IDockviewPanelProps) => <SchemaDialectView />;
-const BridgeMitmPanel = (_props: IDockviewPanelProps) => <BridgePanel />;
-const ActivityPanel = (_props: IDockviewPanelProps) => <ActivityLogView />;
-const PlotPanel = (_props: IDockviewPanelProps) => <PlotForgeView />;
-const ScriptLabPanel = (_props: IDockviewPanelProps) => <ScriptLabView />;
+const DiffPanel = createLazyPanel(() =>
+  import('./SessionDiffView').then((m) => m.SessionDiffView)
+);
+const PinsPanel = createLazyPanel(() =>
+  import('./PinSequencerView').then((m) => m.PinSequencerView)
+);
+const FaultPanel = createLazyPanel(() =>
+  import('./FaultRigView').then((m) => m.FaultRigView)
+);
+const TransferPanel = createLazyPanel(() =>
+  import('./FileTransferView').then((m) => m.FileTransferView)
+);
+const ElfPanel = createLazyPanel(() =>
+  import('./ElfSymbolView').then((m) => m.ElfSymbolView)
+);
+const SchemaPanel = createLazyPanel(() =>
+  import('./SchemaDialectView').then((m) => m.SchemaDialectView)
+);
+const BridgeMitmPanel = createLazyPanel(() =>
+  import('./BridgePanel').then((m) => m.BridgePanel)
+);
+const ActivityPanel = createLazyPanel(() =>
+  import('./ActivityLogView').then((m) => m.ActivityLogView)
+);
+const PlotPanel = createLazyPanel(() =>
+  import('./PlotForgeView').then((m) => m.PlotForgeView)
+);
+const ScriptLabPanel = createLazyPanel(() =>
+  import('./ScriptLabView').then((m) => m.ScriptLabView)
+);
 
 const components = {
   packetStream: StreamPanel,
@@ -392,8 +458,62 @@ export const WorkstationDock: React.FC = () => {
   const pushToast = useToastStore((s) => s.pushToast);
   const apiRef = useRef<DockviewApi | null>(null);
 
-  // Helper: Setup Default CAD Layout
+  // Helper: Setup Core Daily Workbench (4 core panels across 4 panes)
   const buildDefaultLayout = useCallback((api: DockviewApi) => {
+    api.clear();
+    const totalWidth = typeof window !== 'undefined' ? window.innerWidth : 1280;
+    const totalHeight = typeof window !== 'undefined' ? window.innerHeight : 800;
+    const streamWidth = Math.round(totalWidth * 0.56);
+    const rightWidth = totalWidth - streamWidth;
+    const topHeight = Math.round(totalHeight * 0.54);
+    const bottomHeight = totalHeight - topHeight;
+
+    const stream = api.addPanel({
+      id: 'packetStream',
+      component: 'packetStream',
+      title: 'PACKET STREAM (COBS)',
+      initialWidth: streamWidth,
+      initialHeight: topHeight,
+      minimumWidth: 280,
+      minimumHeight: 140,
+    });
+
+    const dissector = api.addPanel({
+      id: 'protocolDissector',
+      component: 'protocolDissector',
+      title: 'PROTOCOL DISSECTOR',
+      initialWidth: rightWidth,
+      initialHeight: topHeight,
+      minimumWidth: 260,
+      minimumHeight: 140,
+      position: { referencePanel: stream, direction: 'right' },
+    });
+
+    api.addPanel({
+      id: 'oscilloscope',
+      component: 'oscilloscope',
+      title: 'TELEMETRY OSCILLOSCOPE',
+      initialWidth: streamWidth,
+      initialHeight: bottomHeight,
+      minimumWidth: 280,
+      minimumHeight: 140,
+      position: { referencePanel: stream, direction: 'below' },
+    });
+
+    api.addPanel({
+      id: 'commandForge',
+      component: 'commandForge',
+      title: 'COMMAND FORGE',
+      initialWidth: rightWidth,
+      initialHeight: bottomHeight,
+      minimumWidth: 260,
+      minimumHeight: 140,
+      position: { referencePanel: dissector, direction: 'below' },
+    });
+  }, []);
+
+  // Helper: Setup Full 13-Panel CAD Layout (legacy default)
+  const buildFullCadLayout = useCallback((api: DockviewApi) => {
     api.clear();
     const totalWidth = typeof window !== 'undefined' ? window.innerWidth : 1280;
     const totalHeight = typeof window !== 'undefined' ? window.innerHeight : 800;
@@ -689,13 +809,16 @@ export const WorkstationDock: React.FC = () => {
         case 'hil':
           buildHilLayout(api);
           break;
+        case 'full':
+          buildFullCadLayout(api);
+          break;
         case 'default':
         default:
           buildDefaultLayout(api);
           break;
       }
     },
-    [buildDefaultLayout, buildDissectorLayout, buildScopeLayout, buildHilLayout]
+    [buildDefaultLayout, buildFullCadLayout, buildDissectorLayout, buildScopeLayout, buildHilLayout]
   );
 
   // Ready handler
@@ -808,9 +931,28 @@ export const WorkstationDock: React.FC = () => {
     if (existing) {
       existing.api.setActive();
     } else {
-      // Re-add closed panel to active dock
-      const panels = api.panels;
-      const refPanel = panels[0];
+      // Re-add closed panel to its natural sibling pane when present
+      const preferredRefs: Record<string, string[]> = {
+        plotForge: ['oscilloscope', 'commandForge'],
+        oscilloscope: ['plotForge', 'packetStream'],
+        commandForge: ['scriptLab', 'faultRig', 'oscilloscope'],
+        scriptLab: ['commandForge', 'faultRig', 'oscilloscope'],
+        faultRig: ['commandForge', 'scriptLab', 'oscilloscope'],
+        pinSequencer: ['commandForge', 'faultRig', 'oscilloscope'],
+        fileTransfer: ['commandForge', 'faultRig', 'oscilloscope'],
+        bridge: ['commandForge', 'faultRig', 'oscilloscope'],
+        activityLog: ['commandForge', 'faultRig', 'oscilloscope'],
+        hexInspector: ['protocolDissector', 'sessionDiff', 'packetStream'],
+        sessionDiff: ['protocolDissector', 'hexInspector', 'packetStream'],
+        elfSymbols: ['protocolDissector', 'schemaDialects', 'packetStream'],
+        schemaDialects: ['protocolDissector', 'elfSymbols', 'packetStream'],
+        protocolDissector: ['elfSymbols', 'schemaDialects', 'packetStream'],
+        packetStream: ['protocolDissector'],
+      };
+      const refPanel =
+        (preferredRefs[openPanelId] ?? [])
+          .map((id) => api.getPanel(id))
+          .find((panel) => Boolean(panel)) ?? api.panels[0];
       const titles: Record<string, string> = {
         packetStream: 'PACKET STREAM (COBS)',
         protocolDissector: 'PROTOCOL DISSECTOR',
@@ -825,15 +967,17 @@ export const WorkstationDock: React.FC = () => {
         fileTransfer: 'X/YMODEM FILE TRANSFER',
         elfSymbols: 'ELF SYMBOLS & CRASH TRACE',
         schemaDialects: 'SCHEMA DIALECTS (PROTO/MAVLINK)',
+        bridge: 'MITM BRIDGE',
         activityLog: 'ACTIVITY LOG',
       };
 
-      api.addPanel({
+      const added = api.addPanel({
         id: openPanelId,
         component: openPanelId,
         title: titles[openPanelId] || openPanelId.toUpperCase(),
         position: refPanel ? { referencePanel: refPanel, direction: 'within' } : undefined,
       });
+      added.api.setActive();
     }
 
     requestOpenPanel('');

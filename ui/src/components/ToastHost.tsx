@@ -24,7 +24,7 @@ const ToastRow: React.FC<{ toast: Toast }> = ({ toast }) => {
   return (
     <div
       role="status"
-      className={`pointer-events-auto flex items-start gap-2 w-[320px] px-2.5 py-2 bg-bf-panel/95 backdrop-blur-sm border ${style.border} rounded shadow-lg shadow-black/50 font-mono`}
+      className={`pointer-events-none flex items-start gap-2 w-[320px] px-2.5 py-2 bg-bf-panel/95 backdrop-blur-sm border ${style.border} rounded shadow-lg shadow-black/50 font-mono`}
     >
       <Icon className={`w-3.5 h-3.5 mt-0.5 shrink-0 ${style.text}`} />
       <div className="flex-1 min-w-0">
@@ -36,7 +36,7 @@ const ToastRow: React.FC<{ toast: Toast }> = ({ toast }) => {
       <button
         onClick={() => dismissToast(toast.id)}
         aria-label="Dismiss notification"
-        className="text-bf-faint hover:text-bf-body transition-colors shrink-0"
+        className="pointer-events-auto text-bf-faint hover:text-bf-body transition-colors shrink-0"
       >
         <X className="w-3 h-3" />
       </button>
