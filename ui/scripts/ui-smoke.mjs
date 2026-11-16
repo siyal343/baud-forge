@@ -992,12 +992,14 @@ try {
       `opened=${opened} verdict="${dryRun.verdict}" sandbox="${dryRun.sandbox}" diff=${dryRun.hasFieldDiff} metric=${dryRun.hasMetric}`
     );
 
-    await page.click('[data-testid="script-quick-faults-toggle"]');
-    await page.waitForSelector('[data-testid="script-quick-fault-bar"]', { timeout: 5000 });
-    const hasQuickFaults = await page.evaluate(
-      () => Boolean(document.querySelector('[data-testid="script-quick-fault-bar"]'))
+    await page.click('[data-testid="script-open-fault-rig-btn"]');
+    await sleep(200);
+    const hasFaultRig = await page.evaluate(() =>
+      [...document.querySelectorAll('[role="tab"]')].some((x) =>
+        x.textContent.includes('HIL FAULT')
+      )
     );
-    check('Script Lab inline QUICK FAULTS strip expands', hasQuickFaults, `bar=${hasQuickFaults}`);
+    check('Script Lab FAULT RIG ↗ link opens HIL Fault Injection Rig', hasFaultRig, `tab=${hasFaultRig}`);
   }
 } finally {
   await browser.close();

@@ -40,10 +40,8 @@ const PANEL_TIERS: Array<{ id: PanelTier; label: string }> = [
 const PANEL_CATALOG: Array<{ id: string; name: string; tier: PanelTier }> = [
   { id: 'packetStream', name: 'Packet Stream (COBS)', tier: 'core' },
   { id: 'protocolDissector', name: 'Protocol Dissector', tier: 'core' },
-  { id: 'oscilloscope', name: 'Telemetry Oscilloscope', tier: 'core' },
+  { id: 'oscilloscope', name: 'Telemetry Oscilloscope & Plot Studio', tier: 'core' },
   { id: 'commandForge', name: 'Command Forge', tier: 'core' },
-  { id: 'plotForge', name: 'Plot Forge (Multi-Chart Studio)', tier: 'telemetry' },
-  { id: 'hexInspector', name: 'Canonical Hex & ASCII', tier: 'telemetry' },
   { id: 'schemaDialects', name: 'Schema Dialects (Proto/MAVLink)', tier: 'telemetry' },
   { id: 'elfSymbols', name: 'ELF Symbol & Crash Trace', tier: 'telemetry' },
   { id: 'sessionDiff', name: 'Session Diff & Comparison', tier: 'telemetry' },

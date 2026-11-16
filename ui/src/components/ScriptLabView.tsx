@@ -13,7 +13,6 @@ import {
   Power,
   RotateCcw,
   ShieldAlert,
-  ShieldCheck,
   SlidersHorizontal,
   Terminal,
   Upload,
@@ -34,31 +33,6 @@ import { plotEngine } from '../plot/engine';
 import type { ScriptDryRunView } from '../types';
 
 type DryRunResultWithMeta = ScriptDryRunView & { offline: boolean; hooks?: string[] };
-type QuickFaultKind = 'bit_flip' | 'drop' | 'truncate' | 'corrupt_crc' | 'delay';
-
-const QUICK_FAULT_OPTIONS: Record<
-  QuickFaultKind,
-  { label: string; options: Record<string, number> }
-> = {
-  bit_flip: { label: 'Bit Flip (10⁻⁵ BER)', options: { flip_rate: 1e-5 } },
-  drop: { label: 'Drop Every 5th Frame', options: { drop_every: 5 } },
-  truncate: { label: 'Truncate (-4 B)', options: { truncate: 4 } },
-  corrupt_crc: { label: 'Corrupt CRC (-4 B)', options: { corrupt_crc: 4 } },
-  delay: { label: 'Latency Jitter (150±30 ms)', options: { delay_ms: 150, jitter_ms: 30 } },
-};
-
-const QUICK_ONE_SHOTS = {
-  badCrc: {
-    hex: '66 61 75 6c 74 20 62 61 64 5f 63 72 63 20 33 0a',
-    okTitle: 'One-shot CRC corruption sent',
-    okDesc: '3 bad-CRC frames requested',
-  },
-  drop: {
-    hex: '66 61 75 6c 74 20 64 72 6f 70 20 32 0a',
-    okTitle: 'One-shot frame drop sent',
-    okDesc: '2 dropped frames requested',
-  },
-} as const;
 
 const SCRIPT_API_DOCS: Array<{ fn: string; desc: string }> = [
   { fn: 'bforge.on_rx_frame / on_tx_frame', desc: 'Intercept RX/TX frames (optional target port); return frame, hex, burst, or nil to drop.' },
@@ -124,8 +98,6 @@ export const ScriptLabView: React.FC = () => {
     scriptSeed,
     requestedScriptTemplate,
     scriptLogs,
-    isFaultArmed,
-    toggleFaultArm,
     setScriptDraft,
     setScriptStatus,
     setOfflineArmedScript,
@@ -146,8 +118,6 @@ export const ScriptLabView: React.FC = () => {
       scriptSeed: s.scriptSeed,
       requestedScriptTemplate: s.requestedScriptTemplate,
       scriptLogs: s.scriptLogs,
-      isFaultArmed: s.isFaultArmed,
-      toggleFaultArm: s.toggleFaultArm,
       setScriptDraft: s.setScriptDraft,
       setScriptStatus: s.setScriptStatus,
       setOfflineArmedScript: s.setOfflineArmedScript,
@@ -162,8 +132,6 @@ export const ScriptLabView: React.FC = () => {
   const [showApiRef, setShowApiRef] = useState(false);
   const [showGuide, setShowGuide] = useState(false);
   const [showVmMenu, setShowVmMenu] = useState(false);
-  const [showQuickFaults, setShowQuickFaults] = useState(false);
-  const [quickFaultKind, setQuickFaultKind] = useState<QuickFaultKind>('bit_flip');
   const [backendMode, setBackendMode] = useState<'engine' | 'offline'>(
     isConnected && !isSimulated ? 'engine' : 'offline'
   );
@@ -378,43 +346,6 @@ export const ScriptLabView: React.FC = () => {
       setBusyAction(null);
     }
   }, [resetOfflineScriptStats, setScriptStatus]);
-
-  const handleApplyQuickFault = useCallback(async () => {
-    if (!isFaultArmed) return;
-    const targetPort = selectedPort || activePort;
-    const spec = QUICK_FAULT_OPTIONS[quickFaultKind];
-    const ok = await engineApi.setFaultConfig(targetPort, quickFaultKind, spec.options);
-    if (ok) {
-      toast.success('Fault primitive applied', `${quickFaultKind} is live on ${targetPort}.`);
-    } else {
-      toast.error('Fault apply failed', `The bforge engine did not accept ${quickFaultKind} for ${targetPort}.`);
-    }
-  }, [isFaultArmed, selectedPort, activePort, quickFaultKind]);
-
-  const handleDisarmQuickFaults = useCallback(async () => {
-    if (isFaultArmed) toggleFaultArm();
-    const targetPort = selectedPort || activePort;
-    const ok = await engineApi.setFaultConfig(targetPort, 'off');
-    if (ok) {
-      toast.success('Faults disarmed', `Clean link restored on ${targetPort}.`);
-    } else {
-      toast.error('Disarm failed', `Engine did not accept disarm command for ${targetPort}.`);
-    }
-  }, [isFaultArmed, toggleFaultArm, selectedPort, activePort]);
-
-  const handleQuickOneShot = useCallback(
-    async (kind: keyof typeof QUICK_ONE_SHOTS) => {
-      const targetPort = selectedPort || activePort;
-      const spec = QUICK_ONE_SHOTS[kind];
-      const result = await engineApi.sendBytes(targetPort, spec.hex);
-      if (result.ok) {
-        toast.success(spec.okTitle, `${spec.okDesc} on ${targetPort}.`);
-      } else {
-        toast.error('One-shot not delivered', result.error ?? `No engine connection on ${targetPort}.`);
-      }
-    },
-    [selectedPort, activePort]
-  );
 
   const handleSelectTemplate = (tplKey: string) => {
     if (tplKey === 'custom') return;
@@ -748,17 +679,13 @@ export const ScriptLabView: React.FC = () => {
 
           <button
             type="button"
-            data-testid="script-quick-faults-toggle"
-            onClick={() => setShowQuickFaults((v) => !v)}
-            title="Non-Lua static hardware fault controls (or open full Fault Rig)"
-            className={`h-6 px-1.5 rounded border text-[11px] font-mono flex items-center gap-1 ${
-              showQuickFaults || isFaultArmed
-                ? 'border-bf-fault/60 bg-bf-fault/15 text-bf-fault font-semibold'
-                : 'border-bf-line bg-bf-panel hover:bg-bf-hover text-bf-mute hover:text-bf-body'
-            }`}
+            data-testid="script-open-fault-rig-btn"
+            onClick={() => requestOpenPanel('faultRig')}
+            title="Open HIL Fault Injection Rig for no-code TX faults"
+            className="h-6 px-1.5 rounded border border-bf-line bg-bf-panel hover:bg-bf-hover text-[11px] font-mono text-bf-mute hover:text-bf-body flex items-center gap-1"
           >
             <ShieldAlert className="w-3 h-3" />
-            QUICK FAULTS
+            FAULT RIG ↗
           </button>
         </div>
       </div>
@@ -812,85 +739,6 @@ export const ScriptLabView: React.FC = () => {
           >
             DISARM NOW
           </button>
-        </div>
-      )}
-
-      {/* Collapsible Inline Quick Hardware Fault Strip */}
-      {showQuickFaults && (
-        <div
-          data-testid="script-quick-fault-bar"
-          className="bg-bf-head border-b border-bf-line px-2.5 py-1 flex flex-wrap items-center justify-between gap-2 shrink-0 font-mono text-[10px]"
-        >
-          <div className="flex flex-wrap items-center gap-1.5">
-            <button
-              type="button"
-              onClick={toggleFaultArm}
-              className={`h-5 px-2 rounded border font-semibold flex items-center gap-1 ${
-                isFaultArmed
-                  ? 'border-bf-fault bg-bf-fault/20 text-bf-fault'
-                  : 'border-bf-ok/50 bg-bf-ok/15 text-bf-ok'
-              }`}
-            >
-              {isFaultArmed ? <ShieldAlert className="w-2.5 h-2.5" /> : <ShieldCheck className="w-2.5 h-2.5" />}
-              {isFaultArmed ? 'FAULTS ARMED' : 'SAFE MODE'}
-            </button>
-
-            <select
-              aria-label="Quick hardware fault primitive"
-              value={quickFaultKind}
-              onChange={(e) => setQuickFaultKind(e.target.value as QuickFaultKind)}
-              className="h-5 px-1.5 bg-bf-panel border border-bf-line rounded text-[10px] text-bf-body focus:outline-none focus:border-bf-cyan"
-            >
-              {(Object.entries(QUICK_FAULT_OPTIONS) as Array<[QuickFaultKind, { label: string }]>).map(
-                ([kind, meta]) => (
-                  <option key={kind} value={kind}>
-                    {meta.label}
-                  </option>
-                )
-              )}
-            </select>
-
-            <button
-              type="button"
-              disabled={!isFaultArmed}
-              onClick={() => void handleApplyQuickFault()}
-              className="h-5 px-2 rounded border border-bf-fault/60 bg-bf-fault/15 hover:bg-bf-fault/25 text-bf-fault font-semibold disabled:opacity-40 disabled:cursor-not-allowed"
-            >
-              APPLY FAULT
-            </button>
-
-            <button
-              type="button"
-              onClick={() => void handleDisarmQuickFaults()}
-              className="h-5 px-2 rounded border border-bf-line bg-bf-panel hover:bg-bf-hover text-bf-mute hover:text-bf-body"
-            >
-              DISARM ALL
-            </button>
-          </div>
-
-          <div className="flex flex-wrap items-center gap-1.5">
-            <button
-              type="button"
-              onClick={() => void handleQuickOneShot('badCrc')}
-              className="h-5 px-2 rounded border border-bf-amber/40 bg-bf-amber/10 hover:bg-bf-amber/20 text-bf-amber"
-            >
-              1-SHOT BAD CRC (×3)
-            </button>
-            <button
-              type="button"
-              onClick={() => void handleQuickOneShot('drop')}
-              className="h-5 px-2 rounded border border-bf-amber/40 bg-bf-amber/10 hover:bg-bf-amber/20 text-bf-amber"
-            >
-              1-SHOT DROP (×2)
-            </button>
-            <button
-              type="button"
-              onClick={() => requestOpenPanel('faultRig')}
-              className="h-5 px-2 rounded border border-bf-line bg-bf-panel hover:bg-bf-hover text-bf-cyan"
-            >
-              FULL FAULT RIG ↗
-            </button>
-          </div>
         </div>
       )}
 
