@@ -24,6 +24,7 @@ const PAGES = [
   { file: 'command-forge', title: 'Command Forge', group: 'Instruments' },
   { file: 'pin-sequencer', title: 'Pin Sequencer', group: 'Instruments' },
   { file: 'fault-rig', title: 'HIL Fault Rig', group: 'Instruments' },
+  { file: 'script-lab', title: 'Lua 5.4 Script Lab', group: 'Instruments' },
   { file: 'file-transfer', title: 'X/YMODEM Transfer', group: 'Instruments' },
   { file: 'mitm-bridge', title: 'MITM Bridge', group: 'Instruments' },
   { file: 'elf-symbols', title: 'ELF Symbols', group: 'Instruments' },
@@ -31,6 +32,8 @@ const PAGES = [
   { file: 'activity-log', title: 'Activity Log', group: 'Records' },
   { file: 'rec-vaults', title: 'REC & Vaults', group: 'Records' },
   { file: 'exports', title: 'Exports', group: 'Records' },
+  { file: 'lua-tutorials', title: 'Lua 5.4 Tutorials (01–15)', group: 'Reference' },
+  { file: 'lua-api', title: 'Lua 5.4 API Reference', group: 'Reference' },
   { file: 'keyboard-shortcuts', title: 'Keyboard Shortcuts', group: 'Reference' },
   { file: 'troubleshooting', title: 'Troubleshooting', group: 'Reference' },
 ];

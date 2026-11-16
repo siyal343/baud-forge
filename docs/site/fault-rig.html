@@ -41,9 +41,9 @@ footer{border-top:1px solid var(--line);color:var(--faint);font-size:12px;paddin
 <div class="wrap">
 <nav class="side"><div class="grp">Getting started</div><a href="index.html">Overview & Quickstart</a><a href="launcher.html">Desktop Launcher</a>
 <div class="grp">Observing</div><a href="packet-stream.html">Packet Stream</a><a href="protocol-dissector.html">Protocol Dissector</a><a href="hex-inspector.html">Hex & ASCII</a><a href="oscilloscope.html">Telemetry Oscilloscope</a><a href="dvr-replay.html">DVR & Replay</a><a href="session-diff.html">Session Diff</a><a href="schema-dialects.html">Schema Dialects</a>
-<div class="grp">Instruments</div><a href="command-forge.html">Command Forge</a><a href="pin-sequencer.html">Pin Sequencer</a><a href="fault-rig.html" class="cur">HIL Fault Rig</a><a href="file-transfer.html">X/YMODEM Transfer</a><a href="mitm-bridge.html">MITM Bridge</a><a href="elf-symbols.html">ELF Symbols</a>
+<div class="grp">Instruments</div><a href="command-forge.html">Command Forge</a><a href="pin-sequencer.html">Pin Sequencer</a><a href="fault-rig.html" class="cur">HIL Fault Rig</a><a href="script-lab.html">Lua 5.4 Script Lab</a><a href="file-transfer.html">X/YMODEM Transfer</a><a href="mitm-bridge.html">MITM Bridge</a><a href="elf-symbols.html">ELF Symbols</a>
 <div class="grp">Records</div><a href="activity-log.html">Activity Log</a><a href="rec-vaults.html">REC & Vaults</a><a href="exports.html">Exports</a>
-<div class="grp">Reference</div><a href="keyboard-shortcuts.html">Keyboard Shortcuts</a><a href="troubleshooting.html">Troubleshooting</a></nav>
+<div class="grp">Reference</div><a href="lua-tutorials.html">Lua 5.4 Tutorials (01–15)</a><a href="lua-api.html">Lua 5.4 API Reference</a><a href="keyboard-shortcuts.html">Keyboard Shortcuts</a><a href="troubleshooting.html">Troubleshooting</a></nav>
 <main><h1>HIL Fault Injection Rig</h1>
 <p>The Fault Rig corrupts what your <strong>device receives</strong> — the hardware-in-the-loop way to answer &quot;what does my firmware do when the wire turns hostile?&quot;. Bit flips, dropped frames, CRC corruption, truncation and bus delays, all reproducible.</p>
 <p><img src="img/fault-rig.png" alt="The fault rig armed with a bit-flip profile"></p>
@@ -91,7 +91,7 @@ footer{border-top:1px solid var(--line);color:var(--faint);font-size:12px;paddin
 <li>The send reply&#39;s <code>fault_bytes</code> shows the corruption (at BER 1.0, every byte is altered).</li>
 <li>Watch the device&#39;s response — and the <a href="activity-log.html">Activity Log</a> records every arm/clear.</li>
 </ol>
-<div class="pager"><a class="prev" href="pin-sequencer.html">Pin Sequencer</a><a class="next" href="file-transfer.html">X/YMODEM Transfer</a></div></main>
+<div class="pager"><a class="prev" href="pin-sequencer.html">Pin Sequencer</a><a class="next" href="script-lab.html">Lua 5.4 Script Lab</a></div></main>
 </div>
 <footer>BaudForge — hardware engineering workstation · built from docs/src with marked · screenshots from the live application on real hardware</footer>
 </body></html>

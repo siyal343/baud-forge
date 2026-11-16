@@ -1,0 +1,1312 @@
+<!doctype html>
+<html lang="en"><head><meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Lua 5.4 Tutorials (01–15) — BaudForge</title>
+<meta name="description" content="BaudForge user documentation — hardware engineering workstation">
+<style>
+:root{--bg:#0a0d13;--panel:#10141d;--panel2:#161c28;--line:#222d3d;--fg:#e2e8f0;--dim:#94a3b8;--faint:#64748b;--accent:#00e5ff;--warn:#f59e0b;--err:#ef4444}
+*{box-sizing:border-box}
+body{margin:0;background:var(--bg);color:var(--fg);font:14px/1.65 'Segoe UI',system-ui,sans-serif}
+a{color:var(--accent);text-decoration:none}a:hover{text-decoration:underline}
+header.top{display:flex;align-items:center;gap:12px;padding:10px 22px;border-bottom:1px solid var(--line);background:var(--panel);position:sticky;top:0;z-index:10}
+header.top .brand{font-family:Consolas,monospace;font-weight:700;letter-spacing:.18em;color:var(--accent);font-size:15px}
+header.top .tag{font-size:11px;color:var(--dim);border:1px solid var(--line);border-radius:3px;padding:1px 7px}
+header.top .gh{margin-left:auto;font-size:12px}
+.wrap{display:flex;max-width:1440px;margin:0 auto}
+nav.side{width:250px;min-width:250px;padding:22px 14px 60px;border-right:1px solid var(--line);position:sticky;top:53px;height:calc(100vh - 53px);overflow-y:auto;background:var(--panel)}
+nav.side .grp{font-family:Consolas,monospace;font-size:10px;letter-spacing:.14em;text-transform:uppercase;color:var(--faint);margin:18px 10px 6px}
+nav.side a{display:block;padding:5px 10px;border-radius:5px;color:var(--dim);font-size:13px}
+nav.side a:hover{background:var(--panel2);color:var(--fg);text-decoration:none}
+nav.side a.cur{background:rgba(0,229,255,.08);color:var(--accent);border-left:2px solid var(--accent)}
+main{flex:1;min-width:0;padding:34px 44px 90px;max-width:940px}
+main h1{font-size:27px;border-bottom:1px solid var(--line);padding-bottom:12px;margin-top:0}
+main h2{font-size:19px;margin-top:38px;border-left:3px solid var(--accent);padding-left:10px}
+main h3{font-size:15px;color:var(--dim)}
+main img{max-width:100%;border:1px solid var(--line);border-radius:8px;margin:14px 0;box-shadow:0 6px 24px rgba(0,0,0,.45);display:block}
+main code{background:var(--panel2);border:1px solid var(--line);border-radius:4px;padding:1px 6px;font:12.5px Consolas,monospace;color:#fbcfe8}
+main pre{background:var(--panel);border:1px solid var(--line);border-radius:8px;padding:14px 16px;overflow-x:auto}
+main pre code{background:none;border:none;padding:0;color:#a5f3fc;line-height:1.55}
+main table{border-collapse:collapse;width:100%;margin:14px 0;font-size:13.5px}
+main th{background:var(--panel2);text-align:left;font-family:Consolas,monospace;font-size:12px;letter-spacing:.05em;text-transform:uppercase;color:var(--dim)}
+main th,main td{border:1px solid var(--line);padding:7px 11px;vertical-align:top}
+main tr:nth-child(even) td{background:rgba(22,28,40,.4)}
+main blockquote{border-left:3px solid var(--warn);background:rgba(245,158,11,.07);margin:14px 0;padding:10px 16px;color:var(--dim)}
+.pager{display:flex;justify-content:space-between;margin-top:56px;padding-top:18px;border-top:1px solid var(--line);font-family:Consolas,monospace;font-size:13px}
+.pager a.prev::before{content:'← '}
+.pager a.next::after{content:' →'}
+footer{border-top:1px solid var(--line);color:var(--faint);font-size:12px;padding:16px 22px;text-align:center}
+</style></head>
+<body>
+<header class="top"><span class="brand">BAUDFORGE</span><span class="tag">v1.0 docs</span><a class="gh" href="https://github.com/siyal343/baud-forge">GitHub ↗</a></header>
+<div class="wrap">
+<nav class="side"><div class="grp">Getting started</div><a href="index.html">Overview & Quickstart</a><a href="launcher.html">Desktop Launcher</a>
+<div class="grp">Observing</div><a href="packet-stream.html">Packet Stream</a><a href="protocol-dissector.html">Protocol Dissector</a><a href="hex-inspector.html">Hex & ASCII</a><a href="oscilloscope.html">Telemetry Oscilloscope</a><a href="dvr-replay.html">DVR & Replay</a><a href="session-diff.html">Session Diff</a><a href="schema-dialects.html">Schema Dialects</a>
+<div class="grp">Instruments</div><a href="command-forge.html">Command Forge</a><a href="pin-sequencer.html">Pin Sequencer</a><a href="fault-rig.html">HIL Fault Rig</a><a href="script-lab.html">Lua 5.4 Script Lab</a><a href="file-transfer.html">X/YMODEM Transfer</a><a href="mitm-bridge.html">MITM Bridge</a><a href="elf-symbols.html">ELF Symbols</a>
+<div class="grp">Records</div><a href="activity-log.html">Activity Log</a><a href="rec-vaults.html">REC & Vaults</a><a href="exports.html">Exports</a>
+<div class="grp">Reference</div><a href="lua-tutorials.html" class="cur">Lua 5.4 Tutorials (01–15)</a><a href="lua-api.html">Lua 5.4 API Reference</a><a href="keyboard-shortcuts.html">Keyboard Shortcuts</a><a href="troubleshooting.html">Troubleshooting</a></nav>
+<main><h1>BaudForge Lua 5.4 Scripting Tutorial Manual</h1>
+<p><strong>Targets:</strong> <a href="../examples/tutorials/01_packet_filter_and_metadata.lua"><code>examples/tutorials/01_packet_filter_and_metadata.lua</code></a> – <a href="../examples/tutorials/15_fail_closed_safety_interlock_and_budget.lua"><code>15_fail_closed_safety_interlock_and_budget.lua</code></a><br><strong>API Reference:</strong> <a href="lua-api.html"><code>docs/LUA_API_REFERENCE.md</code></a><br><strong>Architecture Reference:</strong> <a href="../LUA_SCRIPTING_ENGINE.md"><code>LUA_SCRIPTING_ENGINE.md</code></a> · <a href="../crates/bforge-script/src/runtime.rs"><code>crates/bforge-script/src/runtime.rs</code></a> · <a href="../crates/bforge-script/src/frame.rs"><code>crates/bforge-script/src/frame.rs</code></a> · <a href="../ui/src/services/luaSandboxFallback.ts"><code>ui/src/services/luaSandboxFallback.ts</code></a></p>
+<hr>
+<h2>Introduction</h2>
+<p>BaudForge embeds Lua 5.4 as a deterministic, bounded Hardware-in-the-Loop (HIL) and protocol scripting engine across RX streams, TX queues, inline MITM bridges, pre-framer byte slabs, periodic timers, watchdog alerts, and custom dissectors/commands. All 15 scripts in <a href="../examples/tutorials"><code>examples/tutorials/</code></a> form a progressive, self-contained curriculum verified in both the native Rust test suite and the Script Lab TypeScript simulator.</p>
+<h3>Dual Execution Paths</h3>
+<ol>
+<li><p><strong>Native Rust <code>mlua</code> 5.4 Runtime (<code>crates/bforge-script</code> &amp; <code>crates/bforge-core</code>)</strong></p>
+<ul>
+<li>Executes inside the <code>bforge</code> engine (<code>bforge serve</code> / desktop WebView2 session) using vendored Lua 5.4 (<code>StdLib::{TABLE, STRING, MATH, UTF8}</code>, with <code>io</code>, <code>os</code>, <code>require</code>, <code>dofile</code>, <code>loadfile</code>, and <code>debug</code> stripped).</li>
+<li>Enforces strict resource bounds: <code>DEFAULT_MEMORY_LIMIT_BYTES = 4 MiB</code> (<code>MAX_MEMORY_LIMIT_BYTES = 16 MiB</code>), <code>INSTRUCTION_BUDGET = 200,000</code> VM instructions per callback (<code>HOOK_TICK = 500</code>), <code>MAX_SENDS_PER_CALL = 16</code>, <code>MAX_TIMERS = 8</code>, <code>MIN_TIMER_INTERVAL_MS = 10</code>, and token-bucket log rate limiting (<code>LOG_BURST = 20</code>, <code>LOG_RATE_PER_SEC = 50 msg/s</code>).</li>
+<li>Uses <code>DissectorIr</code> C-header/schema metadata for zero-copy single-pass field decoding (<code>frame:get</code>, <code>frame:set</code>, <code>frame:fields</code>, <code>frame:dissect</code>) and wires real serial/CAN hardware pins, timers, MITM bridges, and <code>POST /api/script</code>.</li>
+</ul>
+</li>
+<li><p><strong>Script Lab Offline TypeScript Sandbox (<code>ui/src/services/luaSandboxFallback.ts</code>)</strong></p>
+<ul>
+<li>Activates automatically in <strong>Simulated Mode</strong> (or when <code>POST /api/script</code> is unreachable) so every starter template (<code>seu_bitflip</code>, <code>mitm_glitch</code>, <code>virtual_responder</code>, <code>telemetry_plot</code>, <code>watchdog_pins</code>) and all 15 tutorial templates (<code>tutorial_01</code>–<code>tutorial_15</code>) compile and dry-run in the browser with zero backend dependency.</li>
+<li>Implements the same deterministic <code>xorshift64*</code> PRNG, 64-bit bitwise semantics, <code>string.pack</code> / <code>string.unpack</code>, zero-offset endian readers/writers, CRC helpers (<code>crc8_atm</code>, <code>crc16_ccitt_false</code>, <code>crc16_modbus</code>, <code>crc16_xmodem</code>, <code>crc32c</code>), <code>ImuPacket</code>/<code>EpsCommand</code> dissection, Watch metrics, Assertions, and Plot Forge series emission (<code>STEP_LIMIT = 20,000</code>).</li>
+</ul>
+</li>
+</ol>
+<blockquote>
+<p>[!NOTE]
+<strong>Live Rust vs. Offline Script Lab differences to keep in mind:</strong></p>
+<ul>
+<li><strong>Verdict badges in Script Lab UI:</strong> When a dry-run mutates frame bytes (<code>mutated == true</code>) without delaying or bursting (for example Tutorials <code>04</code>, <code>05</code>, <code>06</code>, <code>08</code>, <code>11</code>), the UI displays a <strong><code>MUTATED</code></strong> badge even though the JSON report <code>verdict</code> is <code>&quot;send&quot;</code>. When <code>verdict == &quot;send&quot;</code> and <code>mutated == false</code> (Tutorial <code>10</code>, which queues an out-of-band <code>bforge.send(...)</code> reply while passing the RX frame unchanged), the UI displays <strong><code>SEND</code></strong>.</li>
+<li><strong>Secondary lifecycle hooks (<code>on_timer</code>, <code>on_alert</code>, <code>on_command</code>):</strong> Tutorials <code>12</code>, <code>13</code>, and <code>14</code> register these non-frame hooks. In Script Lab, clicking <strong>DRY-RUN PACKET</strong> runs the primary frame callback (<code>on_dissect</code> in <code>12</code>, <code>on_rx_frame</code> in <code>13</code> and <code>14</code>); <code>on_timer</code>, <code>on_alert</code>, and <code>on_command</code> are compiled and validated in Script Lab, and execute on real timer ticks, alert trips, or Command Forge invocations inside the live Rust session (or via unit tests).</li>
+<li><strong>Pre-loaded checksum bytes:</strong> Script Lab&#39;s default <code>DEFAULT_TEST_FRAME_HEX</code> ends in <code>5B</code> (an intentional placeholder), whereas the Rust <code>ImuPacket</code> test fixture ends in <code>7C</code> (exact CRC-8/ATM of bytes <code>0..19</code>). Both are noted in each tutorial&#39;s <em>Try It in Script Lab</em> section.</li>
+</ul>
+</blockquote>
+<hr>
+<h3>Quick Start</h3>
+<h4>Option A: Script Lab UI (Interactive Workbench)</h4>
+<ol>
+<li>Open the <strong>LUA SCRIPT LAB</strong> panel (<code>WorkstationDock</code> or <strong>Add Panel -&gt; LUA SCRIPT LAB</strong>). Click <strong>HOW IT WORKS</strong> in the header anytime for the 4-step workflow summary.</li>
+<li>In the template selector (<code>[data-testid=&quot;script-template-select&quot;]</code>), scroll to <strong>Tutorial Series (01–15)</strong> and select any script (<code>Tutorial 01: Packet Filter &amp; Metadata</code> through <code>Tutorial 15: Fail-Closed Safety Interlock</code>). The summary strip above the editor shows what the script does and which hook it registers.</li>
+<li>Under <strong>DRY-RUN DIFF</strong>, check the <strong>Test Target</strong> badge (<code>PACKET STREAM</code> when a packet is selected, or <code>SAMPLE / CUSTOM HEX</code>) and paste the tutorial&#39;s test hex if needed.</li>
+<li>Open <strong>VM &amp; FILE</strong> in the header to set <strong>FAIL-OPEN</strong> or <strong>FAIL-CLOSED</strong> policy, adjust <strong>PRNG SEED</strong>, or load/save <code>.lua</code> files.</li>
+<li>Click <strong>DRY-RUN PACKET</strong> (<code>Ctrl+Enter</code>) to inspect the header <strong>Verdict</strong> badge, <strong>VM COST</strong>, <strong>BYTE DIFF GRID</strong>, <strong>DECODED FIELD DIFF</strong>, <strong>EMITTED SIDE-EFFECTS</strong>, and <strong>DRY-RUN METRICS &amp; ASSERTIONS</strong>.</li>
+<li>Click <strong>ARM ON LIVE BUS</strong> to attach the script to live frames; the <strong>LIVE INTERCEPTION ACTIVE</strong> banner appears and the right pane switches to <strong>LIVE VM &amp; WATCH</strong> (counters, <code>bforge.metric</code>, <code>bforge.assert</code>, and <code>SCRIPT CONSOLE</code>).</li>
+</ol>
+<h4>Option B: CLI &amp; Workspace Config (<code>.bforge.toml</code>)</h4>
+<p>Reference any tutorial file directly under <code>[workspace]</code> in a TOML configuration (see <a href="../examples/esp32-demo.bforge.toml"><code>examples/esp32-demo.bforge.toml</code></a> and <a href="../examples/loopback-demo.bforge.toml"><code>examples/loopback-demo.bforge.toml</code></a>):</p>
+<pre><code class="language-toml">[workspace]
+name = &quot;hil-bench&quot;
+script_path = &quot;examples/tutorials/07_mitm_directional_latency_glitch.lua&quot;
+# Optional dedicated RX hook file when splitting RX and TX scripts:
+# rx_script_path = &quot;examples/tutorials/01_packet_filter_and_metadata.lua&quot;
+</code></pre>
+<p>Start the engine and point the UI/client at the workspace config:</p>
+<pre><code class="language-sh">bforge serve -c examples/esp32-demo.bforge.toml --addr 127.0.0.1:7717
+</code></pre>
+<p>When configured with <code>[[bridges]]</code> (for inline MITM scripts <code>07</code>–<code>08</code>) and <code>[[alerts]]</code> named <code>dead_man_timer</code> (for alert recovery script <code>14</code>), <code>bforge</code> dispatches <code>on_mitm_frame</code>, <code>on_timer</code>, and <code>on_alert</code> directly against live transport hardware.</p>
+<hr>
+<h3>Reference Schemas &amp; Test Hex Frames</h3>
+<p>All tutorials operate cleanly on the two reference C-struct schemas defined in <a href="../crates/bforge-dissect/tests/fixtures/imu_packet.h"><code>crates/bforge-dissect/tests/fixtures/imu_packet.h</code></a>:</p>
+<table>
+<thead>
+<tr>
+<th align="left">Schema</th>
+<th align="left">Length</th>
+<th align="left">Field Layout (<code>0</code>-indexed byte offsets)</th>
+<th align="left">Checksum</th>
+</tr>
+</thead>
+<tbody><tr>
+<td align="left"><strong><code>ImuPacket</code></strong></td>
+<td align="left">19 B (+ 1 B CRC = 20 B)</td>
+<td align="left"><code>0..2</code>: <code>sync</code> (<code>uint16</code> <code>0xAA 0x55</code>) · <code>2</code>: <code>version</code> (<code>uint8</code>) · <code>3</code>: <code>flags:3</code> / <code>channel:5</code> · <code>4..8</code>: <code>timestamp_us</code> (<code>uint32_le</code>) · <code>8..10</code>: <code>v_batt_mv</code> (<code>uint16_be</code>) · <code>10..14</code>: <code>gyro_z</code> (<code>float32_le</code>) · <code>14..18</code>: <code>samples[4]</code> (<code>uint8[4]</code>) · <code>18</code>: <code>mode</code> (<code>uint8</code>) · <code>19</code>: <code>checksum</code> (<code>uint8</code>)</td>
+<td align="left"><code>crc8_atm</code> over <code>0..19</code></td>
+</tr>
+<tr>
+<td align="left"><strong><code>EpsCommand</code></strong></td>
+<td align="left">7 B (+ 2 B CRC = 9 B)</td>
+<td align="left"><code>0..2</code>: <code>sync</code> (<code>uint16</code> <code>0xAA 0x55</code>) · <code>2</code>: <code>opcode</code> (<code>uint8</code>) · <code>3..7</code>: <code>hold_time_s</code> (<code>uint32_le</code>) · <code>7..9</code>: <code>checksum</code> (<code>uint16_le</code>)</td>
+<td align="left"><code>crc16_ccitt_false</code> over <code>0..7</code></td>
+</tr>
+</tbody></table>
+<p>Copy-pasteable test vectors used throughout this manual:</p>
+<ul>
+<li><strong>Valid CRC-8 <code>ImuPacket</code> (20 B):</strong><br><code>AA 55 01 13 40 E2 01 00 1F F4 00 00 00 00 80 90 A0 B0 01 7C</code><br>(<code>version = 1</code>, <code>flags = 3</code>, <code>channel = 2</code>, <code>timestamp_us = 123456</code>, <code>v_batt_mv = 8180</code>, <code>gyro_z = 0.0</code>, <code>samples = [0x80, 0x90, 0xA0, 0xB0]</code>, <code>mode = 1</code>, <code>crc8_atm = 0x7C</code>)</li>
+<li><strong>Script Lab Default <code>ImuPacket</code> (20 B, placeholder CRC <code>0x5B</code>):</strong><br><code>AA 55 01 13 40 E2 01 00 1F F4 00 00 00 00 80 90 A0 B0 01 5B</code></li>
+<li><strong>Valid CRC-16 <code>EpsCommand</code> (9 B):</strong><br><code>AA 55 04 0A 00 00 00 B7 15</code><br>(<code>opcode = 4</code>, <code>hold_time_s = 10</code>, <code>crc16_ccitt_false = 0x15B7</code> LE)</li>
+<li><strong>Malformed Short Frame (3 B):</strong><br><code>FF 01 02</code></li>
+</ul>
+<hr>
+<h2>Quick Reference Matrix</h2>
+<table>
+<thead>
+<tr>
+<th align="center">#</th>
+<th align="left">Script</th>
+<th align="center">Part</th>
+<th align="left">Registered Hooks</th>
+<th align="left"><code>LuaFrame</code> APIs</th>
+<th align="left"><code>bforge.*</code> &amp; Lua 5.4 APIs</th>
+<th align="left">Checksums / Verdicts</th>
+</tr>
+</thead>
+<tbody><tr>
+<td align="center"><strong>01</strong></td>
+<td align="left"><a href="../examples/tutorials/01_packet_filter_and_metadata.lua"><code>01_packet_filter_and_metadata.lua</code></a></td>
+<td align="center">I</td>
+<td align="left"><code>on_rx_frame(&quot;*&quot;)</code></td>
+<td align="left"><code>.port</code>, <code>.direction</code>, <code>.seq_id</code>, <code>.timestamp_us</code>, <code>.len</code>, <code>.hex</code>, <code>:u8</code>, <code>:drop</code></td>
+<td align="left"><code>metric</code>, <code>log_warn</code>, <code>string.format</code></td>
+<td align="left"><code>Pass</code>, <code>Drop</code></td>
+</tr>
+<tr>
+<td align="center"><strong>02</strong></td>
+<td align="left"><a href="../examples/tutorials/02_schema_assertions_and_logging.lua"><code>02_schema_assertions_and_logging.lua</code></a></td>
+<td align="center">I</td>
+<td align="left"><code>on_rx_frame(&quot;*&quot;)</code></td>
+<td align="left"><code>:get</code>, <code>:fields</code></td>
+<td align="left"><code>assert</code> (both overloads), <code>metric</code>, <code>log_info</code>/<code>warn</code>/<code>error</code>, <code>math.floor</code></td>
+<td align="left"><code>Pass</code> (+ assertion counts)</td>
+</tr>
+<tr>
+<td align="center"><strong>03</strong></td>
+<td align="left"><a href="../examples/tutorials/03_derived_telemetry_plotting.lua"><code>03_derived_telemetry_plotting.lua</code></a></td>
+<td align="center">I</td>
+<td align="left"><code>on_rx_frame(&quot;*&quot;)</code></td>
+<td align="left"><code>.timestamp_us</code>, <code>.len</code>, <code>:get</code>, <code>:u16_be</code>, <code>:u8</code></td>
+<td align="left"><code>plot(s, v, ts)</code>, <code>metric</code></td>
+<td align="left"><code>Pass</code> (3 Plot series)</td>
+</tr>
+<tr>
+<td align="center"><strong>04</strong></td>
+<td align="left"><a href="../examples/tutorials/04_field_patching_and_crc8.lua"><code>04_field_patching_and_crc8.lua</code></a></td>
+<td align="center">II</td>
+<td align="left"><code>on_tx_frame(&quot;*&quot;)</code></td>
+<td align="left"><code>.len</code>, <code>:get</code>, <code>:set</code>, <code>:recalc_crc</code></td>
+<td align="left"><code>metric</code></td>
+<td align="left"><code>crc8</code>, <code>Send</code> (<code>MUTATED</code>)</td>
+</tr>
+<tr>
+<td align="center"><strong>05</strong></td>
+<td align="left"><a href="../examples/tutorials/05_zero_offset_binary_surgery.lua"><code>05_zero_offset_binary_surgery.lua</code></a></td>
+<td align="center">II</td>
+<td align="left"><code>on_tx_frame(&quot;*&quot;)</code></td>
+<td align="left"><code>.len</code>, <code>:u16_le</code>, <code>:u16_be</code>, <code>:u8</code>, <code>:u32_le</code>, <code>:i16_be</code>, <code>:f32_be</code>, <code>:slice</code>, <code>:set_u8</code>, <code>:set_u32_le</code>, <code>:set_u16_be</code>, <code>:recalc_crc</code></td>
+<td align="left"><code>hex</code>, <code>metric</code>, <code>log_warn</code>, <code>&amp;</code>, <code>math.max</code></td>
+<td align="left"><code>crc8</code>, <code>Send</code> (<code>MUTATED</code>)</td>
+</tr>
+<tr>
+<td align="center"><strong>06</strong></td>
+<td align="left"><a href="../examples/tutorials/06_deterministic_seu_bitflip_fuzzer.lua"><code>06_deterministic_seu_bitflip_fuzzer.lua</code></a></td>
+<td align="center">II</td>
+<td align="left"><code>on_init</code>, <code>on_rx_frame(&quot;*&quot;)</code></td>
+<td align="left"><code>.len</code>, <code>:xor_bit</code>, <code>:xor_u8</code>, <code>:corrupt_crc</code></td>
+<td align="left"><code>seed</code>, <code>rand</code>, <code>metric</code>, <code>log_info</code>, <code>tostring</code></td>
+<td align="left">Corrupted CRC, <code>Send</code> (<code>MUTATED</code>)</td>
+</tr>
+<tr>
+<td align="center"><strong>07</strong></td>
+<td align="left"><a href="../examples/tutorials/07_mitm_directional_latency_glitch.lua"><code>07_mitm_directional_latency_glitch.lua</code></a></td>
+<td align="center">III</td>
+<td align="left"><code>on_mitm_frame(&quot;*&quot;)</code></td>
+<td align="left"><code>.bridge</code>, <code>.direction</code>, <code>.len</code>, <code>:get</code>, <code>:set</code>, <code>:u16_be</code>, <code>:set_u16_be</code>, <code>:recalc_crc</code>, <code>:delay_ms</code></td>
+<td align="left"><code>metric</code> (get &amp; set), <code>math.max</code></td>
+<td align="left"><code>crc8</code>, <code>Delay</code> (<code>DELAYED 45 ms</code>), <code>Pass</code></td>
+</tr>
+<tr>
+<td align="center"><strong>08</strong></td>
+<td align="left"><a href="../examples/tutorials/08_multi_schema_dynamic_dissect.lua"><code>08_multi_schema_dynamic_dissect.lua</code></a></td>
+<td align="center">III</td>
+<td align="left"><code>on_mitm_frame(&quot;*&quot;)</code></td>
+<td align="left"><code>.len</code>, <code>:dissect</code>, <code>:get</code>, <code>:set</code>, <code>:recalc_crc</code></td>
+<td align="left"><code>metric</code>, <code>&amp;</code></td>
+<td align="left"><code>crc8</code>, <code>crc16_ccitt_false</code>, <code>Send</code> (<code>MUTATED</code>)</td>
+</tr>
+<tr>
+<td align="center"><strong>09</strong></td>
+<td align="left"><a href="../examples/tutorials/09_packet_burst_duplication_and_split.lua"><code>09_packet_burst_duplication_and_split.lua</code></a></td>
+<td align="center">III</td>
+<td align="left"><code>on_tx_frame(&quot;*&quot;)</code></td>
+<td align="left"><code>:clone_bytes</code>, <code>:slice</code></td>
+<td align="left"><code>unhex</code>, <code>hex</code>, <code>burst</code>, <code>metric</code>, <code>#</code>, <code>~</code>, <code>math.floor</code></td>
+<td align="left"><code>Burst</code> (<code>BURST (4)</code>)</td>
+</tr>
+<tr>
+<td align="center"><strong>10</strong></td>
+<td align="left"><a href="../examples/tutorials/10_virtual_device_auto_responder.lua"><code>10_virtual_device_auto_responder.lua</code></a></td>
+<td align="center">IV</td>
+<td align="left"><code>on_rx_frame(&quot;*&quot;)</code></td>
+<td align="left"><code>.len</code>, <code>.port</code>, <code>:raw</code></td>
+<td align="left"><code>string.unpack</code>, <code>string.pack</code>, <code>crc</code>, <code>send</code>, <code>metric</code>, <code>..</code>, <code>&amp;</code>, `</td>
+<td align="left"><code>, </code>&lt;&lt;<code>, </code>&gt;&gt;`</td>
+</tr>
+<tr>
+<td align="center"><strong>11</strong></td>
+<td align="left"><a href="../examples/tutorials/11_raw_chunk_pre_framer_corruptor.lua"><code>11_raw_chunk_pre_framer_corruptor.lua</code></a></td>
+<td align="center">IV</td>
+<td align="left"><code>on_raw_chunk(&quot;*&quot;)</code></td>
+<td align="left"><code>.len</code>, <code>:raw</code>, <code>:set_bytes</code>, <code>:resize</code></td>
+<td align="left"><code>string.pack</code>, <code>..</code>, <code>metric</code>, <code>%</code>, <code>math.floor</code></td>
+<td align="left">Pre-framer <code>Send</code> (<code>MUTATED</code>)</td>
+</tr>
+<tr>
+<td align="center"><strong>12</strong></td>
+<td align="left"><a href="../examples/tutorials/12_custom_dissector_and_command_builder.lua"><code>12_custom_dissector_and_command_builder.lua</code></a></td>
+<td align="center">IV</td>
+<td align="left"><code>on_dissect(&quot;*&quot;)</code>, <code>on_command(&quot;set_heater&quot;)</code></td>
+<td align="left"><code>.len</code>, <code>:u16_be</code>, <code>:u8</code>, <code>:slice</code>, <code>:add_field</code></td>
+<td align="left"><code>crc</code>, <code>metric</code> (get &amp; set), <code>string.pack</code>, <code>string.format</code>, <code>tonumber</code>, <code>&amp;</code></td>
+<td align="left"><code>crc8</code>, <code>crc16_xmodem</code>, <code>Pass</code> / command bytes</td>
+</tr>
+<tr>
+<td align="center"><strong>13</strong></td>
+<td align="left"><a href="../examples/tutorials/13_periodic_timer_poller_and_jitter.lua"><code>13_periodic_timer_poller_and_jitter.lua</code></a></td>
+<td align="center">V</td>
+<td align="left"><code>on_timer(100)</code>, <code>on_rx_frame(&quot;*&quot;)</code></td>
+<td align="left"><code>.timestamp_us</code></td>
+<td align="left"><code>now_ms</code>, <code>now_us</code>, <code>send</code>, <code>crc</code>, <code>plot</code>, <code>metric</code>, <code>string.pack</code>, <code>math.abs</code></td>
+<td align="left"><code>crc8</code>, <code>Pass</code> / <code>Send</code> action</td>
+</tr>
+<tr>
+<td align="center"><strong>14</strong></td>
+<td align="left"><a href="../examples/tutorials/14_hardware_pin_reset_and_alert_handler.lua"><code>14_hardware_pin_reset_and_alert_handler.lua</code></a></td>
+<td align="center">V</td>
+<td align="left"><code>on_alert(&quot;dead_man_timer&quot;)</code>, <code>on_rx_frame(&quot;*&quot;)</code></td>
+<td align="left"><code>.seq_id</code></td>
+<td align="left"><code>set_pins</code>, <code>pulse_pin</code>, <code>trigger_pin</code>, <code>metric</code>, <code>log_warn</code></td>
+<td align="left"><code>Pass</code> + <code>SetPins</code> / <code>PulsePin</code> actions</td>
+</tr>
+<tr>
+<td align="center"><strong>15</strong></td>
+<td align="left"><a href="../examples/tutorials/15_fail_closed_safety_interlock_and_budget.lua"><code>15_fail_closed_safety_interlock_and_budget.lua</code></a></td>
+<td align="center">V</td>
+<td align="left"><code>on_tx_frame(&quot;*&quot;)</code></td>
+<td align="left"><code>.len</code>, <code>:get</code>, <code>:u16_be</code>, <code>:u8</code>, <code>:drop</code></td>
+<td align="left"><code>assert</code>, <code>metric</code>, <code>log_error</code>, short-circuit <code>and</code>/<code>or</code></td>
+<td align="left"><code>Pass</code>, <code>Drop</code> (<code>FailClosed</code> safe)</td>
+</tr>
+</tbody></table>
+<hr>
+<h2>Progressive Lua API Curriculum (5 Stages)</h2>
+<p>Each part of the curriculum introduces a new layer of the <a href="lua-api.html"><code>docs/LUA_API_REFERENCE.md</code></a> API:</p>
+<ol>
+<li><strong>Part I — Inspection, Assertions &amp; Plotting (Tutorials <code>01</code>–<code>03</code>):</strong> Read-only hooks (<code>bforge.on_rx_frame</code>), frame metadata (<code>frame.port</code>, <code>frame.len</code>, <code>frame.hex</code>), <code>frame:drop()</code>, schema reads (<code>frame:get</code>, <code>frame:fields</code>), <code>bforge.metric</code>, <code>bforge.assert</code>, <code>bforge.log_*</code>, and <code>bforge.plot</code>.</li>
+<li><strong>Part II — Field, Binary &amp; Fault Mutation (Tutorials <code>04</code>–<code>06</code>):</strong> <code>bforge.on_tx_frame</code>, <code>frame:set</code>, <code>frame:recalc_crc</code>, zero-offset binary readers/writers (<code>frame:u16_be</code>, <code>frame:set_u16_be</code>, <code>frame:slice</code>), <code>bforge.on_init</code>, deterministic PRNG (<code>bforge.seed</code>, <code>bforge.rand</code>), and fault injection (<code>frame:xor_bit</code>, <code>frame:xor_u8</code>, <code>frame:corrupt_crc</code>).</li>
+<li><strong>Part III — MITM Bridges, Multi-Schema &amp; Bursts (Tutorials <code>07</code>–<code>09</code>):</strong> <code>bforge.on_mitm_frame</code>, <code>frame.bridge</code>, <code>frame:delay_ms</code>, runtime schema switching (<code>frame:dissect</code>), <code>frame:clone_bytes</code>, <code>bforge.hex</code> / <code>bforge.unhex</code>, and <code>bforge.burst</code>.</li>
+<li><strong>Part IV — Virtual Devices, Raw Chunks &amp; Custom Dissectors (Tutorials <code>10</code>–<code>12</code>):</strong> Out-of-band TX replies (<code>bforge.send</code>, <code>bforge.crc</code>, <code>string.pack</code>/<code>string.unpack</code>), pre-framer <code>bforge.on_raw_chunk</code> (<code>frame:set_bytes</code>, <code>frame:resize</code>), <code>bforge.on_dissect</code> (<code>frame:add_field</code>), and <code>bforge.on_command</code>.</li>
+<li><strong>Part V — Timers, Hardware Pins &amp; Fail-Closed Safety (Tutorials <code>13</code>–<code>15</code>):</strong> <code>bforge.on_timer</code>, monotonic clocks (<code>bforge.now_ms</code>, <code>bforge.now_us</code>), <code>bforge.on_alert</code>, modem line control (<code>bforge.set_pins</code>, <code>bforge.pulse_pin</code>, <code>bforge.trigger_pin</code>), and <code>fail_closed</code> safety interlocks.</li>
+</ol>
+<hr>
+<h2>Part I — Telemetry Inspection, Filtering &amp; Plotting (Tutorials 01–03)</h2>
+<h3>Tutorial 01: Packet Filter &amp; Frame Metadata</h3>
+<p><strong>Source:</strong> <a href="../examples/tutorials/01_packet_filter_and_metadata.lua"><code>examples/tutorials/01_packet_filter_and_metadata.lua</code></a><br><strong>Template ID:</strong> <code>tutorial_01</code></p>
+<h4>Concepts &amp; Capabilities Covered</h4>
+<ul>
+<li>Wildcard RX hook registration via <code>bforge.on_rx_frame(&quot;*&quot;, fn(frame, dir))</code>.</li>
+<li>Zero-allocation <code>LuaFrame</code> metadata getters: <code>frame.port</code>, <code>frame.direction</code>, <code>frame.seq_id</code>, <code>frame.timestamp_us</code>, <code>frame.len</code>, and lazy on-demand <code>frame.hex</code>.</li>
+<li>Selective packet dropping with <code>frame:drop()</code> and Watch scalar export via <code>bforge.metric</code>.</li>
+</ul>
+<h4>Hardware / Protocol Scenario</h4>
+<p>On a noisy bench UART or RS-485 bus, transceiver turn-around glitches and power-on transients inject short stray bytes ahead of valid telemetry packets. Dropping malformed frames before downstream logging and plotting keeps Plot Forge clean without altering valid payloads or formatting hex strings for healthy traffic.</p>
+<h4>Complete Annotated Lua Script</h4>
+<pre><code class="language-lua">-- Tutorial 01: Packet Filter &amp; Frame Metadata
+-- Concepts:
+--   * bforge.on_rx_frame(&quot;*&quot;, fn) wildcard RX hook
+--   * LuaFrame metadata: port, direction, seq_id, timestamp_us, len, lazy hex
+--   * Selective dropping with frame:drop() and scalar tracking with bforge.metric
+--
+-- Compatible with ImuPacket frames (sync AA 55 at bytes 0..2, 19+ bytes) and raw test frames.
+
+local seen = 0
+local passed = 0
+local dropped = 0
+
+bforge.on_rx_frame(&quot;*&quot;, function(frame, dir)
+  seen = seen + 1
+
+  -- Inspect metadata exposed directly by LuaFrame without touching payload bytes yet.
+  bforge.metric(&quot;rx_seen&quot;, seen)
+  bforge.metric(&quot;last_port&quot;, frame.port)
+  bforge.metric(&quot;last_direction&quot;, dir or frame.direction)
+  bforge.metric(&quot;last_seq_id&quot;, frame.seq_id)
+  bforge.metric(&quot;last_timestamp_us&quot;, frame.timestamp_us)
+  bforge.metric(&quot;last_len&quot;, frame.len)
+
+  -- Drop truncated frames or frames lacking the 0xAA 0x55 sync preamble.
+  if frame.len &lt; 4 or frame:u8(0) ~= 0xAA or frame:u8(1) ~= 0x55 then
+    dropped = dropped + 1
+    bforge.metric(&quot;rx_dropped&quot;, dropped)
+    -- frame.hex is lazily formatted only when read here.
+    bforge.metric(&quot;last_dropped_hex&quot;, frame.hex)
+    bforge.log_warn(string.format(&quot;dropped frame seq=%d (%d B): %s&quot;, frame.seq_id, frame.len, frame.hex))
+    return frame:drop()
+  end
+
+  passed = passed + 1
+  bforge.metric(&quot;rx_passed&quot;, passed)
+  return frame
+end)
+</code></pre>
+<h4>How It Works</h4>
+<ol>
+<li>Lines <code>9–11</code> declare persistent Lua upvalues (<code>seen</code>, <code>passed</code>, <code>dropped</code>) retained across frames inside the VM.</li>
+<li>Line <code>13</code> registers an <code>on_rx_frame</code> hook targeting <code>&quot;*&quot;</code> (every port). Every invocation increments <code>seen</code> and exports six frame metadata scalars via <code>bforge.metric(...)</code>. Note that <code>frame.hex</code> is <em>not</em> touched yet, avoiding string allocation on the fast path.</li>
+<li>Line <code>25</code> checks <code>frame.len &lt; 4</code> first; Lua&#39;s short-circuit <code>or</code> prevents <code>frame:u8(0)</code> / <code>frame:u8(1)</code> from indexing past the end of short frames. Any packet missing the <code>0xAA 0x55</code> sync preamble enters the reject branch, formats <code>frame.hex</code> lazily for <code>last_dropped_hex</code> and <code>bforge.log_warn</code>, and returns <code>frame:drop()</code>.</li>
+<li>Healthy frames reach line <code>34</code>, increment <code>rx_passed</code>, and return <code>frame</code> unmodified.</li>
+</ol>
+<h4>Try It in Script Lab</h4>
+<ul>
+<li><strong>Case A (Valid Frame):</strong> Paste <code>AA 55 01 13 40 E2 01 00 1F F4 00 00 00 00 80 90 A0 B0 01 7C</code> (or use <code>DEFAULT_TEST_FRAME_HEX</code>) and click <strong>DRY-RUN PACKET</strong>.<ul>
+<li><strong>Verdict badge:</strong> <code>PASS</code> (<code>verdict = &quot;pass&quot;</code>, <code>mutated = false</code>).</li>
+<li><strong>Field Diffs:</strong> None.</li>
+<li><strong>Watch Metrics:</strong> <code>rx_seen = &quot;1&quot;</code>, <code>rx_passed = &quot;1&quot;</code>, <code>last_port = &quot;COM8&quot;</code>, <code>last_direction = &quot;rx&quot;</code>, <code>last_len = &quot;20&quot;</code>, <code>last_seq_id</code>, <code>last_timestamp_us</code>.</li>
+<li><strong>Logs / Actions:</strong> None.</li>
+</ul>
+</li>
+<li><strong>Case B (Malformed Short Frame):</strong> Enable <strong>USE MANUAL HEX</strong>, enter <code>FF 01 02</code>, and click <strong>DRY-RUN PACKET</strong>.<ul>
+<li><strong>Verdict badge:</strong> <code>DROPPED</code> (<code>verdict = &quot;drop&quot;</code>, empty output hex).</li>
+<li><strong>Watch Metrics:</strong> <code>rx_seen = &quot;1&quot;</code>, <code>rx_dropped = &quot;1&quot;</code>, <code>last_len = &quot;3&quot;</code>, <code>last_dropped_hex = &quot;FF 01 02&quot;</code>.</li>
+<li><strong>Console Logs:</strong> <code>warn</code>: <code>dropped frame seq=... (3 B): FF 01 02</code>.</li>
+</ul>
+</li>
+</ul>
+<hr>
+<h3>Tutorial 02: Schema Assertions &amp; Rate-Limited Logging</h3>
+<p><strong>Source:</strong> <a href="../examples/tutorials/02_schema_assertions_and_logging.lua"><code>examples/tutorials/02_schema_assertions_and_logging.lua</code></a><br><strong>Template ID:</strong> <code>tutorial_02</code></p>
+<h4>Concepts &amp; Capabilities Covered</h4>
+<ul>
+<li>Lazy single-pass schema reading via <code>frame:get(&quot;v_batt_mv&quot;)</code> and bulk map export via <code>frame:fields()</code>.</li>
+<li>Continuous assertion tracking supporting both <code>bforge.assert(cond, label)</code> and <code>bforge.assert(label, cond, msg)</code>.</li>
+<li>Token-bucket rate-limited logging via <code>bforge.log_info</code>, <code>bforge.log_warn</code>, and <code>bforge.log_error</code>.</li>
+</ul>
+<h4>Hardware / Protocol Scenario</h4>
+<p>During battery discharge and mode-transition burn-in tests, engineers need automated pass/fail counters (<code>v_batt_nominal</code> within <code>6000..9000 mV</code>, <code>mode_valid</code> within <code>0..2</code>) alongside thresholded console diagnostics without flooding the log ring at high packet rates.</p>
+<h4>Complete Annotated Lua Script</h4>
+<pre><code class="language-lua">-- Tutorial 02: Schema Assertions &amp; Rate-Limited Logging
+-- Concepts:
+--   * Lazy single-pass schema reads via frame:get(...) and frame:fields()
+--   * Continuous pass/fail tracking with bforge.assert
+--   * Rate-limited logging via bforge.log_info / bforge.log_warn / bforge.log_error
+--
+-- Expects an ImuPacket schema bound to the port (or Script Lab&#39;s default ImuPacket).
+
+bforge.on_rx_frame(&quot;*&quot;, function(frame)
+  local v_batt = frame:get(&quot;v_batt_mv&quot;)
+  local all = frame:fields()
+
+  local has_schema = bforge.assert(v_batt ~= nil, &quot;has_v_batt_mv&quot;)
+  if not has_schema then
+    bforge.log_warn(&quot;no ImuPacket schema bound; skipping typed assertions&quot;)
+    return frame
+  end
+
+  local mode = math.floor(all.mode or 0)
+  local channel = math.floor(all.channel or 0)
+
+  bforge.assert(v_batt &gt;= 6000 and v_batt &lt;= 9000, &quot;v_batt_nominal&quot;)
+  bforge.assert(&quot;mode_valid&quot;, mode &lt;= 2, &quot;operating mode outside 0..2&quot;)
+
+  bforge.metric(&quot;last_v_batt_mv&quot;, v_batt)
+  bforge.metric(&quot;last_channel&quot;, channel)
+
+  if v_batt &lt; 6500 then
+    bforge.log_error(string.format(&quot;battery critical: %d mV (mode=%d)&quot;, math.floor(v_batt), mode))
+  elseif v_batt &lt; 7200 then
+    bforge.log_warn(string.format(&quot;battery low: %d mV (mode=%d)&quot;, math.floor(v_batt), mode))
+  else
+    bforge.log_info(string.format(&quot;telemetry nominal: %d mV, ch=%d, mode=%d&quot;, math.floor(v_batt), channel, mode))
+  end
+
+  return frame
+end)
+</code></pre>
+<h4>How It Works</h4>
+<ol>
+<li>Line <code>10</code> reads <code>&quot;v_batt_mv&quot;</code> and line <code>11</code> retrieves the full decoded field table via <code>frame:fields()</code>. In Rust, <code>FrameState</code> caches decoded fields across calls on the same frame so subsequent lookups do not re-run the dissector.</li>
+<li>Line <code>13</code> checks <code>v_batt ~= nil</code> with the 2-argument <code>(cond, label)</code> form of <code>bforge.assert</code>. If no schema covers the frame, it logs a warning and returns early so raw frames do not raise runtime errors.</li>
+<li>Lines <code>19–20</code> read <code>all.mode</code> and <code>all.channel</code>, clamping missing keys with <code>or 0</code>.</li>
+<li>Lines <code>22–23</code> demonstrate both <code>bforge.assert</code> argument orders: <code>(cond, label)</code> for <code>v_batt_nominal</code> and <code>(label, cond, msg)</code> for <code>mode_valid</code>.</li>
+<li>Lines <code>28–34</code> classify battery health into <code>error</code> (<code>&lt; 6500 mV</code>), <code>warn</code> (<code>&lt; 7200 mV</code>), or <code>info</code> (<code>&gt;= 7200 mV</code>). The native <code>LogRing</code> limiter ensures bursts cannot starve the pump loop.</li>
+</ol>
+<h4>Try It in Script Lab</h4>
+<ul>
+<li><strong>Case A (Nominal Telemetry):</strong> Run with <code>AA 55 01 13 40 E2 01 00 1F F4 00 00 00 00 80 90 A0 B0 01 7C</code> (or <code>DEFAULT_TEST_FRAME_HEX</code>).<ul>
+<li><strong>Verdict badge:</strong> <code>PASS</code> (<code>verdict = &quot;pass&quot;</code>, <code>mutated = false</code>).</li>
+<li><strong>Assertions (Watch tab):</strong> All 3 assertions show <code>passed: 1, failed: 0</code> (<code>has_v_batt_mv</code>, <code>v_batt_nominal</code>, <code>mode_valid</code>).</li>
+<li><strong>Watch Metrics:</strong> <code>last_v_batt_mv = &quot;8180&quot;</code>, <code>last_channel = &quot;2&quot;</code>.</li>
+<li><strong>Console Logs:</strong> <code>info</code>: <code>telemetry nominal: 8180 mV, ch=2, mode=1</code>.</li>
+</ul>
+</li>
+<li><strong>Case B (Critical Voltage Fault):</strong> Change bytes <code>8..9</code> (<code>1F F4</code> = <code>8180 mV</code>) to <code>15 7C</code> (<code>5500 mV</code>): <code>AA 55 01 13 40 E2 01 00 15 7C 00 00 00 00 80 90 A0 B0 01 7C</code>.<ul>
+<li><strong>Assertions:</strong> <code>v_batt_nominal</code> reports <code>failed: 1</code> while <code>has_v_batt_mv</code> and <code>mode_valid</code> pass.</li>
+<li><strong>Console Logs:</strong> <code>error</code>: <code>battery critical: 5500 mV (mode=1)</code>.</li>
+</ul>
+</li>
+</ul>
+<hr>
+<h3>Tutorial 03: Derived Telemetry Plotting (EMA &amp; Peak-to-Peak)</h3>
+<p><strong>Source:</strong> <a href="../examples/tutorials/03_derived_telemetry_plotting.lua"><code>examples/tutorials/03_derived_telemetry_plotting.lua</code></a><br><strong>Template ID:</strong> <code>tutorial_03</code></p>
+<h4>Concepts &amp; Capabilities Covered</h4>
+<ul>
+<li>Streaming derived time-series curves into Plot Forge via <code>bforge.plot(series, value, frame.timestamp_us)</code>.</li>
+<li>Maintaining stateful signal-processing accumulators (Exponential Moving Average and running peak-to-peak envelope) across packets.</li>
+<li>Schema-first reading (<code>frame:get</code>) with raw binary fallback (<code>frame:u16_be(8)</code> / <code>frame:u8(0)</code>).</li>
+</ul>
+<h4>Hardware / Protocol Scenario</h4>
+<p>Raw battery bus telemetry contains switching-regulator ripple. Firmware engineers want a real-time smoothed voltage trace (<code>v_batt_ema_mv</code>, $\alpha = 0.25$) overlaid alongside instantaneous <code>v_batt_raw_mv</code> and cumulative ripple envelope <code>v_batt_p2p_mv</code> in Plot Forge without recompiling any C or Rust decoder.</p>
+<h4>Complete Annotated Lua Script</h4>
+<pre><code class="language-lua">-- Tutorial 03: Derived Telemetry Plotting (EMA &amp; Peak-to-Peak)
+-- Concepts:
+--   * Streaming live derived curves via bforge.plot(series, value, frame.timestamp_us)
+--   * Stateful Lua exponential moving average (EMA) and peak-to-peak tracking across frames
+--   * Watch scalar export with bforge.metric
+--
+-- Reads v_batt_mv via schema when bound, or falls back to big-endian uint16 at offset 8.
+
+local ALPHA = 0.25
+local samples = 0
+local ema_mv = nil
+local min_mv = nil
+local max_mv = nil
+
+bforge.on_rx_frame(&quot;*&quot;, function(frame)
+  local v_batt = frame:get(&quot;v_batt_mv&quot;)
+  if v_batt == nil then
+    if frame.len &gt;= 10 then
+      v_batt = frame:u16_be(8)
+    else
+      v_batt = frame:u8(0)
+    end
+  end
+
+  samples = samples + 1
+  if ema_mv == nil then
+    ema_mv = v_batt
+  else
+    ema_mv = ALPHA * v_batt + (1.0 - ALPHA) * ema_mv
+  end
+
+  if min_mv == nil or v_batt &lt; min_mv then
+    min_mv = v_batt
+  end
+  if max_mv == nil or v_batt &gt; max_mv then
+    max_mv = v_batt
+  end
+
+  local p2p_mv = max_mv - min_mv
+
+  bforge.plot(&quot;v_batt_raw_mv&quot;, v_batt, frame.timestamp_us)
+  bforge.plot(&quot;v_batt_ema_mv&quot;, ema_mv, frame.timestamp_us)
+  bforge.plot(&quot;v_batt_p2p_mv&quot;, p2p_mv, frame.timestamp_us)
+
+  bforge.metric(&quot;samples&quot;, samples)
+  bforge.metric(&quot;v_batt_ema_mv&quot;, ema_mv)
+  bforge.metric(&quot;v_batt_p2p_mv&quot;, p2p_mv)
+
+  return frame
+end)
+</code></pre>
+<h4>How It Works</h4>
+<ol>
+<li>Lines <code>9–13</code> initialize <code>ALPHA = 0.25</code>, <code>samples = 0</code>, and <code>nil</code> tracking bounds so the first frame seeds <code>ema_mv</code>, <code>min_mv</code>, and <code>max_mv</code> without artificial zero bias.</li>
+<li>Lines <code>16–23</code> attempt <code>frame:get(&quot;v_batt_mv&quot;)</code>; if the port has no schema bound, they gracefully fall back to reading a big-endian 16-bit unsigned integer at offset <code>8</code> (<code>frame:u16_be(8)</code>), or <code>frame:u8(0)</code> for tiny test buffers.</li>
+<li>Lines <code>25–39</code> update the IIR smoothing filter ($y_n = 0.25 x_n + 0.75 y_{n-1}$) and track <code>max_mv - min_mv</code>.</li>
+<li>Lines <code>41–43</code> push all three series timestamped by <code>frame.timestamp_us</code> (<code>SeriesSet::push_custom</code> creates <code>script:&lt;series&gt;</code> traces in the live engine and <code>usePlotStore</code> streams them in Simulated Mode).</li>
+</ol>
+<h4>Try It in Script Lab</h4>
+<ul>
+<li><strong>Input hex:</strong> <code>AA 55 01 13 40 E2 01 00 1F F4 00 00 00 00 80 90 A0 B0 01 7C</code> (or <code>DEFAULT_TEST_FRAME_HEX</code>).</li>
+<li><strong>Verdict badge (single Dry-Run):</strong> <code>PASS</code> (<code>verdict = &quot;pass&quot;</code>, <code>mutated = false</code>).</li>
+<li><strong>Watch Metrics:</strong> <code>samples = &quot;1&quot;</code>, <code>v_batt_ema_mv = &quot;8180&quot;</code>, <code>v_batt_p2p_mv = &quot;0&quot;</code>.</li>
+<li><strong>Actions:</strong> Three <code>plot</code> actions emitted for <code>v_batt_raw_mv</code> (<code>8180</code>), <code>v_batt_ema_mv</code> (<code>8180</code>), and <code>v_batt_p2p_mv</code> (<code>0</code>). When <strong>ARMED</strong> over frames carrying <code>[8000, 8400, 8200]</code> mV, <code>v_batt_p2p_mv</code> converges to <code>&quot;400&quot;</code>.</li>
+</ul>
+<hr>
+<h2>Part II — Protocol Patching, Binary Surgery &amp; Fault Injection (Tutorials 04–06)</h2>
+<h3>Tutorial 04: Named Field Patching &amp; Trailing CRC-8 Recalculation</h3>
+<p><strong>Source:</strong> <a href="../examples/tutorials/04_field_patching_and_crc8.lua"><code>examples/tutorials/04_field_patching_and_crc8.lua</code></a><br><strong>Template ID:</strong> <code>tutorial_04</code></p>
+<h4>Concepts &amp; Capabilities Covered</h4>
+<ul>
+<li>Outgoing TX pipeline interception with <code>bforge.on_tx_frame(&quot;*&quot;, fn(frame))</code>.</li>
+<li>Typed field modification via <code>frame:set(&quot;v_batt_mv&quot;, bumped)</code> without manual byte-offset math.</li>
+<li>Automatic trailing CRC-8/ATM repair via <code>frame:recalc_crc(&quot;crc8&quot;)</code>.</li>
+</ul>
+<h4>Hardware / Protocol Scenario</h4>
+<p>You want to simulate a +100 mV over-voltage charging event on outgoing flight-computer TX telemetry frames while keeping the trailing CRC-8 valid so the receiving subsystem accepts the modified packet cleanly.</p>
+<h4>Complete Annotated Lua Script</h4>
+<pre><code class="language-lua">-- Tutorial 04: Named Field Patching &amp; Trailing CRC-8 Recalculation
+-- Concepts:
+--   * Outgoing TX interception via bforge.on_tx_frame
+--   * Schema-driven field mutation with frame:set(&quot;v_batt_mv&quot;, ...)
+--   * Trailing checksum update via frame:recalc_crc(&quot;crc8&quot;)
+--
+-- Designed for 20-byte ImuPacket frames (19-byte ImuPacket + 1-byte CRC-8/ATM).
+
+bforge.on_tx_frame(&quot;*&quot;, function(frame)
+  local v_batt = frame:get(&quot;v_batt_mv&quot;)
+  if v_batt ~= nil then
+    local bumped = v_batt + 100
+    frame:set(&quot;v_batt_mv&quot;, bumped)
+    bforge.metric(&quot;patched_v_batt_mv&quot;, bumped)
+    -- Only overwrite the trailing CRC byte when the frame includes the 20th CRC byte.
+    if frame.len &gt;= 20 then
+      frame:recalc_crc(&quot;crc8&quot;)
+    end
+  elseif frame.len &gt;= 2 then
+    frame:recalc_crc(&quot;crc8&quot;)
+  end
+
+  return frame
+end)
+</code></pre>
+<h4>How It Works</h4>
+<ol>
+<li><code>bforge.on_tx_frame</code> attaches exclusively to the TX path (<code>ScriptHooksMask::TX</code>), so RX traffic never enters this hook.</li>
+<li><code>frame:get(&quot;v_batt_mv&quot;)</code> reads <code>8180</code>, line <code>12</code> computes <code>8280</code>, and <code>frame:set(&quot;v_batt_mv&quot;, 8280)</code> re-encodes bytes <code>8..9</code> as big-endian <code>0x20 0x58</code>.</li>
+<li>When <code>frame.len &gt;= 20</code>, <code>frame:recalc_crc(&quot;crc8&quot;)</code> computes CRC-8/ATM (poly <code>0x07</code>, init <code>0x00</code>) over bytes <code>0..19</code> and writes byte <code>19</code> (<code>0x86</code>). For 19-byte schema-only frames without a trailing CRC byte, it avoids overwriting <code>mode</code>.</li>
+</ol>
+<h4>Try It in Script Lab</h4>
+<ul>
+<li><strong>Input hex:</strong> <code>AA 55 01 13 40 E2 01 00 1F F4 00 00 00 00 80 90 A0 B0 01 7C</code>.</li>
+<li><strong>Verdict badge:</strong> <code>MUTATED</code> (<code>verdict = &quot;send&quot;</code>, <code>mutated = true</code>).</li>
+<li><strong>Output hex:</strong> <code>AA 55 01 13 40 E2 01 00 20 58 00 00 00 00 80 90 A0 B0 01 86</code>.</li>
+<li><strong>Decoded Field Diffs:</strong> <code>v_batt_mv</code>: <code>8180 -&gt; 8280</code>; <code>checksum</code>: <code>0x7C -&gt; 0x86</code> (or <code>0x5B -&gt; 0x86</code> on <code>DEFAULT_TEST_FRAME_HEX</code>).</li>
+<li><strong>Watch Metrics:</strong> <code>patched_v_batt_mv = &quot;8280&quot;</code>.</li>
+</ul>
+<hr>
+<h3>Tutorial 05: Zero-Offset Binary Surgery (No Schema Required)</h3>
+<p><strong>Source:</strong> <a href="../examples/tutorials/05_zero_offset_binary_surgery.lua"><code>examples/tutorials/05_zero_offset_binary_surgery.lua</code></a><br><strong>Template ID:</strong> <code>tutorial_05</code></p>
+<h4>Concepts &amp; Capabilities Covered</h4>
+<ul>
+<li>Schema-free 0-based endian readers (<code>u8</code>, <code>u16_le</code>, <code>u16_be</code>, <code>i16_be</code>, <code>u32_le</code>, <code>f32_be</code>).</li>
+<li>Schema-free 0-based endian writers (<code>set_u8</code>, <code>set_u16_be</code>, <code>set_u32_le</code>) combined with 64-bit bitwise masking (<code>&amp; 0xFF</code>, <code>&amp; 0xFFFFFFFF</code>).</li>
+<li>Arbitrary sub-slice extraction via <code>frame:slice(14, 4)</code> + <code>bforge.hex(...)</code>.</li>
+</ul>
+<h4>Hardware / Protocol Scenario</h4>
+<p>When reversing an undocumented proprietary binary frame or working before a C header <code>.h</code> dissector is authored, you often mix little-endian timestamps, big-endian ADC readings, and IEEE-754 floats in the same packet. Zero-offset accessors manipulate wire bytes directly without needing any <code>DissectorIr</code>.</p>
+<h4>Complete Annotated Lua Script</h4>
+<pre><code class="language-lua">-- Tutorial 05: Zero-Offset Binary Surgery (No Schema Required)
+-- Concepts:
+--   * 0-based endian readers: u8, u16_le, u16_be, i16_be, f32_be
+--   * 0-based endian writers: set_u8, set_u16_be, set_u32_le
+--   * Raw byte slicing with frame:slice, bforge.hex, and frame:recalc_crc(&quot;crc8&quot;)
+--
+-- Byte offsets match ImuPacket + trailing CRC-8 (20 bytes total):
+--   0..2 sync, 2 version, 4..8 timestamp_us (LE), 8..10 v_batt_mv (BE),
+--   10..14 gyro_z, 14..18 samples[4], 18 mode, 19 crc8.
+
+bforge.on_tx_frame(&quot;*&quot;, function(frame)
+  if frame.len &lt; 20 then
+    bforge.log_warn(string.format(&quot;expected &gt;=20 bytes for ImuPacket+CRC8, got %d&quot;, frame.len))
+    return frame
+  end
+
+  local sync_le = frame:u16_le(0)
+  local sync_be = frame:u16_be(0)
+  local version = frame:u8(2)
+  local ts_le = frame:u32_le(4)
+  local batt_u16 = frame:u16_be(8)
+  local batt_i16 = frame:i16_be(8)
+  local word_f32_be = frame:f32_be(10)
+  local samples_hex = bforge.hex(frame:slice(14, 4))
+
+  bforge.metric(&quot;sync_le&quot;, sync_le)
+  bforge.metric(&quot;sync_be&quot;, sync_be)
+  bforge.metric(&quot;batt_i16_be&quot;, batt_i16)
+  bforge.metric(&quot;f32_be_probe&quot;, word_f32_be)
+  bforge.metric(&quot;samples_hex&quot;, samples_hex)
+
+  local next_batt = math.max(0, batt_u16 - 50)
+  frame:set_u8(2, (version + 1) &amp; 0xFF)
+  frame:set_u32_le(4, (ts_le + 1000) &amp; 0xFFFFFFFF)
+  frame:set_u16_be(8, next_batt)
+  frame:recalc_crc(&quot;crc8&quot;)
+
+  bforge.metric(&quot;patched_batt_mv&quot;, next_batt)
+  return frame
+end)
+</code></pre>
+<h4>How It Works</h4>
+<ol>
+<li>Lines <code>17–24</code> showcase reading the same sync bytes (<code>AA 55</code>) in opposite byte orders (<code>u16_le(0) = 21930</code> vs. <code>u16_be(0) = 43605</code>), reading LE <code>u32</code> timestamp <code>123456</code> at offset <code>4</code>, BE <code>u16</code>/<code>i16</code> voltage <code>8180</code> at offset <code>8</code>, BE <code>f32</code> at offset <code>10</code>, and slicing <code>4</code> sample bytes starting at offset <code>14</code> (<code>&quot;80 90 A0 B0&quot;</code>).</li>
+<li>Lines <code>32–35</code> bump <code>version</code> (<code>1 -&gt; 2</code>), advance <code>timestamp_us</code> by <code>+1000</code> us (<code>123456 -&gt; 124456</code>), and step <code>v_batt_mv</code> down by <code>50 mV</code> (<code>8180 -&gt; 8130</code>), safely wrapping unsigned values with <code>&amp;</code>.</li>
+<li>Line <code>36</code> recalculates the trailing CRC-8 (<code>0xC7</code>).</li>
+</ol>
+<h4>Try It in Script Lab</h4>
+<ul>
+<li><strong>Input hex:</strong> <code>AA 55 01 13 40 E2 01 00 1F F4 00 00 00 00 80 90 A0 B0 01 7C</code>.</li>
+<li><strong>Verdict badge:</strong> <code>MUTATED</code> (<code>verdict = &quot;send&quot;</code>, <code>mutated = true</code>).</li>
+<li><strong>Output hex:</strong> <code>AA 55 02 13 28 E6 01 00 1F C2 00 00 00 00 80 90 A0 B0 01 C7</code>.</li>
+<li><strong>Decoded Field Diffs:</strong> <code>version: 1 -&gt; 2</code>, <code>timestamp_us: 123456 -&gt; 124456</code>, <code>v_batt_mv: 8180 -&gt; 8130</code>, <code>checksum: 0x7C -&gt; 0xC7</code>.</li>
+<li><strong>Watch Metrics:</strong> <code>sync_le = &quot;21930&quot;</code>, <code>sync_be = &quot;43605&quot;</code>, <code>batt_i16_be = &quot;8180&quot;</code>, <code>f32_be_probe = &quot;0&quot;</code>, <code>samples_hex = &quot;80 90 A0 B0&quot;</code>, <code>patched_batt_mv = &quot;8130&quot;</code>.</li>
+</ul>
+<hr>
+<h3>Tutorial 06: Deterministic Single-Event Upset (SEU) Bit-Flip Fuzzer</h3>
+<p><strong>Source:</strong> <a href="../examples/tutorials/06_deterministic_seu_bitflip_fuzzer.lua"><code>examples/tutorials/06_deterministic_seu_bitflip_fuzzer.lua</code></a><br><strong>Template ID:</strong> <code>tutorial_06</code></p>
+<h4>Concepts &amp; Capabilities Covered</h4>
+<ul>
+<li>One-time initialization lifecycle hook <code>bforge.on_init(function(ctx) ... end)</code>.</li>
+<li>Deterministic 64-bit <code>xorshift64*</code> PRNG via <code>bforge.seed(42)</code> and bounded integer sampling <code>bforge.rand(min, max)</code>.</li>
+<li>Multi-mode fault injection with <code>frame:xor_bit(off, bit)</code>, <code>frame:xor_u8(off, mask)</code>, and <code>frame:corrupt_crc(1)</code>.</li>
+</ul>
+<h4>Hardware / Protocol Scenario</h4>
+<p>Spacecraft and safety-critical avionics links must verify that receiver ECC/CRC error-detection paths catch corrupted frames reproducibly. Seeding the VM in <code>on_init</code> guarantees that every test replay produces the exact same sequence of bit flips and byte masks across machines.</p>
+<h4>Complete Annotated Lua Script</h4>
+<pre><code class="language-lua">-- Tutorial 06: Deterministic Single-Event Upset (SEU) Bit-Flip Fuzzer
+-- Concepts:
+--   * Initialization lifecycle hook bforge.on_init
+--   * Deterministic xorshift64* PRNG via bforge.seed(42) and bforge.rand(min, max)
+--   * Fault injection via frame:xor_bit, frame:xor_u8, and frame:corrupt_crc(1)
+
+local seu_events = 0
+
+bforge.on_init(function(ctx)
+  bforge.seed(42)
+  bforge.metric(&quot;fuzzer_seed&quot;, 42)
+  bforge.log_info(&quot;SEU fuzzer armed on &quot; .. tostring(ctx.script))
+end)
+
+bforge.on_rx_frame(&quot;*&quot;, function(frame)
+  if frame.len == 0 then
+    return frame
+  end
+
+  seu_events = seu_events + 1
+  local max_payload = math.max(0, frame.len - 2)
+  local bit_off = bforge.rand(0, max_payload)
+  local bit_idx = bforge.rand(0, 7)
+  local byte_mask = bforge.rand(1, 15)
+
+  -- Flip a reproducible single bit inside the payload.
+  frame:xor_bit(bit_off, bit_idx)
+
+  -- Flip a reproducible bit-mask in a neighboring payload byte when room permits.
+  if frame.len &gt;= 3 then
+    local byte_off = (bit_off + 1) % (frame.len - 1)
+    frame:xor_u8(byte_off, byte_mask)
+    bforge.metric(&quot;last_xor_u8_offset&quot;, byte_off)
+  end
+
+  -- Intentionally corrupt the trailing CRC byte so receiver error handling is exercised.
+  if frame.len &gt;= 2 then
+    frame:corrupt_crc(1)
+  end
+
+  bforge.metric(&quot;seu_events&quot;, seu_events)
+  bforge.metric(&quot;last_flip_offset&quot;, bit_off)
+  bforge.metric(&quot;last_flip_bit&quot;, bit_idx)
+  return frame
+end)
+</code></pre>
+<h4>How It Works</h4>
+<ol>
+<li><code>bforge.on_init</code> runs once immediately after script compilation, pinning the VM&#39;s <code>xorshift64*</code> state with <code>bforge.seed(42)</code> and emitting an info log naming <code>ctx.script</code>.</li>
+<li>On a 20-byte frame (<code>max_payload = 18</code>), <code>bforge.rand</code> draws <code>bit_off = 6</code>, <code>bit_idx = 6</code>, and <code>byte_mask</code> deterministically.</li>
+<li><code>frame:xor_bit(6, 6)</code> flips bit <code>6</code> (<code>0x01 -&gt; 0x41</code>) in byte <code>6</code>, <code>frame:xor_u8(7, mask)</code> flips nibble bits in byte <code>7</code> (<code>0x00 -&gt; 0x0C</code>), and <code>frame:corrupt_crc(1)</code> XORs the final CRC byte (<code>0x7C ^ 0xFF = 0x83</code>).</li>
+</ol>
+<h4>Try It in Script Lab</h4>
+<ul>
+<li><strong>Input hex:</strong> <code>AA 55 01 13 40 E2 01 00 1F F4 00 00 00 00 80 90 A0 B0 01 7C</code>.</li>
+<li><strong>Verdict badge:</strong> <code>MUTATED</code> (<code>verdict = &quot;send&quot;</code>, <code>mutated = true</code>).</li>
+<li><strong>Output hex:</strong> <code>AA 55 01 13 40 E2 41 0C 1F F4 00 00 00 00 80 90 A0 B0 01 83</code> (identical across repeated cold runs!).</li>
+<li><strong>Decoded Field Diffs:</strong> <code>timestamp_us: 123456 -&gt; 205644352</code>, <code>checksum: 0x7C -&gt; 0x83</code>.</li>
+<li><strong>Watch Metrics:</strong> <code>fuzzer_seed = &quot;42&quot;</code>, <code>seu_events = &quot;1&quot;</code>, <code>last_flip_offset = &quot;6&quot;</code>, <code>last_flip_bit = &quot;6&quot;</code>, <code>last_xor_u8_offset = &quot;7&quot;</code>.</li>
+<li><strong>Console Logs:</strong> <code>info</code>: <code>SEU fuzzer armed on tutorial_06.lua</code>.</li>
+</ul>
+<hr>
+<h2>Part III — Inline MITM Bridges, Multi-Schema Routing &amp; Burst Shaping (Tutorials 07–09)</h2>
+<h3>Tutorial 07: MITM Directional Latency &amp; Voltage Glitch</h3>
+<p><strong>Source:</strong> <a href="../examples/tutorials/07_mitm_directional_latency_glitch.lua"><code>examples/tutorials/07_mitm_directional_latency_glitch.lua</code></a><br><strong>Template ID:</strong> <code>tutorial_07</code></p>
+<h4>Concepts &amp; Capabilities Covered</h4>
+<ul>
+<li>Inline hardware bridge interception via <code>bforge.on_mitm_frame(&quot;*&quot;, fn(frame, dir))</code>.</li>
+<li>Direction and bridge inspection (<code>&quot;mitm_a_to_b&quot;</code> vs. <code>&quot;mitm_b_to_a&quot;</code>, <code>frame.bridge</code>).</li>
+<li>Bidirectional scalar counters using read/write <code>bforge.metric(key)</code> and scheduled wire latency <code>frame:delay_ms(45)</code>.</li>
+</ul>
+<h4>Hardware / Protocol Scenario</h4>
+<p>Sitting inline between an On-Board Computer (<code>Port A</code>) and an Electrical Power Subsystem (<code>Port B</code>), you want telemetry traveling <code>A -&gt; B</code> to suffer a realistic -250 mV brownout reading, a repaired CRC-8, and +45 ms link delay while replies on <code>B -&gt; A</code> pass instantaneously untouched.</p>
+<h4>Complete Annotated Lua Script</h4>
+<pre><code class="language-lua">-- Tutorial 07: MITM Directional Latency &amp; Voltage Glitch
+-- Concepts:
+--   * Inline bridge hook bforge.on_mitm_frame(fn(frame, dir))
+--   * Direction and bridge inspection: frame.direction (&quot;mitm_a_to_b&quot; vs &quot;mitm_b_to_a&quot;), frame.bridge
+--   * Synthetic wire latency with frame:delay_ms(45) + directional patching and CRC repair
+
+bforge.on_mitm_frame(&quot;*&quot;, function(frame, dir)
+  local direction = dir or frame.direction
+  bforge.metric(&quot;last_bridge&quot;, frame.bridge or &quot;unassigned&quot;)
+  bforge.metric(&quot;last_direction&quot;, direction)
+
+  if direction == &quot;mitm_a_to_b&quot; then
+    local v_batt = frame:get(&quot;v_batt_mv&quot;)
+    if v_batt ~= nil then
+      frame:set(&quot;v_batt_mv&quot;, math.max(0, v_batt - 250))
+    elseif frame.len &gt;= 10 then
+      frame:set_u16_be(8, math.max(0, frame:u16_be(8) - 250))
+    end
+
+    if frame.len &gt;= 20 then
+      frame:recalc_crc(&quot;crc8&quot;)
+    end
+
+    bforge.metric(&quot;a_to_b_glitched&quot;, (bforge.metric(&quot;a_to_b_glitched&quot;) or 0) + 1)
+    return frame:delay_ms(45)
+  end
+
+  bforge.metric(&quot;b_to_a_forwarded&quot;, (bforge.metric(&quot;b_to_a_forwarded&quot;) or 0) + 1)
+  return frame
+end)
+</code></pre>
+<h4>How It Works</h4>
+<ol>
+<li>Both <code>dir</code> and <code>frame.direction</code> carry <code>&quot;mitm_a_to_b&quot;</code> or <code>&quot;mitm_b_to_a&quot;</code>. <code>frame.bridge</code> names the active <code>[[bridges]]</code> entry (or <code>nil</code> in standalone dry-runs, defaulted to <code>&quot;unassigned&quot;</code>).</li>
+<li>In <code>&quot;mitm_a_to_b&quot;</code>, lines <code>13–18</code> decrement <code>v_batt_mv</code> by <code>250 mV</code> (<code>8180 -&gt; 7930</code>), preferring the schema setter and falling back to <code>set_u16_be(8, ...)</code> when schema-less.</li>
+<li>Line <code>24</code> reads the current metric with 1-arg <code>bforge.metric(&quot;a_to_b_glitched&quot;)</code>, increments it, and <code>return frame:delay_ms(45)</code> returns the frame handle with a 45 ms delay verdict.</li>
+<li>Reverse direction <code>&quot;mitm_b_to_a&quot;</code> increments <code>b_to_a_forwarded</code> and returns <code>frame</code> immediately (<code>delay_ms = 0</code>).</li>
+</ol>
+<h4>Try It in Script Lab</h4>
+<ul>
+<li><strong>Input hex:</strong> <code>AA 55 01 13 40 E2 01 00 1F F4 00 00 00 00 80 90 A0 B0 01 7C</code>. (Script Lab dry-run enters the <code>&quot;mitm_a_to_b&quot;</code> branch automatically.)</li>
+<li><strong>Verdict badge:</strong> <code>DELAYED 45 ms</code> (<code>verdict = &quot;delay&quot;</code>, <code>delay_ms = 45</code>, <code>mutated = true</code>).</li>
+<li><strong>Output hex:</strong> <code>AA 55 01 13 40 E2 01 00 1E FA 00 00 00 00 80 90 A0 B0 01 5D</code>.</li>
+<li><strong>Decoded Field Diffs:</strong> <code>v_batt_mv: 8180 -&gt; 7930</code>, <code>checksum: 0x7C -&gt; 0x5D</code>.</li>
+<li><strong>Watch Metrics:</strong> <code>last_bridge = &quot;unassigned&quot;</code> (or bridge name in live MITM), <code>last_direction = &quot;mitm_a_to_b&quot;</code>, <code>a_to_b_glitched = &quot;1&quot;</code>.</li>
+</ul>
+<hr>
+<h3>Tutorial 08: Multi-Schema Runtime Dissection (D-94)</h3>
+<p><strong>Source:</strong> <a href="../examples/tutorials/08_multi_schema_dynamic_dissect.lua"><code>examples/tutorials/08_multi_schema_dynamic_dissect.lua</code></a><br><strong>Template ID:</strong> <code>tutorial_08</code></p>
+<h4>Concepts &amp; Capabilities Covered</h4>
+<ul>
+<li>Dynamic runtime schema switching via <code>frame:dissect(&quot;ImuPacket&quot;)</code> and <code>frame:dissect(&quot;EpsCommand&quot;)</code>.</li>
+<li>Heterogenous <code>get</code>/<code>set</code> field manipulation across multiple message formats on a single wire.</li>
+<li>Protocol-specific checksum updates: <code>crc8</code> for <code>ImuPacket</code> vs. <code>crc16_ccitt_false</code> for <code>EpsCommand</code>.</li>
+</ul>
+<h4>Hardware / Protocol Scenario</h4>
+<p>Prior to BaudForge&#39;s multi-schema upgrade (<code>D-94</code>), a single port or bridge was locked to one dissector. Multiplexed aerospace buses carry long <code>ImuPacket</code> telemetry frames alongside short <code>EpsCommand</code> control packets on the same UART wire; <code>frame:dissect(tag)</code> switches the active <code>DissectorIr</code> per packet dynamically.</p>
+<h4>Complete Annotated Lua Script</h4>
+<pre><code class="language-lua">-- Tutorial 08: Multi-Schema Runtime Dissection (D-94)
+-- Concepts:
+--   * Dynamic runtime schema binding via frame:dissect(&quot;EpsCommand&quot;) and frame:dissect(&quot;ImuPacket&quot;)
+--   * Cross-schema get/set on a single MITM link carrying multiple message types
+--   * Per-protocol checksum recalculation: crc8 for ImuPacket vs crc16_ccitt_false for EpsCommand
+
+bforge.on_mitm_frame(&quot;*&quot;, function(frame)
+  if frame.len &gt;= 19 then
+    local imu = frame:dissect(&quot;ImuPacket&quot;)
+    if imu ~= nil then
+      local ver = imu:get(&quot;version&quot;) or 0
+      local v_batt = imu:get(&quot;v_batt_mv&quot;) or 0
+      imu:set(&quot;version&quot;, (ver + 1) &amp; 0xFF)
+      if imu.len &gt;= 20 then
+        imu:recalc_crc(&quot;crc8&quot;)
+      end
+      bforge.metric(&quot;active_schema&quot;, &quot;ImuPacket&quot;)
+      bforge.metric(&quot;imu_v_batt_mv&quot;, v_batt)
+      return imu
+    end
+  elseif frame.len &gt;= 7 then
+    local eps = frame:dissect(&quot;EpsCommand&quot;)
+    if eps ~= nil then
+      local hold = eps:get(&quot;hold_time_s&quot;) or 0
+      local opcode = eps:get(&quot;opcode&quot;) or 0
+      eps:set(&quot;hold_time_s&quot;, hold + 15)
+      if eps.len &gt;= 9 then
+        eps:recalc_crc(&quot;crc16_ccitt_false&quot;)
+      end
+      bforge.metric(&quot;active_schema&quot;, &quot;EpsCommand&quot;)
+      bforge.metric(&quot;eps_opcode&quot;, opcode)
+      return eps
+    end
+  end
+
+  return frame
+end)
+</code></pre>
+<h4>How It Works</h4>
+<ol>
+<li>Lines <code>8–20</code> match frames <code>&gt;= 19 B</code>, bind <code>ImuPacket</code> via <code>frame:dissect(&quot;ImuPacket&quot;)</code>, increment <code>version</code> (<code>1 -&gt; 2</code>), and recompute 1-byte <code>crc8</code>.</li>
+<li>Lines <code>21–34</code> match shorter <code>7..18 B</code> frames, bind <code>EpsCommand</code>, read <code>opcode</code> and <code>hold_time_s</code>, extend <code>hold_time_s</code> by <code>+15 s</code>, and recompute trailing 2-byte little-endian <code>crc16_ccitt_false</code>.</li>
+<li>If an unrecognized schema tag is supplied, <code>dissect</code> returns <code>nil</code>, keeping the script guarded.</li>
+</ol>
+<h4>Try It in Script Lab</h4>
+<ul>
+<li><strong>Case A (<code>ImuPacket</code> 20 B):</strong> Paste <code>AA 55 01 13 40 E2 01 00 1F F4 00 00 00 00 80 90 A0 B0 01 7C</code>.<ul>
+<li><strong>Verdict badge:</strong> <code>MUTATED</code> (<code>verdict = &quot;send&quot;</code>, <code>mutated = true</code>).</li>
+<li><strong>Output hex:</strong> <code>AA 55 02 13 40 E2 01 00 1F F4 00 00 00 00 80 90 A0 B0 01 6E</code>.</li>
+<li><strong>Decoded Field Diffs:</strong> <code>version: 1 -&gt; 2</code>, <code>checksum: 0x7C -&gt; 0x6E</code>.</li>
+<li><strong>Watch Metrics:</strong> <code>active_schema = &quot;ImuPacket&quot;</code>, <code>imu_v_batt_mv = &quot;8180&quot;</code>.</li>
+</ul>
+</li>
+<li><strong>Case B (<code>EpsCommand</code> 9 B):</strong> Enable <strong>USE MANUAL HEX</strong> and paste <code>AA 55 04 0A 00 00 00 B7 15</code>.<ul>
+<li><strong>Verdict badge:</strong> <code>MUTATED</code> (<code>verdict = &quot;send&quot;</code>, <code>mutated = true</code>).</li>
+<li><strong>Output hex:</strong> <code>AA 55 04 19 00 00 00 CC 95</code>.</li>
+<li><strong>Decoded Field Diffs:</strong> <code>hold_time_s: 10 -&gt; 25</code>, <code>checksum: 5559 -&gt; 38348</code>.</li>
+<li><strong>Watch Metrics:</strong> <code>active_schema = &quot;EpsCommand&quot;</code>, <code>eps_opcode = &quot;4&quot;</code>.</li>
+</ul>
+</li>
+</ul>
+<hr>
+<h3>Tutorial 09: Packet Burst Duplication &amp; Fragmented Split</h3>
+<p><strong>Source:</strong> <a href="../examples/tutorials/09_packet_burst_duplication_and_split.lua"><code>examples/tutorials/09_packet_burst_duplication_and_split.lua</code></a><br><strong>Template ID:</strong> <code>tutorial_09</code></p>
+<h4>Concepts &amp; Capabilities Covered</h4>
+<ul>
+<li>Timed multi-frame output (<code>FrameVerdict::Burst</code>) via <code>bforge.burst({ { payload, delay_ms }, ... })</code>.</li>
+<li>Taking an unmodified binary snapshot with <code>frame:clone_bytes()</code> and byte-table roundtripping via <code>bforge.unhex(frame)</code> / <code>bforge.hex(tbl)</code>.</li>
+<li>Mid-frame slicing with <code>frame:slice(off, len)</code> and Lua bitwise XOR (<code>~</code>).</li>
+</ul>
+<h4>Hardware / Protocol Scenario</h4>
+<p>Target parsers must withstand duplicate frames, corrupted retransmissions, and back-to-back fragmented writes separated by inter-frame gaps. Tutorial <code>09</code> replaces each TX frame with a 4-frame timed sequence: original at <code>t + 0 ms</code>, bit-inverted duplicate at <code>t + 10 ms</code>, first half at <code>t + 20 ms</code>, and second half at <code>t + 25 ms</code>.</p>
+<h4>Complete Annotated Lua Script</h4>
+<pre><code class="language-lua">-- Tutorial 09: Packet Burst Duplication &amp; Fragmented Split
+-- Concepts:
+--   * Returning FrameVerdict::Burst via bforge.burst({ { payload, delay_ms }, ... })
+--   * Capturing an unmodified byte snapshot with frame:clone_bytes()
+--   * Spaced hex roundtripping with bforge.unhex / bforge.hex and payload slicing
+
+bforge.on_tx_frame(&quot;*&quot;, function(frame)
+  local original = frame:clone_bytes()
+  local dup = bforge.unhex(frame)
+  if #dup &gt;= 1 then
+    -- Invert the trailing byte on the duplicate to simulate a corrupted retransmission.
+    dup[#dup] = dup[#dup] ~ 0xFF
+  end
+  local dup_hex = bforge.hex(dup)
+
+  local half = math.floor(#original / 2)
+  if half &gt;= 1 and #original &gt; half then
+    local part1 = frame:slice(0, half)
+    local part2 = frame:slice(half, #original - half)
+    bforge.metric(&quot;burst_count&quot;, 4)
+    return bforge.burst({
+      { original, 0 },
+      { dup_hex, 10 },
+      { part1, 20 },
+      { part2, 25 },
+    })
+  end
+
+  bforge.metric(&quot;burst_count&quot;, 2)
+  return bforge.burst({
+    { original, 0 },
+    { dup_hex, 10 },
+  })
+end)
+</code></pre>
+<h4>How It Works</h4>
+<ol>
+<li><code>frame:clone_bytes()</code> returns a Lua binary string of all current bytes, whereas <code>bforge.unhex(frame)</code> returns a 1-indexed Lua integer array <code>{ byte1, byte2, ... }</code> so individual 1-based bytes can be mutated (<code>dup[#dup] = dup[#dup] ~ 0xFF</code>) and formatted back to spaced hex via <code>bforge.hex(dup)</code>.</li>
+<li>For frames <code>&gt;= 2 B</code>, lines <code>16–27</code> split <code>original</code> cleanly into <code>part1 = frame:slice(0, half)</code> and <code>part2 = frame:slice(half, #original - half)</code> (<code>bforge.burst</code> accepts both raw Lua binary strings and spaced hex strings seamlessly).</li>
+<li>Returning <code>bforge.burst(...)</code> emits <code>FrameVerdict::Burst</code>, queuing four scheduled frame transmissions.</li>
+</ol>
+<h4>Try It in Script Lab</h4>
+<ul>
+<li><strong>Input hex:</strong> <code>AA 55 01 13 40 E2 01 00 1F F4 00 00 00 00 80 90 A0 B0 01 7C</code>.</li>
+<li><strong>Verdict badge:</strong> <code>BURST (4)</code> (<code>verdict = &quot;burst&quot;</code>, <code>mutated = true</code>).</li>
+<li><strong>Burst Schedule (<code>burst_frames</code>):</strong><ol>
+<li><code>+0 ms</code>: <code>AA 55 01 13 40 E2 01 00 1F F4 00 00 00 00 80 90 A0 B0 01 7C</code> (20 B original)</li>
+<li><code>+10 ms</code>: <code>AA 55 01 13 40 E2 01 00 1F F4 00 00 00 00 80 90 A0 B0 01 83</code> (20 B, last byte XOR <code>0xFF</code>)</li>
+<li><code>+20 ms</code>: <code>AA 55 01 13 40 E2 01 00 1F F4</code> (10 B first half)</li>
+<li><code>+25 ms</code>: <code>00 00 00 00 80 90 A0 B0 01 7C</code> (10 B second half)</li>
+</ol>
+</li>
+<li><strong>Watch Metrics:</strong> <code>burst_count = &quot;4&quot;</code>.</li>
+</ul>
+<hr>
+<h2>Part IV — Emulation, Pre-Framer Faults &amp; Custom Dissectors (Tutorials 10–12)</h2>
+<h3>Tutorial 10: Virtual Device Auto-Responder</h3>
+<p><strong>Source:</strong> <a href="../examples/tutorials/10_virtual_device_auto_responder.lua"><code>examples/tutorials/10_virtual_device_auto_responder.lua</code></a><br><strong>Template ID:</strong> <code>tutorial_10</code></p>
+<h4>Concepts &amp; Capabilities Covered</h4>
+<ul>
+<li>Lua 5.4 <code>string.unpack</code> / <code>string.pack</code> binary codecs combined with bitwise bitfield operators (<code>&amp;</code>, <code>|</code>, <code>&gt;&gt;</code>, <code>&lt;&lt;</code>).</li>
+<li>Standalone checksum computation via <code>bforge.crc(&quot;crc16_modbus&quot;, data)</code>.</li>
+<li>Non-reentrant delayed TX emission via <code>bforge.send(port, packet, { delay_ms = 4, run_tx_hooks = false })</code>.</li>
+</ul>
+<h4>Hardware / Protocol Scenario</h4>
+<p>While waiting for physical PCB delivery, firmware teams use BaudForge as an autonomous virtual peripheral: whenever the flight controller transmits a frame, the virtual responder unpacks its header bitfields (<code>flags</code> and <code>channel</code>), constructs a protocol ACK with bit <code>7</code> of <code>version</code> asserted (<code>0x81</code>), appends a CRC-16/MODBUS trailer, and queues it back on the wire 4 ms later.</p>
+<h4>Complete Annotated Lua Script</h4>
+<pre><code class="language-lua">-- Tutorial 10: Virtual Device Auto-Responder
+-- Concepts:
+--   * Lua 5.4 binary codecs string.pack / string.unpack and bitwise operators (&amp;, |, &gt;&gt;, &lt;&lt;)
+--   * Standalone checksum calculation via bforge.crc(&quot;crc16_modbus&quot;, data)
+--   * Non-reentrant delayed TX emission via bforge.send(port, packet, { delay_ms = 4 })
+
+bforge.on_rx_frame(&quot;*&quot;, function(frame)
+  if frame.len &lt; 4 then
+    return frame
+  end
+
+  local sync, version, meta_byte = string.unpack(&quot;&lt;HBB&quot;, frame:raw())
+  local flags = meta_byte &amp; 0x07
+  local channel = (meta_byte &gt;&gt; 3) &amp; 0x1F
+
+  -- Echo channel/flags back with MSB set in version to signify an ACK reply.
+  local ack_meta = ((channel &amp; 0x1F) &lt;&lt; 3) | (flags &amp; 0x07)
+  local reply_ver = 0x80 | (version &amp; 0x7F)
+  local body = string.pack(&quot;&lt;HBB&quot;, sync, reply_ver, ack_meta)
+  local crc = bforge.crc(&quot;crc16_modbus&quot;, body)
+  local packet = body .. string.pack(&quot;&lt;H&quot;, crc)
+
+  local target_port = (frame.port ~= &quot;&quot; and frame.port) or &quot;*&quot;
+  bforge.send(target_port, packet, { delay_ms = 4, run_tx_hooks = false })
+
+  bforge.metric(&quot;rx_flags&quot;, flags)
+  bforge.metric(&quot;rx_channel&quot;, channel)
+  bforge.metric(&quot;ack_crc16&quot;, string.format(&quot;0x%04X&quot;, crc))
+  return frame
+end)
+</code></pre>
+<h4>How It Works</h4>
+<ol>
+<li><code>string.unpack(&quot;&lt;HBB&quot;, frame:raw())</code> decodes the first four raw bytes (<code>AA 55 01 13</code>) in little-endian order into <code>sync = 0x55AA</code>, <code>version = 0x01</code>, and <code>meta_byte = 0x13</code>.</li>
+<li>Lines <code>13–14</code> extract the lower 3 bits (<code>flags = 3</code>) and upper 5 bits (<code>channel = 2</code>).</li>
+<li>Lines <code>17–21</code> pack a 4-byte ACK header (<code>AA 55 81 13</code>), compute <code>crc16_modbus</code> (<code>0x7110</code>), and concatenate its 2-byte LE encoding (<code>10 71</code>) using <code>..</code>.</li>
+<li>Line <code>24</code> queues the 6-byte reply (<code>AA 55 81 13 10 71</code>) at <code>delay_ms = 4</code> with <code>run_tx_hooks = false</code> (non-reentrant <code>Origin::Script</code>, capped at <code>16</code> sends per call), while returning the incoming <code>frame</code> untouched (<code>mutated = false</code>).</li>
+</ol>
+<h4>Try It in Script Lab</h4>
+<ul>
+<li><strong>Input hex:</strong> <code>AA 55 01 13 40 E2 01 00 1F F4 00 00 00 00 80 90 A0 B0 01 7C</code> (or <code>DEFAULT_TEST_FRAME_HEX</code>).</li>
+<li><strong>Verdict badge:</strong> <code>SEND</code> (<code>verdict = &quot;send&quot;</code>, <code>mutated = false</code>).</li>
+<li><strong>Output hex:</strong> Unchanged incoming frame (<code>20 B</code>).</li>
+<li><strong>Actions:</strong> <code>send</code>: port <code>&quot;COM8&quot;</code>, delay <code>4 ms</code>, hex <code>AA 55 81 13 10 71</code>.</li>
+<li><strong>Watch Metrics:</strong> <code>rx_flags = &quot;3&quot;</code>, <code>rx_channel = &quot;2&quot;</code>, <code>ack_crc16 = &quot;0x7110&quot;</code>.</li>
+</ul>
+<hr>
+<h3>Tutorial 11: Raw Chunk Pre-Framer Corruptor</h3>
+<p><strong>Source:</strong> <a href="../examples/tutorials/11_raw_chunk_pre_framer_corruptor.lua"><code>examples/tutorials/11_raw_chunk_pre_framer_corruptor.lua</code></a><br><strong>Template ID:</strong> <code>tutorial_11</code></p>
+<h4>Concepts &amp; Capabilities Covered</h4>
+<ul>
+<li>Pre-framer byte stream interception using <code>bforge.on_raw_chunk(&quot;*&quot;, fn(chunk))</code>.</li>
+<li>Unframed byte manipulation with <code>chunk:raw()</code>, <code>chunk:set_bytes(...)</code>, and <code>chunk:resize(...)</code>.</li>
+<li>Alternation state across consecutive USB/serial read slabs.</li>
+</ul>
+<h4>Hardware / Protocol Scenario</h4>
+<p>Frame parsers only get tested on malformed wire alignment if faults occur <em>before</em> the framer (<code>SyncFrame</code>, SLIP, COBS, or delimiter state machines). <code>on_raw_chunk</code> intercepts raw OS read chunks ahead of <code>stream.feed</code>, allowing you to prepend garbage noise before sync words and chop chunks across partial boundaries.</p>
+<h4>Complete Annotated Lua Script</h4>
+<pre><code class="language-lua">-- Tutorial 11: Raw Chunk Pre-Framer Corruptor
+-- Concepts:
+--   * Pre-framer stream interception with bforge.on_raw_chunk(&quot;*&quot;, fn)
+--   * Reading and rewriting unframed chunks via chunk:raw(), chunk:set_bytes(...), chunk:resize(...)
+--   * Stress-testing sync-word acquisition and partial-frame reassembly
+
+local chunks = 0
+
+bforge.on_raw_chunk(&quot;*&quot;, function(chunk)
+  chunks = chunks + 1
+  bforge.metric(&quot;raw_chunks&quot;, chunks)
+
+  local raw = chunk:raw()
+  if (chunks % 2) == 1 then
+    -- Odd chunks: inject two garbage bytes ahead of the sync preamble.
+    chunk:set_bytes(string.pack(&quot;&lt;BB&quot;, 0x00, 0xFF) .. raw)
+    bforge.metric(&quot;last_fault&quot;, &quot;prepend_garbage&quot;)
+  else
+    -- Even chunks: truncate to half length to exercise partial-read buffering.
+    local half = math.max(1, math.floor(chunk.len / 2))
+    chunk:resize(half)
+    bforge.metric(&quot;last_fault&quot;, &quot;truncate_half&quot;)
+  end
+
+  return chunk
+end)
+</code></pre>
+<h4>How It Works</h4>
+<ol>
+<li>Unlike <code>on_rx_frame</code> (which sees complete, framed packets), <code>on_raw_chunk</code> runs inside the session reader immediately before framing.</li>
+<li>On odd read chunks (<code>chunks = 1, 3, ...</code>), <code>chunk:set_bytes(string.pack(&quot;&lt;BB&quot;, 0x00, 0xFF) .. raw)</code> prepends <code>00 FF</code> in front of the chunk, growing a 20-byte chunk to 22 bytes so sync-hunting logic must skip garbage.</li>
+<li>On even chunks (<code>chunks = 2, 4, ...</code>), <code>chunk:resize(half)</code> cuts the buffer cleanly in half (to 10 bytes), exercising multi-read partial reassembly.</li>
+</ol>
+<h4>Try It in Script Lab</h4>
+<ul>
+<li><strong>Input hex:</strong> <code>AA 55 01 13 40 E2 01 00 1F F4 00 00 00 00 80 90 A0 B0 01 7C</code>.</li>
+<li><strong>Verdict badge (Dry-Run #1):</strong> <code>MUTATED</code> (<code>verdict = &quot;send&quot;</code>, <code>mutated = true</code>).</li>
+<li><strong>Output hex:</strong> <code>00 FF AA 55 01 13 40 E2 01 00 1F F4 00 00 00 00 80 90 A0 B0 01 7C</code> (22 B).</li>
+<li><strong>Watch Metrics:</strong> <code>raw_chunks = &quot;1&quot;</code>, <code>last_fault = &quot;prepend_garbage&quot;</code>.</li>
+<li><strong>When ARMED over multiple frames:</strong> Frame #2 alternates to <code>last_fault = &quot;truncate_half&quot;</code> (<code>10 B</code> output).</li>
+</ul>
+<hr>
+<h3>Tutorial 12: Custom Dissector &amp; Command Payload Builder</h3>
+<p><strong>Source:</strong> <a href="../examples/tutorials/12_custom_dissector_and_command_builder.lua"><code>examples/tutorials/12_custom_dissector_and_command_builder.lua</code></a><br><strong>Template ID:</strong> <code>tutorial_12</code></p>
+<h4>Concepts &amp; Capabilities Covered</h4>
+<ul>
+<li>Synthetic dissector annotation via <code>bforge.on_dissect(&quot;*&quot;, fn(frame))</code> and <code>frame:add_field(name, offset, len, display, numeric)</code>.</li>
+<li>Parameterized packet synthesis via <code>bforge.on_command(&quot;set_heater&quot;, fn(args))</code>.</li>
+<li>Standalone CRC-8/ATM and CRC-16/XMODEM computation (<code>bforge.crc(&quot;crc16_xmodem&quot;, body)</code>).</li>
+</ul>
+<h4>Hardware / Protocol Scenario</h4>
+<p>You want Stream Monitor to show engineering-unit decoded fields (<code>wire_sync</code>, <code>batt_volts</code> formatted as <code>&quot;8.180 V&quot;</code>, and <code>tail_crc8</code> showing <code>&quot;CRC_OK&quot;</code> vs. <code>&quot;CRC_ERR(0x..)&quot;</code>) and simultaneously define a <code>set_heater</code> command generator for Command Forge (<code>zone</code>, <code>duty</code>, <code>enable</code> args) sealed with a CRC-16/XMODEM checksum.</p>
+<h4>Complete Annotated Lua Script</h4>
+<pre><code class="language-lua">-- Tutorial 12: Custom Dissector &amp; Command Payload Builder
+-- Concepts:
+--   * Annotated field extraction via bforge.on_dissect(&quot;*&quot;, fn) and frame:add_field(...)
+--   * Named command payload builder via bforge.on_command(&quot;set_heater&quot;, fn(args))
+--   * Standalone CRC-16/XMODEM calculation via bforge.crc(&quot;crc16_xmodem&quot;, data)
+
+bforge.on_dissect(&quot;*&quot;, function(frame)
+  if frame.len &gt;= 2 then
+    local sync = frame:u16_be(0)
+    frame:add_field(&quot;wire_sync&quot;, 0, 2, string.format(&quot;0x%04X&quot;, sync), sync)
+  end
+
+  if frame.len &gt;= 10 then
+    local v_batt_mv = frame:u16_be(8)
+    frame:add_field(&quot;batt_volts&quot;, 8, 2, string.format(&quot;%.3f V&quot;, v_batt_mv / 1000.0), v_batt_mv / 1000.0)
+  end
+
+  if frame.len &gt;= 20 then
+    local actual = frame:u8(19)
+    local expected = bforge.crc(&quot;crc8&quot;, frame:slice(0, 19))
+    local label = (actual == expected) and &quot;CRC_OK&quot; or string.format(&quot;CRC_ERR(0x%02X)&quot;, actual)
+    frame:add_field(&quot;tail_crc8&quot;, 19, 1, label, actual)
+  end
+
+  bforge.metric(&quot;custom_dissected&quot;, (bforge.metric(&quot;custom_dissected&quot;) or 0) + 1)
+  return frame
+end)
+
+bforge.on_command(&quot;set_heater&quot;, function(args)
+  local zone = math.floor(tonumber(args.zone) or 1) &amp; 0xFF
+  local duty = math.max(0, math.min(100, math.floor(tonumber(args.duty or args.power) or 50)))
+  local enable = (args.enable == &quot;false&quot; or args.enable == &quot;0&quot;) and 0 or 1
+
+  local body = string.pack(&quot;&lt;HBBBB&quot;, 0x55AA, 0x31, zone, enable, duty)
+  local crc = bforge.crc(&quot;crc16_xmodem&quot;, body)
+  return body .. string.pack(&quot;&lt;H&quot;, crc)
+end)
+</code></pre>
+<h4>How It Works</h4>
+<ol>
+<li>In <code>bforge.on_dissect</code>, <code>frame:add_field(name, offset, len, display, num)</code> publishes custom decoded columns (<code>&quot;wire_sync&quot;</code>, <code>&quot;batt_volts&quot;</code>, <code>&quot;tail_crc8&quot;</code>) without mutating wire bytes. Note line <code>21</code> uses Lua&#39;s short-circuit ternary <code>(actual == expected) and &quot;CRC_OK&quot; or string.format(...)</code> so valid packets display <code>&quot;CRC_OK&quot;</code> and mismatched packets surface the raw hex byte (<code>CRC_ERR(0x5B)</code>).</li>
+<li>In <code>bforge.on_command(&quot;set_heater&quot;, fn(args))</code>, the script parses string table arguments, clamps <code>duty</code> to <code>0..100</code>, packs a 6-byte header (<code>AA 55 31 &lt;zone&gt; &lt;enable&gt; &lt;duty&gt;</code>), computes <code>crc16_xmodem</code> (poly <code>0x1021</code>, init <code>0x0000</code>), and returns an 8-byte binary command packet (<code>AA 55 31 02 01 4B EC AF</code> for <code>zone=2, duty=75, enable=1</code>).</li>
+</ol>
+<h4>Try It in Script Lab</h4>
+<ul>
+<li><strong>Case A (Valid CRC-8 <code>ImuPacket</code>):</strong> Paste <code>AA 55 01 13 40 E2 01 00 1F F4 00 00 00 00 80 90 A0 B0 01 7C</code> and click <strong>DRY-RUN PACKET</strong>.<ul>
+<li><strong>Verdict badge:</strong> <code>PASS</code> (<code>verdict = &quot;pass&quot;</code>, <code>mutated = false</code>).</li>
+<li><strong>Decoded Field Diffs:</strong> Shows the 3 synthetic fields added (<code>before: —</code>): <code>wire_sync = &quot;0xAA55&quot;</code>, <code>batt_volts = &quot;8.180 V&quot;</code>, <code>tail_crc8 = &quot;CRC_OK&quot;</code>.</li>
+<li><strong>Watch Metrics:</strong> <code>custom_dissected = &quot;1&quot;</code>.</li>
+</ul>
+</li>
+<li><strong>Case B (Default Script Lab Hex with invalid <code>0x5B</code> byte):</strong> Run with <code>DEFAULT_TEST_FRAME_HEX</code> (<code>... 01 5B</code>).<ul>
+<li><strong>Decoded Field Diffs:</strong> <code>tail_crc8 = &quot;CRC_ERR(0x5B)&quot;</code> immediately exposes the checksum mismatch!</li>
+</ul>
+</li>
+<li><strong>Command Builder (<code>on_command</code>):</strong> Compiled cleanly (<code>hooks: [&quot;on_dissect&quot;, &quot;on_command&quot;]</code>). Live <code>ScriptRuntime::invoke_command(&quot;set_heater&quot;, { zone=&quot;2&quot;, duty=&quot;75&quot;, enable=&quot;1&quot; })</code> produces <code>AA 55 31 02 01 4B EC AF</code>.</li>
+</ul>
+<hr>
+<h2>Part V — Active Timers, Watchdog Pin Recovery &amp; Safety Interlocks (Tutorials 13–15)</h2>
+<h3>Tutorial 13: Periodic Timer Poller &amp; RX Jitter Plotter</h3>
+<p><strong>Source:</strong> <a href="../examples/tutorials/13_periodic_timer_poller_and_jitter.lua"><code>examples/tutorials/13_periodic_timer_poller_and_jitter.lua</code></a><br><strong>Template ID:</strong> <code>tutorial_13</code></p>
+<h4>Concepts &amp; Capabilities Covered</h4>
+<ul>
+<li>Periodic background callbacks via <code>bforge.on_timer(100, fn(ctx))</code> (with <code>ctx.now_ms</code>).</li>
+<li>Monotonic timing (<code>bforge.now_us()</code>, <code>bforge.now_ms()</code>) and active TX command polling (<code>bforge.send</code>).</li>
+<li>Inter-arrival period (<code>dt_us</code>) and second-difference jitter (<code>|dt_us - prev_dt_us|</code>) plotting via <code>bforge.plot</code>.</li>
+</ul>
+<h4>Hardware / Protocol Scenario</h4>
+<p>Master-slave field buses require the workbench to issue periodic poll requests every 100 ms while simultaneously measuring jitter in the slave&#39;s RX telemetry cadence (<code>10 ms</code>, <code>10.5 ms</code>, <code>9.5 ms</code> -&gt; <code>1000 us</code> jitter) inside Plot Forge.</p>
+<h4>Complete Annotated Lua Script</h4>
+<pre><code class="language-lua">-- Tutorial 13: Periodic Timer Poller &amp; RX Jitter Plotter
+-- Concepts:
+--   * Periodic timer callback via bforge.on_timer(100, fn(ctx))
+--   * Monotonic clocks bforge.now_us() / bforge.now_ms() and active polling with bforge.send
+--   * RX inter-arrival delta and jitter plotting via bforge.plot
+
+local poll_seq = 0
+local last_rx_us = nil
+local prev_dt_us = nil
+
+bforge.on_timer(100, function(ctx)
+  poll_seq = poll_seq + 1
+  local now_ms = ctx.now_ms or bforge.now_ms()
+
+  local header = string.pack(&quot;&lt;HBB&quot;, 0x55AA, 0x01, poll_seq &amp; 0xFF)
+  local crc = bforge.crc(&quot;crc8&quot;, header)
+  local pkt = header .. string.pack(&quot;&lt;B&quot;, crc)
+
+  bforge.send(&quot;*&quot;, pkt, { delay_ms = 0, run_tx_hooks = false })
+  bforge.metric(&quot;polls_sent&quot;, poll_seq)
+  bforge.metric(&quot;last_poll_ms&quot;, now_ms)
+end)
+
+bforge.on_rx_frame(&quot;*&quot;, function(frame)
+  local rx_us = (frame.timestamp_us and frame.timestamp_us &gt; 0) and frame.timestamp_us or bforge.now_us()
+
+  if last_rx_us ~= nil then
+    local dt_us = rx_us - last_rx_us
+    bforge.plot(&quot;rx_interval_us&quot;, dt_us, rx_us)
+    if prev_dt_us ~= nil then
+      local jitter_us = math.abs(dt_us - prev_dt_us)
+      bforge.plot(&quot;rx_jitter_us&quot;, jitter_us, rx_us)
+      bforge.metric(&quot;last_jitter_us&quot;, jitter_us)
+    end
+    prev_dt_us = dt_us
+  end
+
+  last_rx_us = rx_us
+  return frame
+end)
+</code></pre>
+<h4>How It Works</h4>
+<ol>
+<li>Lines <code>11–22</code> register a 100 ms periodic timer. Each tick increments an 8-bit wrapping <code>poll_seq</code>, builds a 5-byte query packet (<code>AA 55 01 &lt;seq&gt; &lt;crc8&gt;</code>), and broadcasts it via <code>bforge.send(&quot;*&quot;, pkt, ...)</code>.</li>
+<li>Lines <code>24–40</code> measure incoming RX timing: frame #1 establishes <code>last_rx_us</code>; frame #2 plots <code>rx_interval_us</code> and sets <code>prev_dt_us</code>; frame #3 onward plots both <code>rx_interval_us</code> and <code>rx_jitter_us</code> (<code>|dt_us - prev_dt_us|</code>).</li>
+</ol>
+<h4>Try It in Script Lab</h4>
+<ul>
+<li><strong>Dry-Run Packet:</strong> Click <strong>DRY-RUN PACKET</strong> on <code>AA 55 01 13 40 E2 01 00 1F F4 00 00 00 00 80 90 A0 B0 01 7C</code>.<ul>
+<li><strong>Verdict badge:</strong> <code>PASS</code> (<code>verdict = &quot;pass&quot;</code>, <code>mutated = false</code>; <code>hooks: [&quot;on_timer&quot;, &quot;on_rx_frame&quot;]</code>).</li>
+</ul>
+</li>
+<li><strong>ARMED Stream Behavior:</strong> When ARMED over successive packets (e.g. Simulated Mode RX stream or live serial device), <code>rx_interval_us</code> and <code>rx_jitter_us</code> populate automatically from the 2nd and 3rd frames onward.</li>
+<li><strong>Timer Hook Behavior (<code>tick_timers(100)</code> in live runtime):</strong> Every 100 ms emits <code>send</code> (<code>AA 55 01 01 95</code> on tick #1) and updates <code>polls_sent</code> and <code>last_poll_ms</code>.</li>
+</ul>
+<hr>
+<h3>Tutorial 14: Hardware Pin Reset &amp; Watchdog Alert Handler</h3>
+<p><strong>Source:</strong> <a href="../examples/tutorials/14_hardware_pin_reset_and_alert_handler.lua"><code>examples/tutorials/14_hardware_pin_reset_and_alert_handler.lua</code></a><br><strong>Template ID:</strong> <code>tutorial_14</code></p>
+<h4>Concepts &amp; Capabilities Covered</h4>
+<ul>
+<li>Alert event subscription via <code>bforge.on_alert(&quot;dead_man_timer&quot;, fn(alert))</code>.</li>
+<li>Hardware UART modem-control signaling via <code>bforge.set_pins(dtr, rts)</code>, <code>bforge.pulse_pin(&quot;RTS&quot;, 25)</code>, and <code>bforge.trigger_pin(&quot;*&quot;, &quot;DTR_LOW&quot;)</code>.</li>
+<li>Automated MCU reset / bootloader recovery automation triggered by silence watchdogs.</li>
+</ul>
+<h4>Hardware / Protocol Scenario</h4>
+<p>When a Device Under Test firmware deadlocks and triggers BaudForge&#39;s <code>dead_man_timer</code> watchdog alert (<code>silence &gt; 2000ms</code>), manual lab intervention breaks overnight endurance runs. Subscribing to <code>dead_man_timer</code> in Lua automatically holds <code>DTR</code> high, pulses <code>RTS</code> for 25 ms to hardware-reset the MCU, and releases <code>DTR</code> low afterward.</p>
+<h4>Complete Annotated Lua Script</h4>
+<pre><code class="language-lua">-- Tutorial 14: Hardware Pin Reset &amp; Watchdog Alert Handler
+-- Concepts:
+--   * Alert subscription via bforge.on_alert(&quot;dead_man_timer&quot;, fn(alert))
+--   * Hardware control lines via bforge.set_pins, bforge.pulse_pin, and bforge.trigger_pin
+--   * Automated MCU reset / bootloader recovery sequence
+
+local resets = 0
+
+bforge.on_alert(&quot;dead_man_timer&quot;, function(alert)
+  resets = resets + 1
+  bforge.log_warn(string.format(
+    &quot;recovery #%d on alert `%s`: %s&quot;,
+    resets,
+    tostring(alert.name),
+    tostring(alert.detail)
+  ))
+
+  -- Assert DTR (boot/hold), pulse RTS to reset target MCU, then release DTR/RTS low.
+  bforge.set_pins(true, false)
+  bforge.pulse_pin(&quot;RTS&quot;, 25)
+  bforge.trigger_pin(&quot;*&quot;, &quot;DTR_LOW&quot;)
+
+  bforge.metric(&quot;mcu_resets&quot;, resets)
+  bforge.metric(&quot;last_alert_ts_us&quot;, alert.timestamp_us or 0)
+end)
+
+bforge.on_rx_frame(&quot;*&quot;, function(frame)
+  bforge.metric(&quot;last_rx_seq&quot;, frame.seq_id)
+  return frame
+end)
+</code></pre>
+<h4>How It Works</h4>
+<ol>
+<li>Lines <code>9–25</code> bind specifically to <code>&quot;dead_man_timer&quot;</code> alerts (pass <code>&quot;*&quot;</code> to catch all alerts). When fired, <code>alert</code> supplies <code>alert.name</code>, <code>alert.detail</code>, and <code>alert.timestamp_us</code>.</li>
+<li>Lines <code>19–21</code> execute the three-step hardware pin recovery sequence using all three pin APIs (<code>set_pins</code> 2-arg global form, <code>pulse_pin</code> 25 ms, and string-spec <code>trigger_pin(&quot;*&quot;, &quot;DTR_LOW&quot;)</code>).</li>
+<li>Lines <code>27–30</code> track <code>last_rx_seq</code> on healthy incoming traffic.</li>
+</ol>
+<h4>Try It in Script Lab</h4>
+<ul>
+<li><strong>Dry-Run Packet:</strong> Click <strong>DRY-RUN PACKET</strong> on <code>AA 55 01 13 40 E2 01 00 1F F4 00 00 00 00 80 90 A0 B0 01 7C</code>.<ul>
+<li><strong>Verdict badge:</strong> <code>PASS</code> (<code>verdict = &quot;pass&quot;</code>, <code>hooks: [&quot;on_alert&quot;, &quot;on_rx_frame&quot;]</code>).</li>
+<li><strong>Watch Metrics:</strong> <code>last_rx_seq</code> matches the selected packet sequence ID (<code>1</code> in manual hex mode, or selected stream packet <code>seqId</code>).</li>
+</ul>
+</li>
+<li><strong>Alert Trigger Behavior (<code>trigger_alert(&quot;dead_man_timer&quot;, ...)</code> in live runtime):</strong> Increments <code>mcu_resets</code>, emits a <code>warn</code> console log, and schedules <code>SetPins(dtr=true, rts=false)</code>, <code>PulsePin(RTS, 25 ms)</code>, and <code>SetPins(dtr=false, rts=false)</code>.</li>
+</ul>
+<hr>
+<h3>Tutorial 15: Fail-Closed Safety Interlock &amp; Resource Budget Guard</h3>
+<p><strong>Source:</strong> <a href="../examples/tutorials/15_fail_closed_safety_interlock_and_budget.lua"><code>examples/tutorials/15_fail_closed_safety_interlock_and_budget.lua</code></a><br><strong>Template ID:</strong> <code>tutorial_15</code></p>
+<h4>Concepts &amp; Capabilities Covered</h4>
+<ul>
+<li><strong><code>FaultPolicy::FailClosed</code></strong> safety interlock: invalid frames, tripped safety assertions, or script errors drop TX frames instead of passing unsafe commands to hardware.</li>
+<li>Multi-field safety envelope checks (<code>sync_valid</code>, <code>v_batt_envelope</code> <code>6000..9000 mV</code>, <code>mode_valid</code> <code>&lt;= 2</code>).</li>
+<li>Fixed-capacity 16-entry circular buffer ensuring O(1) memory (<code>&lt;&lt; 4 MiB</code>) and tiny per-frame instruction counts (<code>&lt;&lt; 200k</code>).</li>
+</ul>
+<h4>Hardware / Protocol Scenario</h4>
+<p>On a high-energy battery rig or actuator bus, passing an out-of-envelope TX frame during a workbench glitch can trip relays or damage hardware. Tutorial <code>15</code> acts as a last-chance software interlock: every TX packet is checked against voltage, sync, and mode bounds using short-circuit safe expressions and pre-allocated storage, dropping any anomalous frame with <code>interlock_state = &quot;TRIPPED&quot;</code>.</p>
+<h4>Complete Annotated Lua Script</h4>
+<pre><code class="language-lua">-- Tutorial 15: Fail-Closed Safety Interlock &amp; Resource Budget Guard
+-- Concepts:
+--   * FaultPolicy::FailClosed safety envelope pattern (drops on error or assertion trip)
+--   * Multi-field validation with bforge.assert
+--   * Fixed-size Lua ring buffer keeping VM heap (&lt; 4 MiB) and instructions (&lt; 200k) strictly bounded
+
+local RING_CAP = 16
+local ring = {}
+local ring_head = 0
+local ring_len = 0
+
+for i = 1, RING_CAP do
+  ring[i] = 0
+end
+
+local function push_ring(value)
+  ring_head = (ring_head % RING_CAP) + 1
+  ring[ring_head] = value
+  if ring_len &lt; RING_CAP then
+    ring_len = ring_len + 1
+  end
+end
+
+bforge.on_tx_frame(&quot;*&quot;, function(frame)
+  local v_batt = frame:get(&quot;v_batt_mv&quot;)
+  if v_batt == nil then
+    v_batt = frame.len &gt;= 10 and frame:u16_be(8) or 0
+  end
+
+  local mode = frame:get(&quot;mode&quot;)
+  if mode == nil then
+    mode = frame.len &gt;= 19 and frame:u8(18) or 0
+  end
+
+  local sync_raw = frame:get(&quot;sync&quot;)
+  local sync_matches = (sync_raw == 0x55AA)
+    or (sync_raw == &quot;0xAA55&quot;)
+    or (frame.len &gt;= 2 and frame:u8(0) == 0xAA and frame:u8(1) == 0x55)
+
+  local sync_ok = bforge.assert(&quot;sync_valid&quot;, sync_matches, &quot;unexpected sync header&quot;)
+  local batt_ok = bforge.assert(&quot;v_batt_envelope&quot;, v_batt &gt;= 6000 and v_batt &lt;= 9000, &quot;battery outside 6000..9000 mV&quot;)
+  local mode_ok = bforge.assert(&quot;mode_valid&quot;, mode &lt;= 2, &quot;mode outside 0..2&quot;)
+
+  push_ring(v_batt)
+  local sum = 0
+  for i = 1, ring_len do
+    sum = sum + ring[i]
+  end
+
+  bforge.metric(&quot;ring_fill&quot;, ring_len)
+  bforge.metric(&quot;ring_avg_mv&quot;, sum / ring_len)
+
+  if not (sync_ok and batt_ok and mode_ok) then
+    bforge.metric(&quot;interlock_state&quot;, &quot;TRIPPED&quot;)
+    bforge.log_error(&quot;fail-closed safety interlock tripped; dropping frame&quot;)
+    return frame:drop()
+  end
+
+  bforge.metric(&quot;interlock_state&quot;, &quot;OK&quot;)
+  return frame
+end)
+</code></pre>
+<h4>How It Works</h4>
+<ol>
+<li>Lines <code>7–14</code> pre-allocate all 16 ring-buffer slots at load time so hot TX calls never trigger garbage-collector growth or dynamic table allocation.</li>
+<li>Lines <code>25–38</code> read <code>v_batt_mv</code>, <code>mode</code>, and <code>sync</code> defensively. Notice <code>frame.len &gt;= 10 and frame:u16_be(8) or 0</code> relies on short-circuit evaluation so truncated frames safely yield <code>0</code> rather than raising an out-of-bounds error.</li>
+<li>Lines <code>40–42</code> capture the boolean return value of all three <code>bforge.assert</code> calls so <em>all</em> violations are tallied on every frame before checking <code>not (sync_ok and batt_ok and mode_ok)</code> at line <code>53</code>.</li>
+<li>Setting Script Lab&#39;s policy dropdown to <strong>FAIL-CLOSED</strong> backs up the script-level check: even an unexpected exception drops the frame rather than forwarding it.</li>
+</ol>
+<h4>Try It in Script Lab</h4>
+<ul>
+<li><strong>Case A (Safe Frame):</strong> Set policy selector to <strong>FAIL-CLOSED</strong>, paste <code>AA 55 01 13 40 E2 01 00 1F F4 00 00 00 00 80 90 A0 B0 01 7C</code>, and click <strong>DRY-RUN PACKET</strong>.<ul>
+<li><strong>Verdict badge:</strong> <code>PASS</code> (<code>verdict = &quot;pass&quot;</code>, <code>mutated = false</code>).</li>
+<li><strong>Assertions:</strong> <code>sync_valid</code>, <code>v_batt_envelope</code>, <code>mode_valid</code> all show <code>passed: 1, failed: 0</code>.</li>
+<li><strong>Watch Metrics:</strong> <code>ring_fill = &quot;1&quot;</code>, <code>ring_avg_mv = &quot;8180&quot;</code>, <code>interlock_state = &quot;OK&quot;</code>.</li>
+</ul>
+</li>
+<li><strong>Case B (Unsafe / Truncated Frame):</strong> Enable <strong>USE MANUAL HEX</strong>, enter <code>01 02</code> (or set <code>v_batt_mv</code> bytes <code>8..9</code> to <code>2E E0</code> = <code>12000 mV</code>), and click <strong>DRY-RUN PACKET</strong>.<ul>
+<li><strong>Verdict badge:</strong> <code>DROPPED</code> (<code>verdict = &quot;drop&quot;</code>, empty output hex).</li>
+<li><strong>Watch Metrics:</strong> <code>interlock_state = &quot;TRIPPED&quot;</code>.</li>
+<li><strong>Console Logs:</strong> <code>error</code>: <code>fail-closed safety interlock tripped; dropping frame</code>.</li>
+</ul>
+</li>
+</ul>
+<div class="pager"><a class="prev" href="exports.html">Exports</a><a class="next" href="lua-api.html">Lua 5.4 API Reference</a></div></main>
+</div>
+<footer>BaudForge — hardware engineering workstation · built from docs/src with marked · screenshots from the live application on real hardware</footer>
+</body></html>

@@ -1,6 +1,7 @@
 # BaudForge Lua 5.4 Scripting Tutorial Manual
 
 **Targets:** [`examples/tutorials/01_packet_filter_and_metadata.lua`](../examples/tutorials/01_packet_filter_and_metadata.lua) – [`15_fail_closed_safety_interlock_and_budget.lua`](../examples/tutorials/15_fail_closed_safety_interlock_and_budget.lua)  
+**API Reference:** [`docs/LUA_API_REFERENCE.md`](./LUA_API_REFERENCE.md)  
 **Architecture Reference:** [`LUA_SCRIPTING_ENGINE.md`](../LUA_SCRIPTING_ENGINE.md) · [`crates/bforge-script/src/runtime.rs`](../crates/bforge-script/src/runtime.rs) · [`crates/bforge-script/src/frame.rs`](../crates/bforge-script/src/frame.rs) · [`ui/src/services/luaSandboxFallback.ts`](../ui/src/services/luaSandboxFallback.ts)
 
 ---
@@ -32,12 +33,12 @@ BaudForge embeds Lua 5.4 as a deterministic, bounded Hardware-in-the-Loop (HIL) 
 
 #### Option A: Script Lab UI (Interactive Workbench)
 
-1. Open the **LUA SCRIPT LAB** panel (`WorkstationDock` Bottom Subdeck or **Scripts** navigation tab).
-2. In the template selector (`[data-testid="script-template-select"]`), scroll to **Tutorial Series (01–15)** and select any script (`Tutorial 01: Packet Filter & Metadata` through `Tutorial 15: Fail-Closed Safety Interlock`).
-3. To test specific hex bytes directly, tick **USE MANUAL HEX** above the bottom hex panel and paste the tutorial's test hex; otherwise Script Lab runs against the currently selected packet in Stream Monitor.
-4. Select **FAIL-OPEN** or **FAIL-CLOSED** policy and adjust **SEED** if desired, then click **COMPILE** or **DRY-RUN PACKET** (`Ctrl+Enter`).
-5. Inspect the header **Verdict** badge, **VM COST** counters, **DECODED FIELD DIFFS**, **WATCH METRICS & ASSERTIONS** tab, **ACTIONS** list (`send`, `plot`, `set_pins`, `pulse_pin`), and **CONSOLE LOGS**.
-6. Click **ARM SCRIPT** to attach the script continuously to incoming Simulated Mode or live engine frames.
+1. Open the **LUA SCRIPT LAB** panel (`WorkstationDock` or **Add Panel -> LUA SCRIPT LAB**). Click **HOW IT WORKS** in the header anytime for the 4-step workflow summary.
+2. In the template selector (`[data-testid="script-template-select"]`), scroll to **Tutorial Series (01–15)** and select any script (`Tutorial 01: Packet Filter & Metadata` through `Tutorial 15: Fail-Closed Safety Interlock`). The summary strip above the editor shows what the script does and which hook it registers.
+3. Under **DRY-RUN DIFF**, check the **Test Target** badge (`PACKET STREAM` when a packet is selected, or `SAMPLE / CUSTOM HEX`) and paste the tutorial's test hex if needed.
+4. Open **VM & FILE** in the header to set **FAIL-OPEN** or **FAIL-CLOSED** policy, adjust **PRNG SEED**, or load/save `.lua` files.
+5. Click **DRY-RUN PACKET** (`Ctrl+Enter`) to inspect the header **Verdict** badge, **VM COST**, **BYTE DIFF GRID**, **DECODED FIELD DIFF**, **EMITTED SIDE-EFFECTS**, and **DRY-RUN METRICS & ASSERTIONS**.
+6. Click **ARM ON LIVE BUS** to attach the script to live frames; the **LIVE INTERCEPTION ACTIVE** banner appears and the right pane switches to **LIVE VM & WATCH** (counters, `bforge.metric`, `bforge.assert`, and `SCRIPT CONSOLE`).
 
 #### Option B: CLI & Workspace Config (`.bforge.toml`)
 
@@ -104,6 +105,18 @@ Copy-pasteable test vectors used throughout this manual:
 | **13** | [`13_periodic_timer_poller_and_jitter.lua`](../examples/tutorials/13_periodic_timer_poller_and_jitter.lua) | V | `on_timer(100)`, `on_rx_frame("*")` | `.timestamp_us` | `now_ms`, `now_us`, `send`, `crc`, `plot`, `metric`, `string.pack`, `math.abs` | `crc8`, `Pass` / `Send` action |
 | **14** | [`14_hardware_pin_reset_and_alert_handler.lua`](../examples/tutorials/14_hardware_pin_reset_and_alert_handler.lua) | V | `on_alert("dead_man_timer")`, `on_rx_frame("*")` | `.seq_id` | `set_pins`, `pulse_pin`, `trigger_pin`, `metric`, `log_warn` | `Pass` + `SetPins` / `PulsePin` actions |
 | **15** | [`15_fail_closed_safety_interlock_and_budget.lua`](../examples/tutorials/15_fail_closed_safety_interlock_and_budget.lua) | V | `on_tx_frame("*")` | `.len`, `:get`, `:u16_be`, `:u8`, `:drop` | `assert`, `metric`, `log_error`, short-circuit `and`/`or` | `Pass`, `Drop` (`FailClosed` safe) |
+
+---
+
+## Progressive Lua API Curriculum (5 Stages)
+
+Each part of the curriculum introduces a new layer of the [`docs/LUA_API_REFERENCE.md`](./LUA_API_REFERENCE.md) API:
+
+1. **Part I — Inspection, Assertions & Plotting (Tutorials `01`–`03`):** Read-only hooks (`bforge.on_rx_frame`), frame metadata (`frame.port`, `frame.len`, `frame.hex`), `frame:drop()`, schema reads (`frame:get`, `frame:fields`), `bforge.metric`, `bforge.assert`, `bforge.log_*`, and `bforge.plot`.
+2. **Part II — Field, Binary & Fault Mutation (Tutorials `04`–`06`):** `bforge.on_tx_frame`, `frame:set`, `frame:recalc_crc`, zero-offset binary readers/writers (`frame:u16_be`, `frame:set_u16_be`, `frame:slice`), `bforge.on_init`, deterministic PRNG (`bforge.seed`, `bforge.rand`), and fault injection (`frame:xor_bit`, `frame:xor_u8`, `frame:corrupt_crc`).
+3. **Part III — MITM Bridges, Multi-Schema & Bursts (Tutorials `07`–`09`):** `bforge.on_mitm_frame`, `frame.bridge`, `frame:delay_ms`, runtime schema switching (`frame:dissect`), `frame:clone_bytes`, `bforge.hex` / `bforge.unhex`, and `bforge.burst`.
+4. **Part IV — Virtual Devices, Raw Chunks & Custom Dissectors (Tutorials `10`–`12`):** Out-of-band TX replies (`bforge.send`, `bforge.crc`, `string.pack`/`string.unpack`), pre-framer `bforge.on_raw_chunk` (`frame:set_bytes`, `frame:resize`), `bforge.on_dissect` (`frame:add_field`), and `bforge.on_command`.
+5. **Part V — Timers, Hardware Pins & Fail-Closed Safety (Tutorials `13`–`15`):** `bforge.on_timer`, monotonic clocks (`bforge.now_ms`, `bforge.now_us`), `bforge.on_alert`, modem line control (`bforge.set_pins`, `bforge.pulse_pin`, `bforge.trigger_pin`), and `fail_closed` safety interlocks.
 
 ---
 

@@ -1,0 +1,524 @@
+<!doctype html>
+<html lang="en"><head><meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Lua 5.4 API Reference — BaudForge</title>
+<meta name="description" content="BaudForge user documentation — hardware engineering workstation">
+<style>
+:root{--bg:#0a0d13;--panel:#10141d;--panel2:#161c28;--line:#222d3d;--fg:#e2e8f0;--dim:#94a3b8;--faint:#64748b;--accent:#00e5ff;--warn:#f59e0b;--err:#ef4444}
+*{box-sizing:border-box}
+body{margin:0;background:var(--bg);color:var(--fg);font:14px/1.65 'Segoe UI',system-ui,sans-serif}
+a{color:var(--accent);text-decoration:none}a:hover{text-decoration:underline}
+header.top{display:flex;align-items:center;gap:12px;padding:10px 22px;border-bottom:1px solid var(--line);background:var(--panel);position:sticky;top:0;z-index:10}
+header.top .brand{font-family:Consolas,monospace;font-weight:700;letter-spacing:.18em;color:var(--accent);font-size:15px}
+header.top .tag{font-size:11px;color:var(--dim);border:1px solid var(--line);border-radius:3px;padding:1px 7px}
+header.top .gh{margin-left:auto;font-size:12px}
+.wrap{display:flex;max-width:1440px;margin:0 auto}
+nav.side{width:250px;min-width:250px;padding:22px 14px 60px;border-right:1px solid var(--line);position:sticky;top:53px;height:calc(100vh - 53px);overflow-y:auto;background:var(--panel)}
+nav.side .grp{font-family:Consolas,monospace;font-size:10px;letter-spacing:.14em;text-transform:uppercase;color:var(--faint);margin:18px 10px 6px}
+nav.side a{display:block;padding:5px 10px;border-radius:5px;color:var(--dim);font-size:13px}
+nav.side a:hover{background:var(--panel2);color:var(--fg);text-decoration:none}
+nav.side a.cur{background:rgba(0,229,255,.08);color:var(--accent);border-left:2px solid var(--accent)}
+main{flex:1;min-width:0;padding:34px 44px 90px;max-width:940px}
+main h1{font-size:27px;border-bottom:1px solid var(--line);padding-bottom:12px;margin-top:0}
+main h2{font-size:19px;margin-top:38px;border-left:3px solid var(--accent);padding-left:10px}
+main h3{font-size:15px;color:var(--dim)}
+main img{max-width:100%;border:1px solid var(--line);border-radius:8px;margin:14px 0;box-shadow:0 6px 24px rgba(0,0,0,.45);display:block}
+main code{background:var(--panel2);border:1px solid var(--line);border-radius:4px;padding:1px 6px;font:12.5px Consolas,monospace;color:#fbcfe8}
+main pre{background:var(--panel);border:1px solid var(--line);border-radius:8px;padding:14px 16px;overflow-x:auto}
+main pre code{background:none;border:none;padding:0;color:#a5f3fc;line-height:1.55}
+main table{border-collapse:collapse;width:100%;margin:14px 0;font-size:13.5px}
+main th{background:var(--panel2);text-align:left;font-family:Consolas,monospace;font-size:12px;letter-spacing:.05em;text-transform:uppercase;color:var(--dim)}
+main th,main td{border:1px solid var(--line);padding:7px 11px;vertical-align:top}
+main tr:nth-child(even) td{background:rgba(22,28,40,.4)}
+main blockquote{border-left:3px solid var(--warn);background:rgba(245,158,11,.07);margin:14px 0;padding:10px 16px;color:var(--dim)}
+.pager{display:flex;justify-content:space-between;margin-top:56px;padding-top:18px;border-top:1px solid var(--line);font-family:Consolas,monospace;font-size:13px}
+.pager a.prev::before{content:'← '}
+.pager a.next::after{content:' →'}
+footer{border-top:1px solid var(--line);color:var(--faint);font-size:12px;padding:16px 22px;text-align:center}
+</style></head>
+<body>
+<header class="top"><span class="brand">BAUDFORGE</span><span class="tag">v1.0 docs</span><a class="gh" href="https://github.com/siyal343/baud-forge">GitHub ↗</a></header>
+<div class="wrap">
+<nav class="side"><div class="grp">Getting started</div><a href="index.html">Overview & Quickstart</a><a href="launcher.html">Desktop Launcher</a>
+<div class="grp">Observing</div><a href="packet-stream.html">Packet Stream</a><a href="protocol-dissector.html">Protocol Dissector</a><a href="hex-inspector.html">Hex & ASCII</a><a href="oscilloscope.html">Telemetry Oscilloscope</a><a href="dvr-replay.html">DVR & Replay</a><a href="session-diff.html">Session Diff</a><a href="schema-dialects.html">Schema Dialects</a>
+<div class="grp">Instruments</div><a href="command-forge.html">Command Forge</a><a href="pin-sequencer.html">Pin Sequencer</a><a href="fault-rig.html">HIL Fault Rig</a><a href="script-lab.html">Lua 5.4 Script Lab</a><a href="file-transfer.html">X/YMODEM Transfer</a><a href="mitm-bridge.html">MITM Bridge</a><a href="elf-symbols.html">ELF Symbols</a>
+<div class="grp">Records</div><a href="activity-log.html">Activity Log</a><a href="rec-vaults.html">REC & Vaults</a><a href="exports.html">Exports</a>
+<div class="grp">Reference</div><a href="lua-tutorials.html">Lua 5.4 Tutorials (01–15)</a><a href="lua-api.html" class="cur">Lua 5.4 API Reference</a><a href="keyboard-shortcuts.html">Keyboard Shortcuts</a><a href="troubleshooting.html">Troubleshooting</a></nav>
+<main><h1>BaudForge Lua 5.4 Scripting API Reference</h1>
+<p><strong>Applies to:</strong> Native Rust <code>bforge-script</code> (<code>mlua</code> Lua 5.4) and Script Lab Offline Simulator (<code>ui/src/services/luaSandboxFallback.ts</code>)<br><strong>Progressive Curriculum:</strong> <a href="lua-tutorials.html"><code>docs/LUA_SCRIPTING_TUTORIAL.md</code></a> (Tutorials <code>01</code>–<code>15</code>)<br><strong>Source of Truth:</strong> <a href="../crates/bforge-script/src/runtime.rs"><code>crates/bforge-script/src/runtime.rs</code></a> · <a href="../crates/bforge-script/src/frame.rs"><code>crates/bforge-script/src/frame.rs</code></a></p>
+<hr>
+<h2>1. Sandbox &amp; Execution Bounds</h2>
+<p>BaudForge runs each armed script inside an isolated Lua 5.4 VM with deterministic resource caps:</p>
+<table>
+<thead>
+<tr>
+<th align="left">Limit / Property</th>
+<th align="left">Native Rust (<code>bforge-script</code>)</th>
+<th align="left">Offline Simulator (<code>luaSandboxFallback.ts</code>)</th>
+</tr>
+</thead>
+<tbody><tr>
+<td align="left"><strong>Lua Standard Libraries</strong></td>
+<td align="left"><code>table</code>, <code>string</code>, <code>math</code>, <code>utf8</code> (<code>io</code>, <code>os</code>, <code>package</code>, <code>debug</code>, <code>require</code>, <code>dofile</code>, <code>loadfile</code> stripped)</td>
+<td align="left">Subset of <code>table</code>, <code>string</code>, <code>math</code>, <code>utf8</code></td>
+</tr>
+<tr>
+<td align="left"><strong>Per-Callback Instruction Budget</strong></td>
+<td align="left"><code>200,000</code> instructions (<code>HOOK_TICK = 500</code>)</td>
+<td align="left"><code>20,000</code> interpreter steps</td>
+</tr>
+<tr>
+<td align="left"><strong>VM Heap Memory Limit</strong></td>
+<td align="left"><code>4 MiB</code> default (<code>1 MiB</code> min, <code>16 MiB</code> max configurable)</td>
+<td align="left">Estimated in UI (<code>24 KB + source * 4</code>)</td>
+</tr>
+<tr>
+<td align="left"><strong>Timers (<code>bforge.on_timer</code>)</strong></td>
+<td align="left">Max <code>8</code> timers per VM, min interval <code>10 ms</code></td>
+<td align="left">Compiled &amp; listed (fires in live engine)</td>
+</tr>
+<tr>
+<td align="left"><strong>Side-Effect TX (<code>bforge.send</code>)</strong></td>
+<td align="left">Max <code>16</code> queued sends per callback invocation</td>
+<td align="left">Recorded in Dry-Run <code>actions</code></td>
+</tr>
+<tr>
+<td align="left"><strong>Log Rate Limit</strong></td>
+<td align="left">Token bucket: <code>20</code> burst, <code>50 msg/s</code> sustained</td>
+<td align="left">Recorded in Dry-Run <code>actions</code> &amp; Script Console</td>
+</tr>
+<tr>
+<td align="left"><strong>Error Policy</strong></td>
+<td align="left"><code>fail_open</code> (forward original frame) or <code>fail_closed</code> (drop frame)</td>
+<td align="left"><code>fail_open</code> or <code>fail_closed</code></td>
+</tr>
+</tbody></table>
+<hr>
+<h2>2. <code>bforge</code> Global API</h2>
+<h3>2.1 Lifecycle &amp; Frame Hooks</h3>
+<table>
+<thead>
+<tr>
+<th align="left">Function</th>
+<th align="left">Signature</th>
+<th align="left">When It Runs</th>
+</tr>
+</thead>
+<tbody><tr>
+<td align="left"><strong><code>bforge.on_init</code></strong></td>
+<td align="left"><code>bforge.on_init(fn(ctx))</code></td>
+<td align="left">Once when the script is armed or loaded. Use to call <code>bforge.seed(...)</code> and initialize counters/tables.</td>
+</tr>
+<tr>
+<td align="left"><strong><code>bforge.on_rx_frame</code></strong></td>
+<td align="left"><code>bforge.on_rx_frame([port_or_star], fn(frame, dir))</code></td>
+<td align="left">Post-framer on every received packet matching <code>port</code> (or <code>&quot;*&quot;</code> / omitted for all ports).</td>
+</tr>
+<tr>
+<td align="left"><strong><code>bforge.on_tx_frame</code></strong></td>
+<td align="left"><code>bforge.on_tx_frame([port_or_star], fn(frame, dir))</code></td>
+<td align="left">Before wire transmission on <code>port</code> (or <code>&quot;*&quot;</code> / omitted).</td>
+</tr>
+<tr>
+<td align="left"><strong><code>bforge.on_mitm_frame</code></strong></td>
+<td align="left"><code>bforge.on_mitm_frame([bridge_or_star], fn(frame, dir))</code></td>
+<td align="left">Inline inside a dual-port MITM bridge (<code>frame.direction</code> is <code>&quot;mitm_a_to_b&quot;</code> or <code>&quot;mitm_b_to_a&quot;</code>).</td>
+</tr>
+<tr>
+<td align="left"><strong><code>bforge.on_raw_chunk</code></strong></td>
+<td align="left"><code>bforge.on_raw_chunk([port_or_star], fn(chunk, dir))</code></td>
+<td align="left">Pre-framer on raw transport byte chunks (for sync-word corruption or fragmentation tests).</td>
+</tr>
+<tr>
+<td align="left"><strong><code>bforge.on_dissect</code></strong></td>
+<td align="left"><code>bforge.on_dissect([port_or_star], fn(frame, dir))</code></td>
+<td align="left">Custom protocol dissector hook; emit decoded fields via <code>frame:add_field(...)</code>.</td>
+</tr>
+<tr>
+<td align="left"><strong><code>bforge.on_timer</code></strong></td>
+<td align="left"><code>bforge.on_timer(interval_ms, fn(ctx))</code></td>
+<td align="left">Periodic monotonic tick (<code>interval_ms</code> clamped to <code>&gt;= 10 ms</code>, max <code>8</code> timers).</td>
+</tr>
+<tr>
+<td align="left"><strong><code>bforge.on_alert</code></strong></td>
+<td align="left"><code>bforge.on_alert([alert_name], fn(alert))</code></td>
+<td align="left">Fires when a configured workspace alert (e.g., <code>&quot;dead_man_timer&quot;</code>) triggers.</td>
+</tr>
+<tr>
+<td align="left"><strong><code>bforge.on_command</code></strong></td>
+<td align="left"><code>bforge.on_command(name, fn(args))</code></td>
+<td align="left">Named payload generator callable from Command Forge; returns bytes, spaced hex, or a byte array.</td>
+</tr>
+<tr>
+<td align="left"><strong><code>bforge.on_frame</code></strong></td>
+<td align="left"><code>bforge.on_frame(fn(frame_or_hex))</code></td>
+<td align="left">Legacy single-hook fallback handler.</td>
+</tr>
+</tbody></table>
+<h3>2.2 Frame Return Values &amp; Verdict Precedence</h3>
+<p>Inside <code>on_rx_frame</code>, <code>on_tx_frame</code>, <code>on_mitm_frame</code>, and <code>on_raw_chunk</code>, return behavior is resolved in this order:</p>
+<ol>
+<li><strong>Drop:</strong> Calling <code>frame:drop()</code>, returning <code>nil</code> explicitly, or returning <code>false</code> drops the frame.</li>
+<li><strong>Burst:</strong> Returning <code>bforge.burst({ ... })</code> replaces the frame with 1 or more timed entries:<ul>
+<li>Each entry may be a <code>LuaFrame</code>, spaced hex string, raw byte string, byte array <code>{0xAA, 0x55}</code>, or <code>{ bytes = ..., delay_ms = 20 }</code>.</li>
+</ul>
+</li>
+<li><strong>Delay:</strong> Calling <code>frame:delay_ms(ms)</code> (or <code>frame:forward_after_ms(ms)</code>) schedules delayed forwarding (preserving any byte mutations).</li>
+<li><strong>Mutated / Replaced Send:</strong> Returning a <code>LuaFrame</code>, spaced hex string, raw byte string, or byte array <code>{...}</code> sends the modified bytes.</li>
+<li><strong>Pass:</strong> Returning nothing (implicit <code>nil</code> with no <code>frame:drop()</code> and no mutations) forwards the original frame zero-copy.</li>
+</ol>
+<h3>2.3 Active TX, Bursts &amp; Hardware Pins</h3>
+<table>
+<thead>
+<tr>
+<th align="left">Function</th>
+<th align="left">Signature</th>
+<th align="left">Description</th>
+</tr>
+</thead>
+<tbody><tr>
+<td align="left"><strong><code>bforge.send</code></strong></td>
+<td align="left"><code>bforge.send(port, data, [opts])</code></td>
+<td align="left">Queue an out-of-band frame on <code>port</code> (<code>data</code> = raw string, spaced hex, byte table, or <code>LuaFrame</code>). Optional <code>opts = { delay_ms = 10 }</code>. Max <code>16</code> per callback.</td>
+</tr>
+<tr>
+<td align="left"><strong><code>bforge.burst</code></strong></td>
+<td align="left"><code>bforge.burst(entries)</code></td>
+<td align="left">Wrap a table of frame entries (with optional <code>delay_ms</code>) to return as a multi-packet burst.</td>
+</tr>
+<tr>
+<td align="left"><strong><code>bforge.set_pins</code></strong></td>
+<td align="left"><code>bforge.set_pins([port], dtr, rts)</code></td>
+<td align="left">Drive <code>DTR</code> and <code>RTS</code> modem control lines (<code>boolean</code> values). Omits <code>port</code> to target <code>&quot;*&quot;</code>.</td>
+</tr>
+<tr>
+<td align="left"><strong><code>bforge.pulse_pin</code></strong></td>
+<td align="left"><code>bforge.pulse_pin([port], pin, ms)</code></td>
+<td align="left">Pulse <code>&quot;DTR&quot;</code> or <code>&quot;RTS&quot;</code> for <code>ms</code> milliseconds.</td>
+</tr>
+<tr>
+<td align="left"><strong><code>bforge.trigger_pin</code></strong></td>
+<td align="left"><code>bforge.trigger_pin(port, spec)</code></td>
+<td align="left">Trigger a pin sequence from a string spec (e.g., <code>&quot;DTR:50&quot;</code>).</td>
+</tr>
+</tbody></table>
+<h3>2.4 Telemetry, Assertions &amp; Logging</h3>
+<table>
+<thead>
+<tr>
+<th align="left">Function</th>
+<th align="left">Signature</th>
+<th align="left">Description</th>
+</tr>
+</thead>
+<tbody><tr>
+<td align="left"><strong><code>bforge.plot</code></strong></td>
+<td align="left"><code>bforge.plot(series, value, [timestamp_us])</code></td>
+<td align="left">Push a numeric sample to <code>script:&lt;series&gt;</code> for <code>PlotForgeView</code> and <code>OscilloscopeView</code>.</td>
+</tr>
+<tr>
+<td align="left"><strong><code>bforge.metric</code></strong></td>
+<td align="left"><code>bforge.metric(key, [value])</code></td>
+<td align="left">With <code>value</code> (number, string, or boolean): set a Watch scalar. Without <code>value</code>: read current metric value (or <code>nil</code>).</td>
+</tr>
+<tr>
+<td align="left"><strong><code>bforge.assert</code></strong></td>
+<td align="left"><code>bforge.assert(label, cond, [msg])</code> or <code>bforge.assert(cond, label, [msg])</code></td>
+<td align="left">Record a pass/fail assertion in the <code>bforge.assert</code> scoreboard; returns <code>boolean</code> <code>cond</code>.</td>
+</tr>
+<tr>
+<td align="left"><strong><code>bforge.log</code></strong></td>
+<td align="left"><code>bforge.log(msg)</code> or <code>bforge.log(level, msg)</code></td>
+<td align="left">Rate-limited log (<code>level</code>: <code>&quot;info&quot;</code>, <code>&quot;warn&quot;</code>, <code>&quot;error&quot;</code>, <code>&quot;debug&quot;</code>).</td>
+</tr>
+<tr>
+<td align="left"><strong><code>bforge.log_info</code></strong></td>
+<td align="left"><code>bforge.log_info(msg)</code></td>
+<td align="left">Shorthand for <code>bforge.log(&quot;info&quot;, msg)</code>.</td>
+</tr>
+<tr>
+<td align="left"><strong><code>bforge.log_warn</code></strong></td>
+<td align="left"><code>bforge.log_warn(msg)</code></td>
+<td align="left">Shorthand for <code>bforge.log(&quot;warn&quot;, msg)</code>.</td>
+</tr>
+<tr>
+<td align="left"><strong><code>bforge.log_error</code></strong></td>
+<td align="left"><code>bforge.log_error(msg)</code></td>
+<td align="left">Shorthand for <code>bforge.log(&quot;error&quot;, msg)</code>.</td>
+</tr>
+</tbody></table>
+<h3>2.5 Time, Deterministic PRNG, Codecs &amp; Checksums</h3>
+<table>
+<thead>
+<tr>
+<th align="left">Function</th>
+<th align="left">Signature</th>
+<th align="left">Description</th>
+</tr>
+</thead>
+<tbody><tr>
+<td align="left"><strong><code>bforge.now_us</code></strong></td>
+<td align="left"><code>bforge.now_us()</code></td>
+<td align="left">Monotonic session elapsed time in microseconds (<code>integer</code>).</td>
+</tr>
+<tr>
+<td align="left"><strong><code>bforge.now_ms</code></strong></td>
+<td align="left"><code>bforge.now_ms()</code></td>
+<td align="left">Monotonic session elapsed time in milliseconds (<code>integer</code>).</td>
+</tr>
+<tr>
+<td align="left"><strong><code>bforge.seed</code></strong></td>
+<td align="left"><code>bforge.seed(n)</code></td>
+<td align="left">Seed the deterministic <code>xorshift64*</code> PRNG.</td>
+</tr>
+<tr>
+<td align="left"><strong><code>bforge.rand</code></strong></td>
+<td align="left"><code>bforge.rand([min, max])</code></td>
+<td align="left">No args: float in <code>[0, 1)</code>. <code>(n)</code>: integer in <code>[1, n]</code>. <code>(min, max)</code>: integer in <code>[min, max]</code>.</td>
+</tr>
+<tr>
+<td align="left"><strong><code>bforge.hex</code></strong></td>
+<td align="left"><code>bforge.hex(val)</code></td>
+<td align="left">Convert a byte table, raw string, or <code>LuaFrame</code> to uppercase spaced hex (<code>&quot;AA 55 01&quot;</code>).</td>
+</tr>
+<tr>
+<td align="left"><strong><code>bforge.unhex</code></strong></td>
+<td align="left"><code>bforge.unhex(hex_or_frame)</code></td>
+<td align="left">Convert spaced hex (or <code>LuaFrame</code>) to a 1-indexed Lua byte array <code>{ 0xAA, 0x55, ... }</code>.</td>
+</tr>
+<tr>
+<td align="left"><strong><code>bforge.crc</code></strong></td>
+<td align="left"><code>bforge.crc(algo, data)</code></td>
+<td align="left">Compute checksum integer over a raw string, spaced hex, byte table, or <code>LuaFrame</code>.</td>
+</tr>
+</tbody></table>
+<p><strong>Supported <code>algo</code> values</strong> (for <code>bforge.crc</code> and <code>frame:recalc_crc</code>):</p>
+<ul>
+<li><code>&quot;crc8&quot;</code> / <code>&quot;crc8_atm&quot;</code> (8-bit, poly <code>0x07</code>)</li>
+<li><code>&quot;crc16_ccitt_false&quot;</code> (16-bit, init <code>0xFFFF</code>, poly <code>0x1021</code>)</li>
+<li><code>&quot;crc16_modbus&quot;</code> (16-bit, init <code>0xFFFF</code>, poly <code>0xA001</code> reflected)</li>
+<li><code>&quot;crc16_xmodem&quot;</code> (16-bit, init <code>0x0000</code>, poly <code>0x1021</code>)</li>
+<li><code>&quot;crc32c&quot;</code> (32-bit Castagnoli)</li>
+</ul>
+<hr>
+<h2>3. <code>LuaFrame</code> UserData API</h2>
+<h3>3.1 Metadata Properties (Read-Only)</h3>
+<table>
+<thead>
+<tr>
+<th align="left">Property</th>
+<th align="left">Type</th>
+<th align="left">Description</th>
+</tr>
+</thead>
+<tbody><tr>
+<td align="left"><code>frame.port</code></td>
+<td align="left"><code>string</code></td>
+<td align="left">Port name (e.g., <code>&quot;COM8&quot;</code> or <code>&quot;ttyUSB0&quot;</code>).</td>
+</tr>
+<tr>
+<td align="left"><code>frame.direction</code></td>
+<td align="left"><code>string</code></td>
+<td align="left"><code>&quot;RX&quot;</code>, <code>&quot;TX&quot;</code>, <code>&quot;mitm_a_to_b&quot;</code>, <code>&quot;mitm_b_to_a&quot;</code>, or <code>&quot;RAW&quot;</code>.</td>
+</tr>
+<tr>
+<td align="left"><code>frame.seq_id</code></td>
+<td align="left"><code>integer</code></td>
+<td align="left">Monotonic frame sequence number.</td>
+</tr>
+<tr>
+<td align="left"><code>frame.timestamp_us</code></td>
+<td align="left"><code>integer</code></td>
+<td align="left">Frame capture timestamp in microseconds.</td>
+</tr>
+<tr>
+<td align="left"><code>frame.len</code></td>
+<td align="left"><code>integer</code></td>
+<td align="left">Current byte length of the frame.</td>
+</tr>
+<tr>
+<td align="left"><code>frame.hex</code></td>
+<td align="left"><code>string</code></td>
+<td align="left">Lazy uppercase spaced-hex representation (<code>&quot;AA 55 ...&quot;</code>).</td>
+</tr>
+<tr>
+<td align="left"><code>frame.bridge</code></td>
+<td align="left"><code>string | nil</code></td>
+<td align="left">MITM bridge identifier when inside <code>on_mitm_frame</code>, else <code>nil</code>.</td>
+</tr>
+</tbody></table>
+<h3>3.2 Schema Dissection Methods</h3>
+<table>
+<thead>
+<tr>
+<th align="left">Method</th>
+<th align="left">Signature</th>
+<th align="left">Description</th>
+</tr>
+</thead>
+<tbody><tr>
+<td align="left"><code>frame:get</code></td>
+<td align="left"><code>frame:get(name)</code></td>
+<td align="left">Decode and return field <code>name</code> from the active schema (or <code>nil</code> if missing).</td>
+</tr>
+<tr>
+<td align="left"><code>frame:set</code></td>
+<td align="left"><code>frame:set(name, value)</code></td>
+<td align="left">Patch schema field <code>name</code> in-place. Returns <code>frame</code> for chaining.</td>
+</tr>
+<tr>
+<td align="left"><code>frame:fields</code></td>
+<td align="left"><code>frame:fields()</code></td>
+<td align="left">Return a Lua table mapping all decoded field names to their values.</td>
+</tr>
+<tr>
+<td align="left"><code>frame:dissect</code></td>
+<td align="left"><code>frame:dissect(schema_tag)</code></td>
+<td align="left">Switch active schema on this frame (e.g., <code>&quot;ImuPacket&quot;</code>, <code>&quot;EpsCommand&quot;</code>). Returns <code>boolean</code>.</td>
+</tr>
+<tr>
+<td align="left"><code>frame:add_field</code></td>
+<td align="left"><code>frame:add_field(name, off, len, val_str, [val_num])</code></td>
+<td align="left">Emit a custom dissected field (used in <code>on_dissect</code>).</td>
+</tr>
+</tbody></table>
+<h3>3.3 Zero-Offset Binary Readers</h3>
+<p>All offsets are <strong>0-indexed</strong> from the start of the frame:</p>
+<table>
+<thead>
+<tr>
+<th align="left">Method</th>
+<th align="left">Width</th>
+<th align="left">Signed / Endian</th>
+</tr>
+</thead>
+<tbody><tr>
+<td align="left"><code>frame:u8(off)</code> / <code>frame:i8(off)</code></td>
+<td align="left">1 byte</td>
+<td align="left">Unsigned / Signed</td>
+</tr>
+<tr>
+<td align="left"><code>frame:u16_le(off)</code> / <code>frame:u16_be(off)</code></td>
+<td align="left">2 bytes</td>
+<td align="left">Unsigned LE / BE</td>
+</tr>
+<tr>
+<td align="left"><code>frame:i16_le(off)</code> / <code>frame:i16_be(off)</code></td>
+<td align="left">2 bytes</td>
+<td align="left">Signed LE / BE</td>
+</tr>
+<tr>
+<td align="left"><code>frame:u32_le(off)</code> / <code>frame:u32_be(off)</code></td>
+<td align="left">4 bytes</td>
+<td align="left">Unsigned LE / BE</td>
+</tr>
+<tr>
+<td align="left"><code>frame:i32_le(off)</code> / <code>frame:i32_be(off)</code></td>
+<td align="left">4 bytes</td>
+<td align="left">Signed LE / BE</td>
+</tr>
+<tr>
+<td align="left"><code>frame:f32_le(off)</code> / <code>frame:f32_be(off)</code></td>
+<td align="left">4 bytes</td>
+<td align="left">IEEE-754 float LE / BE</td>
+</tr>
+<tr>
+<td align="left"><code>frame:f64_le(off)</code> / <code>frame:f64_be(off)</code></td>
+<td align="left">8 bytes</td>
+<td align="left">IEEE-754 double LE / BE</td>
+</tr>
+<tr>
+<td align="left"><code>frame:slice(off, len)</code></td>
+<td align="left"><code>len</code> bytes</td>
+<td align="left">Returns raw Lua binary string (<code>string.unpack</code> compatible).</td>
+</tr>
+<tr>
+<td align="left"><code>frame:raw()</code></td>
+<td align="left">full frame</td>
+<td align="left">Returns full frame as a raw Lua binary string.</td>
+</tr>
+<tr>
+<td align="left"><code>frame:clone_bytes()</code> / <code>frame:bytes()</code></td>
+<td align="left">full frame</td>
+<td align="left">Returns a 1-indexed Lua byte array <code>{ b1, b2, ... }</code>.</td>
+</tr>
+</tbody></table>
+<h3>3.4 Zero-Offset Binary Writers &amp; Fault Mutators</h3>
+<table>
+<thead>
+<tr>
+<th align="left">Method</th>
+<th align="left">Signature</th>
+<th align="left">Description</th>
+</tr>
+</thead>
+<tbody><tr>
+<td align="left"><code>frame:set_u8</code></td>
+<td align="left"><code>frame:set_u8(off, val)</code></td>
+<td align="left">Write 1 unsigned byte at <code>off</code>. Returns <code>frame</code>.</td>
+</tr>
+<tr>
+<td align="left"><code>frame:set_u16_le</code> / <code>set_u16_be</code></td>
+<td align="left"><code>frame:set_u16_le(off, val)</code></td>
+<td align="left">Write 2-byte unsigned integer at <code>off</code>. Returns <code>frame</code>.</td>
+</tr>
+<tr>
+<td align="left"><code>frame:set_u32_le</code> / <code>set_u32_be</code></td>
+<td align="left"><code>frame:set_u32_le(off, val)</code></td>
+<td align="left">Write 4-byte unsigned integer at <code>off</code>. Returns <code>frame</code>.</td>
+</tr>
+<tr>
+<td align="left"><code>frame:xor_u8</code></td>
+<td align="left"><code>frame:xor_u8(off, mask)</code></td>
+<td align="left">XOR byte at <code>off</code> with <code>mask</code>. Returns <code>frame</code>.</td>
+</tr>
+<tr>
+<td align="left"><code>frame:xor_bit</code></td>
+<td align="left"><code>frame:xor_bit(off, bit)</code></td>
+<td align="left">Flip bit <code>bit</code> (<code>0..7</code>) at byte <code>off</code>. Returns <code>frame</code>.</td>
+</tr>
+<tr>
+<td align="left"><code>frame:set_bytes</code></td>
+<td align="left"><code>frame:set_bytes(data)</code></td>
+<td align="left">Replace entire frame payload from raw string, spaced hex, or byte table. Returns <code>frame</code>.</td>
+</tr>
+<tr>
+<td align="left"><code>frame:resize</code></td>
+<td align="left"><code>frame:resize(new_len)</code></td>
+<td align="left">Truncate or zero-pad frame to <code>new_len</code> bytes. Returns <code>frame</code>.</td>
+</tr>
+</tbody></table>
+<h3>3.5 Checksums &amp; Verdict Controls</h3>
+<table>
+<thead>
+<tr>
+<th align="left">Method</th>
+<th align="left">Signature</th>
+<th align="left">Description</th>
+</tr>
+</thead>
+<tbody><tr>
+<td align="left"><code>frame:recalc_crc</code></td>
+<td align="left"><code>frame:recalc_crc(algo, [start_off, end_off])</code></td>
+<td align="left">Recompute trailing checksum (<code>1</code>, <code>2</code>, or <code>4</code> bytes at end of frame) over <code>start_off..end_off</code> (default <code>0..len-width</code>). Returns <code>frame</code>.</td>
+</tr>
+<tr>
+<td align="left"><code>frame:corrupt_crc</code></td>
+<td align="left"><code>frame:corrupt_crc([count])</code></td>
+<td align="left">XOR the trailing <code>count</code> bytes (<code>1..4</code>, default <code>1</code>) with <code>0xFF</code>. Returns <code>frame</code>.</td>
+</tr>
+<tr>
+<td align="left"><code>frame:delay_ms</code> / <code>forward_after_ms</code></td>
+<td align="left"><code>frame:delay_ms(ms)</code></td>
+<td align="left">Delay frame forwarding by <code>ms</code> milliseconds. Returns <code>frame</code>.</td>
+</tr>
+<tr>
+<td align="left"><code>frame:drop</code></td>
+<td align="left"><code>frame:drop()</code></td>
+<td align="left">Mark frame to be dropped. Returns <code>frame</code>.</td>
+</tr>
+</tbody></table>
+<div class="pager"><a class="prev" href="lua-tutorials.html">Lua 5.4 Tutorials (01–15)</a><a class="next" href="keyboard-shortcuts.html">Keyboard Shortcuts</a></div></main>
+</div>
+<footer>BaudForge — hardware engineering workstation · built from docs/src with marked · screenshots from the live application on real hardware</footer>
+</body></html>
