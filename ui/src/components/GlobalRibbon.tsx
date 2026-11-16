@@ -26,7 +26,9 @@ import {
   Star,
   Trash2,
   X,
+  FolderOpen,
 } from 'lucide-react';
+import { isDesktopShell } from './Launcher';
 import { UartConfigModal } from './UartConfigModal';
 
 type PanelTier = 'core' | 'telemetry' | 'hil';
@@ -75,6 +77,7 @@ export const GlobalRibbon: React.FC = () => {
     activePreset,
     connect,
     disconnect,
+    returnToLauncher,
     setSelectedPort,
     setBaudRate,
     triggerFlashYield,
@@ -108,6 +111,7 @@ export const GlobalRibbon: React.FC = () => {
       activePreset: s.activePreset,
       connect: s.connect,
       disconnect: s.disconnect,
+      returnToLauncher: s.returnToLauncher,
       setSelectedPort: s.setSelectedPort,
       setBaudRate: s.setBaudRate,
       triggerFlashYield: s.triggerFlashYield,
@@ -144,7 +148,7 @@ export const GlobalRibbon: React.FC = () => {
   };
 
   const [isLayoutMenuOpen, setIsLayoutMenuOpen] = useState(false);
-  const [menuPos, setMenuPos] = useState<{ top: number; left: number } | null>(null);
+  const [menuPos, setMenuPos] = useState<{ top: number; left: number; maxHeight: number } | null>(null);
   const [isUartModalOpen, setIsUartModalOpen] = useState(false);
   const [uartAnchorRect, setUartAnchorRect] = useState<DOMRect | null>(null);
   const [isSaveNameOpen, setIsSaveNameOpen] = useState(false);
@@ -200,7 +204,10 @@ export const GlobalRibbon: React.FC = () => {
   const toggleLayoutMenu = () => {
     if (!isLayoutMenuOpen && layoutMenuRef.current) {
       const rect = layoutMenuRef.current.getBoundingClientRect();
-      setMenuPos({ top: rect.bottom + 4, left: rect.left });
+      const top = Math.max(8, rect.bottom + 4);
+      const left = Math.max(8, Math.min(rect.left, window.innerWidth - 296));
+      const maxHeight = Math.max(200, window.innerHeight - top - 12);
+      setMenuPos({ top, left, maxHeight });
       setIsSaveNameOpen(false);
       setIsLayoutMenuOpen(true);
     } else {
@@ -348,7 +355,7 @@ export const GlobalRibbon: React.FC = () => {
           onClick={isConnected ? disconnect : connect}
           title={
             isConnected
-              ? 'Close active serial port and halt stream ingestion'
+              ? 'Disconnect active serial port (stay in workspace to switch port or baud)'
               : 'Open selected serial port at specified baud rate'
           }
           className={`flex items-center gap-1 px-2.5 py-0.5 rounded text-[11px] font-semibold transition-all ${
@@ -369,6 +376,18 @@ export const GlobalRibbon: React.FC = () => {
             </>
           )}
         </button>
+
+        {isDesktopShell() && (
+          <button
+            type="button"
+            onClick={() => void returnToLauncher()}
+            title="Stop session and return to the workspace Launcher"
+            className="flex items-center gap-1 px-2 py-0.5 rounded text-[11px] font-mono bg-bf-subpanel hover:bg-bf-hover border border-bf-line text-bf-mute hover:text-bf-body transition-colors"
+          >
+            <FolderOpen className="w-3 h-3" />
+            <span>LAUNCHER</span>
+          </button>
+        )}
       </div>
 
       {/* Center: Layout Presets & Panel Catalog Menu */}
@@ -392,9 +411,10 @@ export const GlobalRibbon: React.FC = () => {
                 position: 'fixed',
                 top: `${menuPos.top}px`,
                 left: `${menuPos.left}px`,
+                maxHeight: `${menuPos.maxHeight}px`,
                 zIndex: 999999,
               }}
-              className="w-72 bg-bf-surface border border-bf-line rounded-lg shadow-[0_16px_48px_rgb(var(--bf-shadow-rgb)/0.95)] p-2.5 font-mono text-[11px] text-bf-body flex flex-col gap-1"
+              className="w-72 bg-bf-surface border border-bf-line rounded-lg shadow-[0_16px_48px_rgb(var(--bf-shadow-rgb)/0.95)] p-2.5 font-mono text-[11px] text-bf-body flex flex-col gap-1 overflow-y-auto"
             >
               <div className="text-[11px] uppercase tracking-wider text-bf-faint px-2 py-0.5 font-bold">
                 Layout Presets

@@ -132,7 +132,8 @@ interface WorkstationState {
   requestOpenPanel: (id: string) => void;
   requestResetLayout: () => void;
   connect: () => Promise<void>;
-  disconnect: () => void;
+  disconnect: () => Promise<void> | void;
+  returnToLauncher: () => Promise<void>;
   setSelectedPort: (port: string) => void;
   setBaudRate: (baud: number) => void;
   setFraming: (framing: string) => void;
@@ -615,9 +616,34 @@ export const useWorkstationStore = create<WorkstationState>((set, get) => ({
   requestOpenPanel: (id) => set({ openPanelId: id }),
   requestResetLayout: () => set((state) => ({ resetLayoutTrigger: state.resetLayoutTrigger + 1 })),
   connect: async () => {
-    // The desktop launcher owns real session starts (Tauri). Against a CLI
-    // engine, a running session's ports are fixed — /api/quick-connect says
-    // so honestly instead of pretending to open one.
+    if (isDesktopShell()) {
+      const core = (window as unknown as {
+        __TAURI__?: {
+          core?: { invoke: (cmd: string, args?: Record<string, unknown>) => Promise<unknown> };
+        };
+      }).__TAURI__?.core;
+      if (core) {
+        try {
+          const url = await core.invoke('quick_connect', {
+            device: get().selectedPort,
+            baudRate: get().baudRate,
+            framing: get().delimiterMode,
+          });
+          if (typeof url === 'string' && url.length > 0) {
+            set({ isConnected: true, portState: 'open' });
+            toast.success('Link opened', `${get().selectedPort} @ ${get().baudRate} baud connected.`);
+            window.location.replace(`index.html?api=${encodeURIComponent(url)}&v=${Date.now()}`);
+            return;
+          }
+        } catch (error) {
+          set({ isConnected: false, portState: 'closed' });
+          toast.error('Connect failed', String(error));
+          return;
+        }
+      }
+    }
+    // Browser / CLI engine: a running session's ports are fixed — /api/quick-connect
+    // says so honestly instead of pretending to open one.
     const result = await engineApi.quickConnect(get().selectedPort, get().baudRate);
     if (result.ok) {
       set({ isConnected: true, portState: 'open' });
@@ -635,16 +661,15 @@ export const useWorkstationStore = create<WorkstationState>((set, get) => ({
   },
 
   disconnect: async () => {
-    // The engine owns the port — a UI-only flip would leave it streaming.
-    // Desktop: the shell stops the session and the launcher returns.
-    // Browser: the engine seals the vault and its serve loop ends.
+    // Release the port and seal the vault, but keep the user in the workspace
+    // so they can pick another port or baud rate and click Connect in place.
     if (isDesktopShell()) {
       try {
         const core = (window as unknown as { __TAURI__?: { core?: { invoke: (cmd: string) => Promise<unknown> } } }).__TAURI__?.core;
         if (core) {
           await core.invoke('stop_workspace');
-          toast.info('Session stopped', 'The engine sealed the vault; the launcher is opening.');
-          window.location.replace('index.html');
+          set({ isConnected: false, portState: 'closed' });
+          toast.info('Port disconnected', 'Select another port or baud rate and click Connect, or open Launcher.');
           return;
         }
       } catch {
@@ -658,6 +683,20 @@ export const useWorkstationStore = create<WorkstationState>((set, get) => ({
     } else {
       set({ isConnected: false, portState: 'closed' });
       toast.warn('Workstation detached', 'The engine could not be stopped from here (' + (result.error ?? 'unreachable') + ') — stop its process to release the port.');
+    }
+  },
+
+  returnToLauncher: async () => {
+    if (isDesktopShell()) {
+      try {
+        const core = (window as unknown as { __TAURI__?: { core?: { invoke: (cmd: string) => Promise<unknown> } } }).__TAURI__?.core;
+        if (core) {
+          await core.invoke('stop_workspace');
+        }
+      } catch {
+        // still navigate back to launcher
+      }
+      window.location.replace('index.html');
     }
   },
 
