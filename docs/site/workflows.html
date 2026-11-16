@@ -1,0 +1,182 @@
+<!doctype html>
+<html lang="en"><head><meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Workflows & User Flows — BaudForge</title>
+<meta name="description" content="BaudForge user documentation — hardware engineering workstation">
+<style>
+:root{--bg:#0a0d13;--panel:#10141d;--panel2:#161c28;--line:#222d3d;--fg:#e2e8f0;--dim:#94a3b8;--faint:#64748b;--accent:#00e5ff;--warn:#f59e0b;--err:#ef4444}
+*{box-sizing:border-box}
+body{margin:0;background:var(--bg);color:var(--fg);font:14px/1.65 'Segoe UI',system-ui,sans-serif}
+a{color:var(--accent);text-decoration:none}a:hover{text-decoration:underline}
+header.top{display:flex;align-items:center;gap:12px;padding:10px 22px;border-bottom:1px solid var(--line);background:var(--panel);position:sticky;top:0;z-index:10}
+header.top .brand{font-family:Consolas,monospace;font-weight:700;letter-spacing:.18em;color:var(--accent);font-size:15px}
+header.top .tag{font-size:11px;color:var(--dim);border:1px solid var(--line);border-radius:3px;padding:1px 7px}
+header.top .gh{margin-left:auto;font-size:12px}
+.wrap{display:flex;max-width:1440px;margin:0 auto}
+nav.side{width:250px;min-width:250px;padding:22px 14px 60px;border-right:1px solid var(--line);position:sticky;top:53px;height:calc(100vh - 53px);overflow-y:auto;background:var(--panel)}
+nav.side .grp{font-family:Consolas,monospace;font-size:10px;letter-spacing:.14em;text-transform:uppercase;color:var(--faint);margin:18px 10px 6px}
+nav.side a{display:block;padding:5px 10px;border-radius:5px;color:var(--dim);font-size:13px}
+nav.side a:hover{background:var(--panel2);color:var(--fg);text-decoration:none}
+nav.side a.cur{background:rgba(0,229,255,.08);color:var(--accent);border-left:2px solid var(--accent)}
+main{flex:1;min-width:0;padding:34px 44px 90px;max-width:940px}
+main h1{font-size:27px;border-bottom:1px solid var(--line);padding-bottom:12px;margin-top:0}
+main h2{font-size:19px;margin-top:38px;border-left:3px solid var(--accent);padding-left:10px}
+main h3{font-size:15px;color:var(--dim)}
+main img{max-width:100%;border:1px solid var(--line);border-radius:8px;margin:14px 0;box-shadow:0 6px 24px rgba(0,0,0,.45);display:block}
+main code{background:var(--panel2);border:1px solid var(--line);border-radius:4px;padding:1px 6px;font:12.5px Consolas,monospace;color:#fbcfe8}
+main pre{background:var(--panel);border:1px solid var(--line);border-radius:8px;padding:14px 16px;overflow-x:auto}
+main pre code{background:none;border:none;padding:0;color:#a5f3fc;line-height:1.55}
+main table{border-collapse:collapse;width:100%;margin:14px 0;font-size:13.5px}
+main th{background:var(--panel2);text-align:left;font-family:Consolas,monospace;font-size:12px;letter-spacing:.05em;text-transform:uppercase;color:var(--dim)}
+main th,main td{border:1px solid var(--line);padding:7px 11px;vertical-align:top}
+main tr:nth-child(even) td{background:rgba(22,28,40,.4)}
+main blockquote{border-left:3px solid var(--warn);background:rgba(245,158,11,.07);margin:14px 0;padding:10px 16px;color:var(--dim)}
+.pager{display:flex;justify-content:space-between;margin-top:56px;padding-top:18px;border-top:1px solid var(--line);font-family:Consolas,monospace;font-size:13px}
+.pager a.prev::before{content:'← '}
+.pager a.next::after{content:' →'}
+footer{border-top:1px solid var(--line);color:var(--faint);font-size:12px;padding:16px 22px;text-align:center}
+</style></head>
+<body>
+<header class="top"><span class="brand">BAUDFORGE</span><span class="tag">v1.0 docs</span><a class="gh" href="https://github.com/siyal343/baud-forge">GitHub ↗</a></header>
+<div class="wrap">
+<nav class="side"><div class="grp">Getting started</div><a href="index.html">Overview & Quickstart</a><a href="launcher.html">Desktop Launcher</a><a href="workflows.html" class="cur">Workflows & User Flows</a>
+<div class="grp">Observing</div><a href="packet-stream.html">Packet Stream</a><a href="protocol-dissector.html">Protocol Dissector</a><a href="hex-inspector.html">Hex & ASCII</a><a href="oscilloscope.html">Telemetry Oscilloscope</a><a href="dvr-replay.html">DVR & Replay</a><a href="session-diff.html">Session Diff</a><a href="schema-dialects.html">Schema Dialects</a>
+<div class="grp">Instruments</div><a href="command-forge.html">Command Forge</a><a href="pin-sequencer.html">Pin Sequencer</a><a href="fault-rig.html">HIL Fault Rig</a><a href="script-lab.html">Lua 5.4 Script Lab</a><a href="file-transfer.html">X/YMODEM Transfer</a><a href="mitm-bridge.html">MITM Bridge</a><a href="elf-symbols.html">ELF Symbols</a>
+<div class="grp">Records</div><a href="activity-log.html">Activity Log</a><a href="rec-vaults.html">REC & Vaults</a><a href="exports.html">Exports</a>
+<div class="grp">Reference</div><a href="lua-tutorials.html">Lua 5.4 Tutorials (01–15)</a><a href="lua-api.html">Lua 5.4 API Reference</a><a href="keyboard-shortcuts.html">Keyboard Shortcuts</a><a href="troubleshooting.html">Troubleshooting</a></nav>
+<main><h1>Workflows &amp; User Flows</h1>
+<p>BaudForge combines 15 specialized panels around a 4-panel daily core. Use the <strong>3 Recipe Flows</strong> below to see which panels work together for common engineering tasks, or browse the individual panel flows.</p>
+<hr>
+<h2>Recipe Flows (Goal-Oriented)</h2>
+<h3>Recipe A: MCU Bring-Up &amp; Firmware Flash</h3>
+<pre><code class="language-mermaid">flowchart LR
+    A[&quot;Pin Sequencer (Bootloader DTR/RTS)&quot;] --&gt; B{&quot;Flash Method?&quot;}
+    B --&gt;|&quot;In-App&quot;| C[&quot;X/YMODEM Transfer (.bin)&quot;]
+    B --&gt;|&quot;External Programmer&quot;| D[&quot;Flash Yield (Release Port)&quot;]
+    D --&gt; E[&quot;Run External Flasher&quot;]
+    E --&gt; F[&quot;Re-Attach Port&quot;]
+    C --&gt; G[&quot;Pin Sequencer (Reset)&quot;]
+    F --&gt; G
+    G --&gt; H[&quot;Packet Stream (Verify Boot Banner)&quot;]
+</code></pre>
+<h3>Recipe B: Binary Telemetry &amp; Signal Debug</h3>
+<pre><code class="language-mermaid">flowchart LR
+    A[&quot;Schema Dialects (Load .h / .proto / MAVLink)&quot;] --&gt; B[&quot;Packet Stream (Live Decoded Frames)&quot;]
+    B --&gt; C[&quot;Click Packet -&gt; Protocol Dissector&quot;]
+    C --&gt; D[&quot;Bind Numeric Field to Plot&quot;]
+    D --&gt; E[&quot;Oscilloscope (Live DSO) or Plot Forge (FFT / Math)&quot;]
+    E --&gt; F[&quot;Scrub DVR Timeline on Glitch&quot;]
+</code></pre>
+<h3>Recipe C: HIL Fault Injection &amp; Crash Triage</h3>
+<pre><code class="language-mermaid">flowchart LR
+    A[&quot;Connect Port A + Port B (MITM Bridge)&quot;] --&gt; B{&quot;Fault Type?&quot;}
+    B --&gt;|&quot;Static TX Fault&quot;| C[&quot;HIL Fault Rig (Bit Flip / Drop / CRC)&quot;]
+    B --&gt;|&quot;Programmable Logic&quot;| D[&quot;Lua 5.4 Script Lab (Dry-Run -&gt; Arm)&quot;]
+    C --&gt; E[&quot;Observe DUT Recovery in Packet Stream&quot;]
+    D --&gt; E
+    E --&gt;|&quot;Crash PC Logged&quot;| F[&quot;ELF Symbols (Load .elf -&gt; Resolve Line)&quot;]
+</code></pre>
+<hr>
+<h2>Master Session Lifecycle</h2>
+<pre><code class="language-mermaid">flowchart LR
+    A[&quot;Open BaudForge (Launcher)&quot;] --&gt; B{&quot;Target Mode?&quot;}
+    B --&gt;|&quot;Hardware Port&quot;| C[&quot;Select Serial Port + Baud/8N1&quot;]
+    B --&gt;|&quot;No Hardware&quot;| D[&quot;Start Simulated Mode&quot;]
+    B --&gt;|&quot;Replay File&quot;| E[&quot;Open .bflog Vault&quot;]
+    C --&gt; F[&quot;Connect -&gt; Core 4-Panel Workbench&quot;]
+    D --&gt; F
+    E --&gt; G[&quot;Scrub DVR Timeline &amp; Inspect&quot;]
+    F --&gt; L[&quot;Toggle REC -&gt; Write .bflog Vault&quot;]
+    L --&gt; M[&quot;Export (PCAPNG / CSV / JSONL / Saleae)&quot;]
+</code></pre>
+<hr>
+<h2>Core Daily Workbench</h2>
+<h3><a href="packet-stream.html">Packet Stream</a></h3>
+<pre><code class="language-mermaid">flowchart LR
+    A[&quot;Live RX/TX Bytes&quot;] --&gt; B[&quot;Framer (COBS / SLIP / Delimiter / Fixed)&quot;]
+    B --&gt; C[&quot;Virtualized Packet List&quot;]
+    C --&gt; D[&quot;Filter by Port / Direction / Search&quot;]
+    C --&gt; E[&quot;Click Packet Row&quot;]
+    E --&gt; F[&quot;Updates Protocol Dissector&quot;]
+    E --&gt; G[&quot;Toggle HEX PANE (Inline Hex+ASCII)&quot;]
+    G --&gt;|&quot;Optional&quot;| H[&quot;Pop Out to Hex Inspector Tab&quot;]
+</code></pre>
+<h3><a href="protocol-dissector.html">Protocol Dissector</a></h3>
+<pre><code class="language-mermaid">flowchart LR
+    A[&quot;Select Packet in Packet Stream&quot;] --&gt; B{&quot;Schema Loaded?&quot;}
+    B --&gt;|&quot;No&quot;| C[&quot;Open Schema Dialects (.h / .proto / MAVLink)&quot;]
+    C --&gt; D[&quot;Decoded Field Tree&quot;]
+    B --&gt;|&quot;Yes&quot;| D
+    D --&gt; E[&quot;Inspect Field Values &amp; Bitfields&quot;]
+    D --&gt; F[&quot;Click Plot / Bind on Numeric Field&quot;]
+    F --&gt; G[&quot;Streams Field to Oscilloscope / Plot Forge&quot;]
+</code></pre>
+<h3><a href="oscilloscope.html">Telemetry Oscilloscope</a> &amp; Plot Forge</h3>
+<pre><code class="language-mermaid">flowchart LR
+    A[&quot;Bind Numeric Fields or script:series&quot;] --&gt; B{&quot;Analysis Need?&quot;}
+    B --&gt;|&quot;Live Edge Trigger / Scope&quot;| C[&quot;Oscilloscope (Time-Domain DSO)&quot;]
+    B --&gt;|&quot;FFT / XY / Math Expr&quot;| D[&quot;Plot Forge (Multi-Chart Studio)&quot;]
+    C &lt;--&gt;|&quot;1-Click Switch&quot;| D
+</code></pre>
+<h3><a href="command-forge.html">Command Forge</a></h3>
+<pre><code class="language-mermaid">flowchart LR
+    A[&quot;Choose Input Mode&quot;] --&gt; B[&quot;Preset Macro Button&quot;]
+    A --&gt; C[&quot;Raw ASCII / Spaced Hex&quot;]
+    A --&gt; D[&quot;Struct-Aware Field Form&quot;]
+    B --&gt; E[&quot;Optional Checksum / Delimiter Append&quot;]
+    C --&gt; E
+    D --&gt; E
+    E --&gt; F[&quot;Send TX (Single or Repeat Interval)&quot;]
+    F --&gt; G[&quot;Appears in Packet Stream &amp; .bflog&quot;]
+</code></pre>
+<hr>
+<h2>Telemetry, Hex &amp; Symbols</h2>
+<ul>
+<li><strong><a href="hex-inspector.html">Canonical Hex &amp; ASCII</a>:</strong> Pop out from Packet Stream <code>HEX PANE</code> -&gt; click any byte offset -&gt; inspect <code>u8</code>/<code>u16</code>/<code>u32</code>/<code>f32</code> interpretations.</li>
+<li><strong><a href="schema-dialects.html">Schema Dialects</a>:</strong> Choose <code>.h</code> / <code>.proto</code> / MAVLink / Kaitai -&gt; load or paste -&gt; compile to Dissector IR -&gt; auto-decodes Packet Stream, Dissector, and Lua <code>frame:get()</code>.</li>
+<li><strong><a href="elf-symbols.html">ELF Symbols</a>:</strong> Load firmware <code>.elf</code> -&gt; paste hex crash PC -&gt; resolve function name and <code>file:line</code>.</li>
+<li><strong><a href="session-diff.html">Session Diff</a>:</strong> Pick golden <code>.bflog</code> + candidate <code>.bflog</code> -&gt; compare frame counts, payload diffs, and timing jitter.</li>
+</ul>
+<hr>
+<h2>HIL, Scripting &amp; Specialist</h2>
+<h3><a href="script-lab.html">Lua 5.4 Script Lab</a></h3>
+<pre><code class="language-mermaid">flowchart LR
+    A[&quot;Pick Template/Tutorial or Load .lua&quot;] --&gt; B[&quot;Read Summary Strip (Hook + Purpose)&quot;]
+    B --&gt; C[&quot;Select Target (Packet Stream Row or Custom Hex)&quot;]
+    C --&gt; D[&quot;Click DRY-RUN PACKET (Ctrl+Enter)&quot;]
+    D --&gt; E[&quot;Inspect Verdict, Byte Diff Grid, Field Diff &amp; VM Cost&quot;]
+    E --&gt;|&quot;Logic Wrong&quot;| A
+    E --&gt;|&quot;Looks Good&quot;| F[&quot;Open VM &amp; FILE (Policy, Seed)&quot;]
+    F --&gt; G[&quot;Click ARM ON LIVE BUS&quot;]
+    G --&gt; H[&quot;Monitor LIVE VM &amp; WATCH (Counters, Metrics, Assertions, Logs)&quot;]
+    H --&gt; I[&quot;Click DISARM when Done&quot;]
+</code></pre>
+<h3><a href="fault-rig.html">HIL Fault Injection Rig</a></h3>
+<pre><code class="language-mermaid">flowchart LR
+    A[&quot;Flip Master Safety Interlock (SAFE -&gt; ARMED)&quot;] --&gt; B[&quot;Pick Fault Profile (Bit Flip / Drop / Corrupt CRC / Truncate / Delay)&quot;]
+    B --&gt; C[&quot;Click Apply Live Mutation&quot;]
+    C --&gt; D[&quot;All Outgoing TX / Bridge Frames Corrupted&quot;]
+    D --&gt; E[&quot;Observe DUT Recovery in Packet Stream&quot;]
+    E --&gt; F[&quot;Disarm Faults to Restore Clean Link&quot;]
+</code></pre>
+<h3><a href="pin-sequencer.html">Pin Sequencer</a>, <a href="file-transfer.html">X/YMODEM</a>, <a href="mitm-bridge.html">MITM Bridge</a> &amp; <a href="activity-log.html">Activity Log</a></h3>
+<ul>
+<li><strong>Pin Sequencer:</strong> Click <code>Reset</code> / <code>Bootloader</code> macro or build timed <code>DTR</code>/<code>RTS</code> sequence -&gt; pulses serial adapter lines.</li>
+<li><strong>X/YMODEM Transfer:</strong> Enter bootloader -&gt; select <code>.bin</code> -&gt; choose XMODEM/YMODEM -&gt; watch block progress -&gt; reset MCU.</li>
+<li><strong>MITM Bridge:</strong> Connect Port A + Port B -&gt; enable bridge -&gt; frames forward <code>A &lt;-&gt; B</code> live (optionally attach Lua <code>on_mitm_frame</code> or Fault Rig).</li>
+<li><strong>Activity Log:</strong> Filter structured engine/UI/script/fault events by severity or source to diagnose disconnects or script errors.</li>
+</ul>
+<div class="pager"><a class="prev" href="launcher.html">Desktop Launcher</a><a class="next" href="packet-stream.html">Packet Stream</a></div></main>
+</div>
+<footer>BaudForge — hardware engineering workstation · built from docs/src with marked · screenshots from the live application on real hardware</footer>
+<script type="module">
+import mermaid from 'https://cdn.jsdelivr.net/npm/mermaid@11/dist/mermaid.esm.min.mjs';
+document.querySelectorAll('pre code.language-mermaid').forEach((el) => {
+  const div = document.createElement('div');
+  div.className = 'mermaid';
+  div.textContent = el.textContent;
+  el.parentElement.replaceWith(div);
+});
+mermaid.initialize({ startOnLoad: true, theme: 'dark' });
+</script>
+</body></html>

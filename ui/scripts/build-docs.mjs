@@ -15,6 +15,7 @@ const outDir = join(repoRoot, 'docs', 'site');
 const PAGES = [
   { file: 'index', title: 'Overview & Quickstart', group: 'Getting started' },
   { file: 'launcher', title: 'Desktop Launcher', group: 'Getting started' },
+  { file: 'workflows', title: 'Workflows & User Flows', group: 'Getting started' },
   { file: 'packet-stream', title: 'Packet Stream', group: 'Observing' },
   { file: 'protocol-dissector', title: 'Protocol Dissector', group: 'Observing' },
   { file: 'hex-inspector', title: 'Hex & ASCII', group: 'Observing' },
@@ -108,6 +109,19 @@ function pager(current) {
 }
 
 function shell(page, title, body) {
+  const hasMermaid = body.includes('class="language-mermaid"');
+  const mermaidScript = hasMermaid
+    ? `<script type="module">
+import mermaid from 'https://cdn.jsdelivr.net/npm/mermaid@11/dist/mermaid.esm.min.mjs';
+document.querySelectorAll('pre code.language-mermaid').forEach((el) => {
+  const div = document.createElement('div');
+  div.className = 'mermaid';
+  div.textContent = el.textContent;
+  el.parentElement.replaceWith(div);
+});
+mermaid.initialize({ startOnLoad: true, theme: 'dark' });
+</script>`
+    : '';
   return `<!doctype html>
 <html lang="en"><head><meta charset="utf-8">
 <meta name="viewport" content="width=device-width,initial-scale=1">
@@ -121,6 +135,7 @@ function shell(page, title, body) {
 <main>${body}${pager(page)}</main>
 </div>
 <footer>BaudForge — hardware engineering workstation · built from docs/src with marked · screenshots from the live application on real hardware</footer>
+${mermaidScript}
 </body></html>`;
 }
 
